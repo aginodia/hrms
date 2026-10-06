@@ -559,6 +559,16 @@ grant execute on function public.admin_send_back_kyc(uuid, text) to authenticate
 grant execute on function public.admin_save_employee(uuid, text, text, uuid, jsonb) to authenticated;
 grant execute on function public.my_profile() to authenticated;
 
+-- Internal helpers: signed-in users only (RLS policies need them); the
+-- sign-up trigger function is never callable through the API.
+revoke execute on function public.is_admin() from public, anon;
+revoke execute on function public.my_status() from public, anon;
+revoke execute on function public.team_can_see(text) from public, anon;
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public.my_status() to authenticated;
+grant execute on function public.team_can_see(text) to authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
+
 grant select on public.profiles, public.kyc_submissions, public.salary_history, public.app_settings to authenticated;
 grant update on public.app_settings to authenticated;
 

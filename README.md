@@ -18,6 +18,16 @@ The database enforces this split, not just the screens. Row Level Security and `
 
 ---
 
+## Live project status
+
+The Supabase project **Altius HRMS** (`bejhmbvwaexpafhkseod`) is set up through the Supabase connector:
+
+* Tables, row-level security, the `kyc-documents` storage bucket and its policies, and the sign-up trigger are applied.
+* The base admin account `sayan.mullick@altiusinvestech.com` exists, with its email confirmed and role admin / active.
+* **Still to do:** run [`supabase/finish-setup.sql`](supabase/finish-setup.sql) once in **SQL Editor**. It adds the two functions that contain `DELETE` (rejecting a sign-up, and saving an employee's salary history), which the connector holds back for manual confirmation.
+
+The steps below are for setting up a fresh project from scratch.
+
 ## Setup (about 10 minutes)
 
 ### 1. Create the database schema
@@ -113,6 +123,7 @@ The entry with the latest month is the current salary. That entry's month and % 
 | File | Purpose |
 | --- | --- |
 | `index.html` | The whole app: HTML, CSS and JS. Loads `supabase-js` and the Inter font from CDNs. |
+| `supabase/finish-setup.sql` | The two functions to run by hand on the live project (see above). Already included in the full migration. |
 | `supabase/migrations/20261006000000_hrms_modules_1_2.sql` | Tables, RLS policies, storage bucket and policies, and RPC functions. Re-runnable. |
 
 ### Data model

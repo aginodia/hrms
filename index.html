@@ -602,6 +602,7 @@ function friendlyError(err) {
   if (/JWT expired|invalid JWT/i.test(msg)) return 'Your session has expired. Please sign in again.';
   if (/row-level security|permission denied/i.test(msg)) return 'You do not have permission to do that.';
   if (/rate limit/i.test(msg)) return 'Too many attempts. Please wait a minute and try again.';
+  if (/Could not find the function/i.test(msg)) return 'This action is not set up in the database yet — run supabase/finish-setup.sql in the Supabase SQL editor.';
   if (/timed out/i.test(msg)) return 'The server took too long to respond. Check your connection and try again.';
   if (/Invalid API key|No API key/i.test(msg)) return 'The Supabase key in index.html is not valid for this project.';
   if (/schema cache|relation .* does not exist/i.test(msg)) return 'The database is not set up yet — apply the schema in supabase/migrations first.';
