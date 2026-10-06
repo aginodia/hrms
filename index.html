@@ -1,0 +1,1998 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Altius HRMS</title>
+<meta name="description" content="Altius Investech HRMS — access control, onboarding KYC and employee master data.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111827'/%3E%3Cpath d='M10 23 16 9l6 14M12.6 18h6.8' stroke='white' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F5F6F8;
+    --surface: #FFFFFF;
+    --surface-2: #F9FAFB;
+    --border: #E9EBEF;
+    --border-strong: #DCDFE5;
+    --text: #111827;
+    --text-2: #374151;
+    --muted: #6B7280;
+    --faint: #9CA3AF;
+    --primary: #111827;
+    --primary-hover: #1F2937;
+    --accent: #4F46E5;
+    --accent-soft: #EEF0FF;
+    --green: #15803D;  --green-soft: #E9F7EF;
+    --amber: #B45309;  --amber-soft: #FEF5E7;
+    --blue: #1D4ED8;   --blue-soft: #EBF2FF;
+    --violet: #6D28D9; --violet-soft: #F3EEFF;
+    --red: #B91C1C;    --red-soft: #FDECEC;
+    --gray-soft: #F1F2F4;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow: 0 1px 2px rgba(17, 24, 39, .04);
+    --shadow-lg: 0 20px 50px -12px rgba(17, 24, 39, .25);
+    --sidebar: 248px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  body.modal-open { overflow: hidden; }
+  h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  p { margin: 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  button { font: inherit; color: inherit; }
+  svg.i { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .sm svg.i, svg.i.sm { width: 15px; height: 15px; }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+  .nowrap { white-space: nowrap; }
+  .mono { font-variant-numeric: tabular-nums; }
+  .hidden { display: none !important; }
+
+  /* ---------- Buttons ---------- */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 38px; padding: 0 14px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+    font-weight: 500; font-size: 13.5px; cursor: pointer; white-space: nowrap;
+    transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
+  }
+  .btn:hover { background: var(--surface-2); text-decoration: none; }
+  .btn:focus-visible, .icon-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(79, 70, 229, .25); }
+  .btn:disabled { opacity: .55; cursor: not-allowed; }
+  .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-success { background: var(--green); border-color: var(--green); color: #fff; }
+  .btn-success:hover { background: #166534; }
+  .btn-danger { color: var(--red); border-color: #F3CFCF; background: var(--surface); }
+  .btn-danger:hover { background: var(--red-soft); }
+  .btn-danger-solid { background: var(--red); border-color: var(--red); color: #fff; }
+  .btn-danger-solid:hover { background: #991B1B; }
+  .btn-ghost { border-color: transparent; background: transparent; }
+  .btn-ghost:hover { background: var(--gray-soft); }
+  .btn-sm { height: 32px; padding: 0 11px; font-size: 13px; border-radius: 8px; }
+  .btn-block { width: 100%; height: 42px; }
+  .icon-btn {
+    display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 9px;
+    border: 1px solid transparent; background: transparent; cursor: pointer; color: var(--muted);
+  }
+  .icon-btn:hover { background: var(--gray-soft); color: var(--text); }
+  .spinner {
+    width: 15px; height: 15px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent;
+    animation: spin .7s linear infinite; display: inline-block; flex: none;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Forms ---------- */
+  .field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .field > label, .label { font-size: 12.5px; font-weight: 500; color: var(--text-2); }
+  .field .req { color: var(--red); margin-left: 2px; }
+  .hint { font-size: 12px; color: var(--muted); }
+  .input, select.input, textarea.input {
+    width: 100%; height: 40px; padding: 0 12px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+    font: inherit; font-size: 14px; transition: border-color .15s, box-shadow .15s;
+  }
+  textarea.input { height: auto; min-height: 92px; padding: 10px 12px; resize: vertical; }
+  select.input {
+    appearance: none; padding-right: 32px; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236B7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 10px center;
+  }
+  .input::placeholder { color: var(--faint); }
+  .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79, 70, 229, .14); }
+  .input.invalid { border-color: #E5A3A3; box-shadow: 0 0 0 3px rgba(185, 28, 28, .08); }
+  .locked {
+    display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; border-radius: var(--radius-sm);
+    background: var(--surface-2); border: 1px dashed var(--border-strong); color: var(--text-2);
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .locked span { overflow: hidden; text-overflow: ellipsis; }
+  .locked svg.i { width: 14px; height: 14px; color: var(--faint); margin-left: auto; }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .g3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .g4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .span-2 { grid-column: span 2; }
+  .error-text { color: var(--red); font-size: 12.5px; }
+  .alert {
+    display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: var(--radius-sm);
+    font-size: 13.5px; border: 1px solid;
+  }
+  .alert svg.i { margin-top: 1px; }
+  .alert-warn { background: var(--amber-soft); border-color: #F6DDB3; color: #7C3A06; }
+  .alert-info { background: var(--blue-soft); border-color: #CFDDFB; color: #1E3A8A; }
+  .alert-error { background: var(--red-soft); border-color: #F3CFCF; color: #7F1D1D; }
+  .alert-ok { background: var(--green-soft); border-color: #C5E8D2; color: #14532D; }
+
+  /* ---------- Chips & avatars ---------- */
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px;
+    font-size: 12px; font-weight: 500; white-space: nowrap; background: var(--gray-soft); color: var(--text-2);
+  }
+  .chip::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .85; }
+  .chip.plain::before { display: none; }
+  .chip.green { background: var(--green-soft); color: var(--green); }
+  .chip.amber { background: var(--amber-soft); color: var(--amber); }
+  .chip.blue { background: var(--blue-soft); color: var(--blue); }
+  .chip.violet { background: var(--violet-soft); color: var(--violet); }
+  .chip.red { background: var(--red-soft); color: var(--red); }
+  .chip.gray { background: var(--gray-soft); color: var(--muted); }
+  .chip.dark { background: var(--primary); color: #fff; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none;
+    font-size: 12.5px; font-weight: 600; color: #fff; letter-spacing: .02em;
+  }
+  .avatar.lg { width: 56px; height: 56px; font-size: 18px; }
+  .person { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .person .name { font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .person .sub { font-size: 12px; color: var(--muted); }
+  .delta-up { color: var(--green); font-weight: 500; }
+  .delta-down { color: var(--red); font-weight: 500; }
+
+  /* ---------- Auth ---------- */
+  .auth { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+  .auth-art {
+    position: relative; overflow: hidden; background: #0F1115; color: #fff; padding: 44px 52px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .auth-art::before {
+    content: ''; position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
+    background-size: 44px 44px; mask-image: radial-gradient(ellipse at 30% 40%, #000 30%, transparent 75%);
+  }
+  .auth-art > * { position: relative; }
+  .auth-art h1 { font-size: 34px; line-height: 1.18; font-weight: 600; letter-spacing: -0.025em; max-width: 440px; }
+  .auth-art p.lead { color: #A1A7B3; margin-top: 14px; max-width: 420px; font-size: 15px; }
+  .art-cards { display: grid; gap: 12px; max-width: 420px; margin-top: 36px; }
+  .art-card {
+    display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 14px;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); backdrop-filter: blur(6px);
+  }
+  .art-card .dot { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,.08); }
+  .art-card b { font-weight: 500; display: block; font-size: 13.5px; }
+  .art-card span { font-size: 12.5px; color: #A1A7B3; }
+  .auth-form-wrap { display: grid; place-items: center; padding: 40px 24px; background: var(--surface); }
+  .auth-form { width: 100%; max-width: 380px; }
+  .auth-form h2 { font-size: 24px; letter-spacing: -0.02em; }
+  .auth-form .sub { color: var(--muted); margin-top: 6px; margin-bottom: 26px; }
+  .auth-form form { display: grid; gap: 14px; }
+  .auth-switch { margin-top: 22px; text-align: center; color: var(--muted); font-size: 13.5px; }
+  .link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-weight: 500; }
+  .link-btn:hover { text-decoration: underline; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
+  .brand-mark {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--primary); color: #fff;
+    display: grid; place-items: center; flex: none;
+  }
+  .auth-art .brand-mark { background: #fff; color: var(--primary); }
+  .brand small { display: block; font-size: 11.5px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .auth-art .brand small { color: #A1A7B3; }
+  .pw-wrap { position: relative; }
+  .pw-wrap .input { padding-right: 42px; }
+  .pw-wrap .icon-btn { position: absolute; right: 3px; top: 3px; }
+
+  /* ---------- Shell ---------- */
+  .shell { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-height: 100vh; }
+  .sidebar {
+    position: sticky; top: 0; height: 100vh; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 18px 14px; gap: 6px; z-index: 30;
+  }
+  .sidebar .brand { padding: 4px 8px 18px; }
+  .nav-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 12px 10px 6px; }
+  .nav a {
+    display: flex; align-items: center; gap: 11px; height: 40px; padding: 0 11px; border-radius: 10px;
+    color: var(--text-2); font-weight: 500; text-decoration: none; transition: background .15s, color .15s;
+  }
+  .nav a:hover { background: var(--surface-2); color: var(--text); }
+  .nav a.active { background: var(--primary); color: #fff; }
+  .nav a .badge {
+    margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; display: grid; place-items: center;
+    font-size: 11px; font-weight: 600; background: var(--red-soft); color: var(--red);
+  }
+  .nav a.active .badge { background: rgba(255,255,255,.18); color: #fff; }
+  .side-foot { margin-top: auto; border-top: 1px solid var(--border); padding-top: 14px; display: flex; align-items: center; gap: 10px; }
+  .side-foot .person { flex: 1; }
+  .role-tag { font-size: 11px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; }
+  .main { min-width: 0; display: flex; flex-direction: column; }
+  .topbar {
+    display: flex; align-items: center; gap: 14px; padding: 22px 32px 0;
+  }
+  .topbar h1 { font-size: 22px; letter-spacing: -0.02em; }
+  .topbar .crumbs { color: var(--muted); font-size: 13px; margin-top: 3px; }
+  .topbar .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .menu-btn { display: none; }
+  .content { padding: 22px 32px 48px; display: grid; gap: 20px; align-content: start; max-width: 1360px; width: 100%; }
+  .scrim { display: none; }
+
+  /* ---------- Cards / tables ---------- */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
+  .card-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .card-head h3 { font-size: 15px; }
+  .card-head p { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+  .card-head .right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .card-body { padding: 20px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+  .stat { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; text-decoration: none; color: inherit; }
+  a.stat:hover { text-decoration: none; border-color: var(--border-strong); }
+  .stat .top { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-weight: 500; font-size: 13px; }
+  .stat .ico { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; }
+  .stat .value { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1; }
+  .stat .foot { font-size: 12.5px; color: var(--muted); }
+  .table-wrap { overflow-x: auto; }
+  table.table { width: 100%; border-collapse: collapse; }
+  .table th {
+    text-align: left; font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--muted); background: var(--surface-2); padding: 10px 16px; border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .table td { padding: 12px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text-2); }
+  .table tbody tr:last-child td { border-bottom: 0; }
+  .table tbody tr:hover td { background: #FBFBFC; }
+  .table td.actions { text-align: right; white-space: nowrap; }
+  .table td.actions .btn + .btn { margin-left: 6px; }
+  .table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .table.compact th, .table.compact td { padding-left: 12px; padding-right: 12px; }
+  .table.compact th:first-child, .table.compact td:first-child { padding-left: 18px; }
+  .table.compact th:last-child, .table.compact td:last-child { padding-right: 18px; }
+  .table td.trunc { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .table td.wrap { min-width: 120px; max-width: 170px; }
+  .table tr[data-href] { cursor: pointer; }
+  .empty { padding: 48px 20px; text-align: center; color: var(--muted); display: grid; justify-items: center; gap: 8px; }
+  .empty .ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--gray-soft); color: var(--muted); margin-bottom: 4px; }
+  .empty b { color: var(--text); font-weight: 600; }
+  .tabs { display: inline-flex; gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; flex-wrap: wrap; }
+  .tabs a {
+    display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px; border-radius: 9px;
+    color: var(--muted); font-weight: 500; text-decoration: none;
+  }
+  .tabs a:hover { color: var(--text); }
+  .tabs a.active { background: var(--primary); color: #fff; }
+  .tabs .count { font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--gray-soft); color: var(--text-2); font-weight: 600; }
+  .tabs a.active .count { background: rgba(255,255,255,.18); color: #fff; }
+  .search { position: relative; }
+  .search svg.i { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--faint); width: 16px; height: 16px; }
+  .search .input { padding-left: 34px; width: 260px; height: 36px; }
+  .split { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .list-row { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
+  .list-row:last-child { border-bottom: 0; }
+  .list-row .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 24px; }
+  .kv .k { font-size: 12px; color: var(--muted); margin-bottom: 3px; }
+  .kv .v { font-weight: 500; color: var(--text); word-break: break-word; }
+  .section-title { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+
+  /* ---------- Documents ---------- */
+  .doc-list { display: grid; gap: 8px; }
+  .doc {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--radius-sm);
+    border: 1px solid var(--border); background: var(--surface);
+  }
+  .doc .ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+  .doc.missing .ico { background: var(--gray-soft); color: var(--faint); }
+  .doc .meta { min-width: 0; flex: 1; }
+  .doc .meta b { display: block; font-weight: 500; font-size: 13.5px; }
+  .doc .meta span { font-size: 12px; color: var(--muted); }
+  .uploads { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .upload {
+    border: 1px dashed var(--border-strong); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
+    background: var(--surface); transition: border-color .15s, background .15s; min-height: 132px;
+  }
+  .upload.done { border-style: solid; border-color: #C5E8D2; background: #FBFEFC; }
+  .upload.invalid { border-color: #E5A3A3; background: #FFFBFB; }
+  .upload .head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .upload .head b { font-weight: 600; font-size: 13.5px; }
+  .upload .tag { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
+  .upload .tag.req { color: var(--amber); }
+  .upload .drop {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; text-align: center;
+    border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 12.5px; cursor: pointer; padding: 12px;
+  }
+  .upload .drop:hover { background: var(--gray-soft); color: var(--text); }
+  .upload .drop b { color: var(--text); font-weight: 500; }
+  .upload .file { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
+  .upload .file .ico { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--green-soft); color: var(--green); flex: none; }
+  .upload .file .fname { font-size: 12.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .upload .file .fsub { font-size: 11.5px; color: var(--muted); }
+  .upload .acts { display: flex; gap: 6px; }
+
+  /* ---------- Onboarding / standalone pages ---------- */
+  .solo-top { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
+  .solo { max-width: 920px; margin: 0 auto; padding: 32px 24px 64px; display: grid; gap: 18px; }
+  .solo-hero h1 { font-size: 24px; letter-spacing: -0.02em; }
+  .solo-hero p { color: var(--muted); margin-top: 6px; }
+  .steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+  .steps span { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); padding: 6px 12px 6px 6px; border-radius: 999px; background: var(--surface); border: 1px solid var(--border); }
+  .steps span i { font-style: normal; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; background: var(--gray-soft); font-size: 11px; font-weight: 600; color: var(--text-2); }
+  .steps span.ok i { background: var(--green); color: #fff; }
+  .form-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .center-wrap { min-height: calc(100vh - 69px); display: grid; place-items: center; padding: 24px; }
+  .status-card { max-width: 480px; width: 100%; text-align: center; padding: 36px 32px; }
+  .status-card .big-ico { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; margin: 0 auto 18px; }
+  .status-card .big-ico svg.i { width: 26px; height: 26px; }
+  .status-card h2 { font-size: 20px; letter-spacing: -0.02em; }
+  .status-card p { color: var(--muted); margin-top: 8px; }
+  .status-card .btns { display: flex; gap: 8px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+  .timeline { text-align: left; margin-top: 24px; display: grid; gap: 0; }
+  .timeline .t { display: flex; gap: 12px; padding-bottom: 14px; position: relative; }
+  .timeline .t:not(:last-child)::after { content: ''; position: absolute; left: 9px; top: 22px; bottom: 2px; width: 2px; background: var(--border); }
+  .timeline .t i { width: 20px; height: 20px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--gray-soft); color: var(--faint); font-style: normal; }
+  .timeline .t.done i { background: var(--green); color: #fff; }
+  .timeline .t.now i { background: var(--accent); color: #fff; }
+  .timeline .t i svg.i { width: 12px; height: 12px; stroke-width: 3; }
+  .timeline .t b { font-weight: 500; font-size: 13.5px; display: block; }
+  .timeline .t span { font-size: 12.5px; color: var(--muted); }
+
+  /* ---------- Employee detail ---------- */
+  .emp-head { display: flex; align-items: center; gap: 16px; padding: 20px; flex-wrap: wrap; }
+  .emp-head h2 { font-size: 19px; letter-spacing: -0.02em; }
+  .emp-head .meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 5px; color: var(--muted); font-size: 13px; }
+  .emp-head .facts { margin-left: auto; display: flex; gap: 28px; flex-wrap: wrap; }
+  .emp-head .facts .k { font-size: 12px; color: var(--muted); }
+  .emp-head .facts .v { font-weight: 600; font-size: 15px; margin-top: 2px; }
+  .salary-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .9fr) minmax(0, 1fr) 130px 40px; gap: 10px; align-items: center; padding: 10px 20px; border-bottom: 1px solid var(--border); }
+  .salary-row.head { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--surface-2); padding-top: 9px; padding-bottom: 9px; }
+  .salary-row:last-child { border-bottom: 0; }
+  .salary-row .rs { position: relative; }
+  .salary-row .rs::before { content: '₹'; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+  .salary-row .rs .input { padding-left: 26px; font-variant-numeric: tabular-nums; }
+  .savebar {
+    position: sticky; bottom: 16px; z-index: 20; display: flex; align-items: center; gap: 12px; padding: 12px 14px 12px 18px;
+    background: var(--primary); color: #fff; border-radius: 14px; box-shadow: var(--shadow-lg);
+  }
+  .savebar .btn { border-color: rgba(255,255,255,.2); background: transparent; color: #fff; }
+  .savebar .btn:hover { background: rgba(255,255,255,.08); }
+  .savebar .btn.btn-light { background: #fff; color: var(--primary); border-color: #fff; }
+  .savebar .btn.btn-light:hover { background: #F3F4F6; }
+  .savebar .grow { flex: 1; font-size: 13.5px; }
+  .savebar .grow span { color: #A1A7B3; }
+
+  /* ---------- Toggles ---------- */
+  .toggle-row { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .toggle-row:last-child { border-bottom: 0; }
+  .toggle-row .txt { flex: 1; }
+  .toggle-row .txt b { font-weight: 500; display: block; }
+  .toggle-row .txt span { font-size: 12.5px; color: var(--muted); }
+  .switch { position: relative; width: 40px; height: 22px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+  .switch span { position: absolute; inset: 0; background: var(--border-strong); border-radius: 999px; cursor: pointer; transition: background .15s; }
+  .switch span::after { content: ''; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .switch input:checked + span { background: var(--green); }
+  .switch input:checked + span::after { transform: translateX(18px); }
+  .switch input:focus-visible + span { box-shadow: 0 0 0 3px rgba(79, 70, 229, .25); }
+
+  /* ---------- Modal & toast ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(17, 24, 39, .42); display: grid; place-items: center; padding: 24px; z-index: 100;
+    animation: fade .15s ease-out;
+  }
+  .modal {
+    background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-lg); width: 100%; max-height: calc(100vh - 48px);
+    display: flex; flex-direction: column; animation: pop .18s ease-out;
+  }
+  .modal-sm { max-width: 420px; } .modal-md { max-width: 560px; } .modal-lg { max-width: 980px; }
+  .modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
+  .modal-head h3 { font-size: 16px; }
+  .modal-head p { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .modal-head .icon-btn { margin-left: auto; margin-top: -4px; margin-right: -6px; }
+  .modal-body { padding: 20px; overflow-y: auto; }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 20px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .modal-foot .left { margin-right: auto; }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.985); } }
+  #toast-root { position: fixed; right: 20px; bottom: 20px; display: grid; gap: 8px; z-index: 200; }
+  .toast {
+    display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 12px; background: var(--primary); color: #fff;
+    box-shadow: var(--shadow-lg); font-size: 13.5px; max-width: 380px; animation: pop .18s ease-out;
+  }
+  .toast.error { background: #7F1D1D; }
+  .toast svg.i { width: 16px; height: 16px; }
+  .loading { display: grid; place-items: center; min-height: 240px; color: var(--muted); gap: 10px; }
+  .loading.full { min-height: 100vh; }
+  .skeleton { background: linear-gradient(90deg, #EEF0F3 25%, #F6F7F9 37%, #EEF0F3 63%); background-size: 400% 100%; animation: shimmer 1.3s ease infinite; border-radius: 8px; }
+  @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 1100px) {
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .split { grid-template-columns: minmax(0, 1fr); }
+    .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 900px) {
+    .auth { grid-template-columns: minmax(0, 1fr); }
+    .auth-art { display: none; }
+    .shell { grid-template-columns: minmax(0, 1fr); }
+    .sidebar { position: fixed; left: 0; top: 0; width: 272px; transform: translateX(-100%); transition: transform .2s; }
+    .shell.nav-open .sidebar { transform: none; box-shadow: var(--shadow-lg); }
+    .shell.nav-open .scrim { display: block; position: fixed; inset: 0; background: rgba(17,24,39,.35); z-index: 25; }
+    .menu-btn { display: inline-grid; margin-left: -8px; }
+    .topbar { padding: 16px 16px 0; flex-wrap: wrap; }
+    .content { padding: 16px 16px 40px; }
+    .search .input { width: 100%; }
+    .search { flex: 1; min-width: 180px; }
+    .solo-top { padding: 14px 16px; }
+    .solo-top .who { display: none; }
+    .solo { padding: 22px 16px 48px; }
+    .emp-head .facts { margin-left: 0; width: 100%; }
+  }
+  @media (max-width: 640px) {
+    .stats, .g2, .g3, .g4, .kv { grid-template-columns: minmax(0, 1fr); }
+    .span-2 { grid-column: auto; }
+    .salary-row { grid-template-columns: 1fr 1fr; }
+    .salary-row.head { display: none; }
+    .salary-row .rs { grid-column: span 2; }
+    .modal-backdrop { padding: 10px; }
+    .topbar h1 { font-size: 19px; }
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* =====================================================================
+   CONFIG — paste your Supabase project values here
+   (Supabase → Project Settings → API). The anon key is meant to be
+   public; all access is enforced by Row Level Security in schema.sql.
+   ===================================================================== */
+const SUPABASE_URL = 'https://YOUR-PROJECT-REF.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR-SUPABASE-ANON-KEY';
+
+/* ===================================================================== */
+const BASE_ADMIN_EMAIL = 'sayan.mullick@altiusinvestech.com';
+const BUCKET = 'kyc-documents';
+const MAX_FILE_MB = 5;
+const ALLOWED_TYPES = ['application/pdf', 'image/jpeg', 'image/jpg'];
+
+const DOCS = [
+  { key: 'aadhaar',      col: 'aadhaar_path',      label: 'Aadhaar',              required: true },
+  { key: 'pan',          col: 'pan_path',          label: 'PAN',                  required: true },
+  { key: 'marksheet_10', col: 'marksheet_10_path', label: '10th Marksheet',       required: true },
+  { key: 'marksheet_12', col: 'marksheet_12_path', label: '12th Marksheet',       required: true },
+  { key: 'graduation',   col: 'graduation_path',   label: 'Graduation Marksheet', required: true },
+  { key: 'payslip',      col: 'payslip_path',      label: 'Last Payslip',         required: false },
+  { key: 'leave_letter', col: 'leave_letter_path', label: 'Leave Letter',         required: false, hint: 'Relieving letter from previous employer' },
+];
+const RELATIONSHIPS = ['Father', 'Mother', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Friend', 'Other'];
+const STATUS = {
+  pending:       { label: 'Signup request', tone: 'amber' },
+  kyc_pending:   { label: 'Awaiting KYC',   tone: 'blue' },
+  kyc_submitted: { label: 'KYC in review',  tone: 'violet' },
+  active:        { label: 'Active',         tone: 'green' },
+  inactive:      { label: 'Inactive',       tone: 'gray' },
+};
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const AVATAR_COLORS = ['#4F46E5', '#0F766E', '#B45309', '#BE185D', '#1D4ED8', '#6D28D9', '#15803D', '#374151'];
+
+/* ---------------------------------------------------------------------
+   Icons (stroke icons, 24px grid)
+   --------------------------------------------------------------------- */
+const ICONS = {
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+  sliders: '<path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/>',
+  home: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  userPlus: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/>',
+  userCheck: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  trash: '<path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/>',
+  fileCheck: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  arrowLeft: '<path d="m12 19-7-7 7-7M19 12H5"/>',
+  arrowRight: '<path d="M5 12h14M12 5l7 7-7 7"/>',
+  menu: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  external: '<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
+  trending: '<path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/>',
+  inbox: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  eye: '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M9.88 9.88a3 3 0 1 0 4.24 4.24M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.53 13.53 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61M2 2l20 20"/>',
+  bank: '<path d="M3 21h18M3 10h18M5 6l7-3 7 3M4 10v11M20 10v11M8 14v3M12 14v3M16 14v3"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
+  wallet: '<path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
+  sparkle: '<path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>',
+};
+const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+const LOGO = `<span class="brand-mark"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19 12 5l6 14M8.2 14h7.6"/></svg></span>`;
+
+/* ---------------------------------------------------------------------
+   Small utilities
+   --------------------------------------------------------------------- */
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+const pad = (n) => String(n).padStart(2, '0');
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const parseISODate = (s) => { if (!s) return null; const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d || 1); };
+const fmtDate = (s) => { const d = parseISODate(s); return d ? `${pad(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()}` : '—'; };
+const fmtMonth = (s) => { const d = parseISODate(s); return d ? `${MONTHS[d.getMonth()]} ${d.getFullYear()}` : '—'; };
+const fmtDateTime = (ts) => ts ? new Date(ts).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
+const fmtRelative = (ts) => {
+  if (!ts) return '—';
+  const diff = (Date.now() - new Date(ts).getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)} days ago`;
+  return fmtDate(new Date(ts).toISOString());
+};
+const INR = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const fmtINR = (n) => (n === null || n === undefined || n === '' || isNaN(n)) ? '—' : INR.format(Number(n));
+const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+const colorFor = (s) => { let h = 0; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return AVATAR_COLORS[h % AVATAR_COLORS.length]; };
+const avatar = (p, cls = '') => `<span class="avatar ${cls}" style="background:${colorFor(p?.email || p?.full_name)}">${esc(initials(p?.full_name))}</span>`;
+const person = (p, sub) => `<div class="person">${avatar(p)}<div style="min-width:0"><div class="name">${esc(p?.full_name || '—')}</div>${sub !== undefined ? `<div class="sub">${sub}</div>` : ''}</div></div>`;
+const statusChip = (s) => { const m = STATUS[s] || { label: s, tone: 'gray' }; return `<span class="chip ${m.tone}">${esc(m.label)}</span>`; };
+const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'there';
+const monthStart = (y, m) => `${y}-${pad(m)}-01`;
+const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+const normPhone = (v) => String(v || '').replace(/[\s\-()]/g, '');
+const isPhone = (v) => /^\+?\d{10,13}$/.test(normPhone(v));
+const maskAccount = (v) => v ? `•••• ${String(v).slice(-4)}` : '—';
+const greeting = () => { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'; };
+const spinnerHTML = '<span class="spinner"></span>';
+const fileNameFromPath = (path) => {
+  if (!path) return '';
+  const base = String(path).split('/').pop();
+  return base.replace(/-\d{10,}(\.[a-z0-9]+)$/i, '$1');
+};
+
+function toast(message, type = 'ok') {
+  const el = document.createElement('div');
+  el.className = `toast ${type === 'error' ? 'error' : ''}`;
+  el.innerHTML = `${icon(type === 'error' ? 'alert' : 'check')}<span>${esc(message)}</span>`;
+  $('#toast-root').appendChild(el);
+  setTimeout(() => el.remove(), type === 'error' ? 6000 : 3500);
+}
+
+function friendlyError(err) {
+  const msg = String(err?.message || err || 'Something went wrong');
+  if (/Invalid login credentials/i.test(msg)) return 'Incorrect email or password.';
+  if (/Email not confirmed/i.test(msg)) return 'Please confirm your email first — check your inbox for the confirmation link.';
+  if (/User already registered/i.test(msg)) return 'An account with this email already exists. Try signing in instead.';
+  if (/profiles_employee_code_key|employee_code/i.test(msg) && /duplicate|unique/i.test(msg)) return 'This Employee ID is already assigned to someone else.';
+  if (/salary_history_employee_id_effective_month_key/i.test(msg)) return 'Each month can only have one salary entry.';
+  if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return 'Could not reach the server. Check your internet connection and try again.';
+  if (/JWT expired|invalid JWT/i.test(msg)) return 'Your session has expired. Please sign in again.';
+  if (/row-level security|permission denied/i.test(msg)) return 'You do not have permission to do that.';
+  if (/rate limit/i.test(msg)) return 'Too many attempts. Please wait a minute and try again.';
+  return msg;
+}
+
+async function withBusy(btn, label, fn) {
+  if (!btn) return fn();
+  const old = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `${spinnerHTML}${label ? `<span>${esc(label)}</span>` : ''}`;
+  try { return await fn(); }
+  finally { if (btn.isConnected) { btn.disabled = false; btn.innerHTML = old; } }
+}
+
+/* ---------------------------------------------------------------------
+   Modal helpers
+   --------------------------------------------------------------------- */
+function openModal({ title, subtitle = '', body = '', footer = '', size = 'md' }) {
+  const root = $('#modal-root');
+  const el = document.createElement('div');
+  el.className = 'modal-backdrop';
+  el.innerHTML = `
+    <div class="modal modal-${size}" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="modal-head">
+        <div><h3>${esc(title)}</h3>${subtitle ? `<p>${subtitle}</p>` : ''}</div>
+        <button class="icon-btn" data-close aria-label="Close">${icon('x')}</button>
+      </div>
+      <div class="modal-body">${body}</div>
+      ${footer ? `<div class="modal-foot">${footer}</div>` : ''}
+    </div>`;
+  root.appendChild(el);
+  document.body.classList.add('modal-open');
+  const close = () => {
+    el.remove();
+    if (!root.children.length) document.body.classList.remove('modal-open');
+  };
+  el.addEventListener('mousedown', (e) => { if (e.target === el) close(); });
+  $$('[data-close]', el).forEach((b) => b.addEventListener('click', close));
+  el._close = close;
+  return { el, close };
+}
+function closeAllModals() { $$('#modal-root .modal-backdrop').forEach((m) => m._close()); }
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  const top = $$('#modal-root .modal-backdrop').pop();
+  if (top) top._close();
+});
+
+function confirmDialog({ title, message, confirmText = 'Confirm', danger = false }) {
+  return new Promise((resolve) => {
+    let done = false;
+    const { el, close } = openModal({
+      title, size: 'sm',
+      body: `<p class="muted">${message}</p>`,
+      footer: `<button class="btn" data-close>Cancel</button>
+               <button class="btn ${danger ? 'btn-danger-solid' : 'btn-primary'}" data-ok>${esc(confirmText)}</button>`,
+    });
+    const finish = (v) => { if (done) return; done = true; close(); resolve(v); };
+    $('[data-ok]', el).addEventListener('click', () => finish(true));
+    new MutationObserver((_, obs) => { if (!el.isConnected) { obs.disconnect(); finish(false); } })
+      .observe($('#modal-root'), { childList: true });
+  });
+}
+
+/* ---------------------------------------------------------------------
+   Supabase client + data access
+   --------------------------------------------------------------------- */
+const CONFIGURED = !SUPABASE_URL.includes('YOUR-PROJECT') && !SUPABASE_ANON_KEY.includes('YOUR-SUPABASE');
+const db = CONFIGURED && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+async function q(promise) {
+  const { data, error } = await promise;
+  if (error) throw error;
+  return data;
+}
+
+const api = {
+  myProfile: () => q(db.from('profiles').select('*').eq('id', state.user.id).maybeSingle()),
+  myProfileFull: () => q(db.rpc('my_profile')),
+  myKyc: () => q(db.from('kyc_submissions').select('*').eq('employee_id', state.user.id).maybeSingle()),
+  mySalaries: () => q(db.from('salary_history').select('effective_month, amount').eq('employee_id', state.user.id).order('effective_month')),
+  visibility: async () => {
+    const row = await q(db.from('app_settings').select('value').eq('key', 'team_visibility').maybeSingle());
+    return Object.assign({ job_details: true, salary: false, kyc_documents: true }, row?.value || {});
+  },
+  saveVisibility: (value) => q(db.from('app_settings')
+    .update({ value, updated_by: state.user.id, updated_at: new Date().toISOString() })
+    .eq('key', 'team_visibility').select()),
+  allProfiles: () => q(db.from('profiles').select('*').order('created_at', { ascending: false })),
+  allSalaries: () => q(db.from('salary_history').select('employee_id, effective_month, amount').order('effective_month')),
+  kycFor: (id) => q(db.from('kyc_submissions').select('*').eq('employee_id', id).maybeSingle()),
+  upload: (path, file) => q(db.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })),
+  removeFiles: (paths) => db.storage.from(BUCKET).remove(paths),
+  signedUrl: async (path) => (await q(db.storage.from(BUCKET).createSignedUrl(path, 600))).signedUrl,
+  rpc: (fn, args) => q(db.rpc(fn, args)),
+};
+
+/* Opens a private KYC document in a new tab via a short-lived signed URL.
+   The tab is opened synchronously so popup blockers allow it. */
+async function openDocument(path) {
+  if (!path) return;
+  const w = window.open('', '_blank');
+  if (w) w.document.write('<p style="font:14px system-ui;color:#6B7280;padding:24px">Opening document…</p>');
+  try {
+    const url = await api.signedUrl(path);
+    if (w) { w.opener = null; w.location.replace(url); } else { window.location.href = url; }
+  } catch (e) {
+    if (w) w.close();
+    toast(friendlyError(e), 'error');
+  }
+}
+
+/* ---------------------------------------------------------------------
+   App state & routing
+   --------------------------------------------------------------------- */
+const state = {
+  session: null,
+  user: null,
+  profile: null,
+  recovery: /type=recovery/.test(location.hash),
+  authView: 'login',
+  admin: { loaded: false, profiles: [], salaries: [] },
+  emdSearch: '',
+  dirty: false,
+};
+let renderSeq = 0;
+
+function parseRoute() {
+  const h = location.hash.startsWith('#/') ? location.hash.slice(2) : '';
+  const [page = '', id = ''] = h.split('/');
+  return { page, id: decodeURIComponent(id) };
+}
+const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
+
+window.addEventListener('hashchange', () => { if (state.user && state.profile) render(); });
+window.addEventListener('beforeunload', (e) => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+// Guard against losing unsaved edits on the employee detail page.
+let lastHash = location.hash;
+window.addEventListener('hashchange', (e) => {
+  if (state.dirty && location.hash !== lastHash) {
+    if (!window.confirm('You have unsaved changes. Leave without saving?')) {
+      history.replaceState(null, '', lastHash);
+      e.stopImmediatePropagation();
+      return;
+    }
+    state.dirty = false;
+  }
+  lastHash = location.hash;
+}, true);
+
+function render() {
+  if (!state.user) return renderAuth();
+  const p = state.profile;
+  if (!p) return renderNoProfile();
+  if (p.role === 'admin' && p.status === 'active') return renderShell('admin');
+  switch (p.status) {
+    case 'pending':       return renderWaiting('pending');
+    case 'kyc_pending':   return renderKycForm();
+    case 'kyc_submitted': return renderWaiting('submitted');
+    case 'active':        return renderShell('team');
+    default:              return renderWaiting('inactive');
+  }
+}
+
+async function loadSelfAndRoute() {
+  $('#app').innerHTML = `<div class="loading full">${spinnerHTML}<span>Loading your workspace…</span></div>`;
+  try {
+    state.profile = await api.myProfile();
+    if (state.recovery) return; // a password-recovery link arrived meanwhile
+  } catch (e) {
+    $('#app').innerHTML = `<div class="center-wrap"><div class="card status-card">
+      <div class="big-ico" style="background:var(--red-soft);color:var(--red)">${icon('alert')}</div>
+      <h2>Couldn't load your account</h2><p>${esc(friendlyError(e))}</p>
+      <div class="btns"><button class="btn" data-action="reload">${icon('refresh')}Try again</button>
+      <button class="btn" data-action="signout">${icon('logout')}Sign out</button></div></div></div>`;
+    return;
+  }
+  state.admin.loaded = false;
+  render();
+}
+
+async function signOut() {
+  if (state.dirty && !window.confirm('You have unsaved changes. Sign out anyway?')) return;
+  state.dirty = false;
+  closeAllModals();
+  await db.auth.signOut().catch(() => {});
+  history.replaceState(null, '', location.pathname);
+  lastHash = '';
+}
+
+/* Global click actions */
+const actions = {
+  signout: () => signOut(),
+  reload: () => loadSelfAndRoute(),
+  'open-doc': (el) => openDocument(el.dataset.path),
+  'toggle-nav': () => $('.shell')?.classList.toggle('nav-open'),
+  'close-nav': () => $('.shell')?.classList.remove('nav-open'),
+  'auth-view': (el) => { state.authView = el.dataset.view; renderAuth(); },
+};
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action]');
+  if (!el || !actions[el.dataset.action]) return;
+  e.preventDefault();
+  actions[el.dataset.action](el, e);
+});
+
+/* =====================================================================
+   AUTH SCREENS
+   ===================================================================== */
+function passwordField(name, placeholder, autocomplete) {
+  return `<div class="pw-wrap"><input class="input" type="password" name="${name}" placeholder="${placeholder}" autocomplete="${autocomplete}" required minlength="8">
+    <button type="button" class="icon-btn" data-pw-toggle aria-label="Show password">${icon('eye')}</button></div>`;
+}
+
+function renderAuth(view) {
+  if (view) state.authView = view;
+  const v = state.authView;
+  const forms = {
+    login: `
+      <h2>Welcome back</h2>
+      <p class="sub">Sign in to the Altius HRMS.</p>
+      <form id="auth-form" novalidate>
+        <div class="field"><label>Email</label><input class="input" type="email" name="email" placeholder="you@altiusinvestech.com" autocomplete="email" required></div>
+        <div class="field">
+          <div style="display:flex;justify-content:space-between;align-items:center"><label class="label">Password</label>
+          <button type="button" class="link-btn" style="font-size:12.5px" data-action="auth-view" data-view="forgot">Forgot password?</button></div>
+          ${passwordField('password', 'Your password', 'current-password')}
+        </div>
+        <div class="form-msg"></div>
+        <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+      </form>
+      <p class="auth-switch">New to Altius? <button class="link-btn" data-action="auth-view" data-view="signup">Create an account</button></p>`,
+    signup: `
+      <h2>Create your account</h2>
+      <p class="sub">Your request goes to the admin for access approval.</p>
+      <form id="auth-form" novalidate>
+        <div class="field"><label>Full name<span class="req">*</span></label><input class="input" name="full_name" placeholder="As per PAN / Aadhaar" autocomplete="name" required></div>
+        <div class="field"><label>Email<span class="req">*</span></label><input class="input" type="email" name="email" placeholder="you@altiusinvestech.com" autocomplete="email" required></div>
+        <div class="field"><label>Phone number<span class="req">*</span></label><input class="input" type="tel" name="phone" placeholder="98765 43210" autocomplete="tel" required></div>
+        <div class="field"><label>Password<span class="req">*</span></label>${passwordField('password', 'At least 8 characters', 'new-password')}</div>
+        <div class="field"><label>Confirm password<span class="req">*</span></label>${passwordField('confirm', 'Re-enter password', 'new-password')}</div>
+        <div class="form-msg"></div>
+        <button class="btn btn-primary btn-block" type="submit">Request access</button>
+      </form>
+      <p class="auth-switch">Already have an account? <button class="link-btn" data-action="auth-view" data-view="login">Sign in</button></p>`,
+    forgot: `
+      <h2>Reset your password</h2>
+      <p class="sub">We'll email you a link to set a new password.</p>
+      <form id="auth-form" novalidate>
+        <div class="field"><label>Email</label><input class="input" type="email" name="email" placeholder="you@altiusinvestech.com" autocomplete="email" required></div>
+        <div class="form-msg"></div>
+        <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+      </form>
+      <p class="auth-switch"><button class="link-btn" data-action="auth-view" data-view="login">Back to sign in</button></p>`,
+    reset: `
+      <h2>Set a new password</h2>
+      <p class="sub">Choose a new password for your account.</p>
+      <form id="auth-form" novalidate>
+        <div class="field"><label>New password</label>${passwordField('password', 'At least 8 characters', 'new-password')}</div>
+        <div class="field"><label>Confirm password</label>${passwordField('confirm', 'Re-enter password', 'new-password')}</div>
+        <div class="form-msg"></div>
+        <button class="btn btn-primary btn-block" type="submit">Update password</button>
+      </form>`,
+    sent: `
+      <div class="big-ico" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--green-soft);color:var(--green);margin-bottom:18px">${icon('mail')}</div>
+      <h2>Check your inbox</h2>
+      <p class="sub" id="sent-msg">${esc(state.sentMessage || '')}</p>
+      <button class="btn btn-block" data-action="auth-view" data-view="login">${icon('arrowLeft')}Back to sign in</button>`,
+  };
+
+  $('#app').innerHTML = `
+    <div class="auth">
+      <aside class="auth-art">
+        <div class="brand">${LOGO}<div>Altius Investech<small>People &amp; HR</small></div></div>
+        <div>
+          <h1>One place for your people, from first sign-up to every salary revision.</h1>
+          <p class="lead">Access control, onboarding KYC and a clean employee master — managed by HR, with each employee seeing only what's theirs.</p>
+          <div class="art-cards">
+            <div class="art-card"><span class="dot">${icon('shield')}</span><div><b>Admin-approved access</b><span>Every sign-up is reviewed before entry</span></div></div>
+            <div class="art-card"><span class="dot">${icon('fileCheck')}</span><div><b>Paperless onboarding</b><span>KYC documents uploaded and verified online</span></div></div>
+            <div class="art-card"><span class="dot">${icon('trending')}</span><div><b>Salary growth history</b><span>Month-by-month revisions in one timeline</span></div></div>
+          </div>
+        </div>
+        <p style="color:#6B7280;font-size:12.5px">© ${new Date().getFullYear()} Altius Investech</p>
+      </aside>
+      <main class="auth-form-wrap"><div class="auth-form">
+        <div class="brand" style="margin-bottom:30px">${LOGO}<div>Altius HRMS<small>Altius Investech</small></div></div>
+        ${forms[v] || forms.login}
+      </div></main>
+    </div>`;
+
+  $$('[data-pw-toggle]').forEach((b) => b.addEventListener('click', () => {
+    const input = b.previousElementSibling;
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    b.innerHTML = icon(show ? 'eyeOff' : 'eye');
+  }));
+  const form = $('#auth-form');
+  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); handleAuthSubmit(v, form); });
+  $('#auth-form input')?.focus();
+}
+
+async function handleAuthSubmit(view, form) {
+  const f = Object.fromEntries(new FormData(form));
+  const msg = $('.form-msg', form);
+  const btn = $('button[type=submit]', form);
+  const fail = (text) => { msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(text)}</span></div>`; };
+  msg.innerHTML = '';
+  const email = String(f.email || '').trim().toLowerCase();
+  const redirectTo = location.origin + location.pathname;
+
+  try {
+    if (view === 'login') {
+      if (!isEmail(email) || !f.password) return fail('Enter your email and password.');
+      await withBusy(btn, 'Signing in…', async () => {
+        const { error } = await db.auth.signInWithPassword({ email, password: f.password });
+        if (error) throw error;
+      });
+    } else if (view === 'signup') {
+      const name = String(f.full_name || '').trim();
+      if (name.length < 2) return fail('Please enter your full name.');
+      if (!isEmail(email)) return fail('Please enter a valid email address.');
+      if (!isPhone(f.phone)) return fail('Please enter a valid phone number (10 digits, optionally with country code).');
+      if (String(f.password).length < 8) return fail('Password must be at least 8 characters.');
+      if (f.password !== f.confirm) return fail('Passwords do not match.');
+      await withBusy(btn, 'Creating account…', async () => {
+        const { data, error } = await db.auth.signUp({
+          email, password: f.password,
+          options: { data: { full_name: name, phone: normPhone(f.phone) }, emailRedirectTo: redirectTo },
+        });
+        if (error) throw error;
+        if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+          throw new Error('User already registered');
+        }
+        if (!data.session) {
+          state.sentMessage = `We've sent a confirmation link to ${email}. Confirm your email, then sign in — your access request will then be with the admin.`;
+          renderAuth('sent');
+        }
+      });
+    } else if (view === 'forgot') {
+      if (!isEmail(email)) return fail('Please enter a valid email address.');
+      await withBusy(btn, 'Sending…', async () => {
+        const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo });
+        if (error) throw error;
+        state.sentMessage = `If an account exists for ${email}, you'll receive a password reset link shortly.`;
+        renderAuth('sent');
+      });
+    } else if (view === 'reset') {
+      if (String(f.password).length < 8) return fail('Password must be at least 8 characters.');
+      if (f.password !== f.confirm) return fail('Passwords do not match.');
+      await withBusy(btn, 'Updating…', async () => {
+        const { error } = await db.auth.updateUser({ password: f.password });
+        if (error) throw error;
+      });
+      state.recovery = false;
+      toast('Password updated.');
+      history.replaceState(null, '', location.pathname);
+      await loadSelfAndRoute();
+    }
+  } catch (e) {
+    fail(friendlyError(e));
+  }
+}
+
+/* =====================================================================
+   ONBOARDING (team member before approval)
+   ===================================================================== */
+function soloTop() {
+  return `<header class="solo-top">
+    <div class="brand">${LOGO}<div>Altius HRMS<small>Employee onboarding</small></div></div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="muted nowrap who" style="font-size:13px">${esc(state.profile?.email || state.user?.email || '')}</span>
+      <button class="btn btn-sm" data-action="signout">${icon('logout', 'sm')}Sign out</button>
+    </div></header>`;
+}
+
+function renderNoProfile() {
+  $('#app').innerHTML = `${soloTop()}<div class="center-wrap"><div class="card status-card">
+    <div class="big-ico" style="background:var(--red-soft);color:var(--red)">${icon('x')}</div>
+    <h2>No active request for this account</h2>
+    <p>Your sign-up request may have been rejected by the admin, or it was cancelled. You can sign out and create a new request, or contact HR.</p>
+    <div class="btns"><button class="btn" data-action="reload">${icon('refresh')}Check again</button>
+    <button class="btn btn-primary" data-action="signout">${icon('logout')}Sign out</button></div></div></div>`;
+}
+
+function renderWaiting(kind) {
+  const p = state.profile;
+  const check = icon('check');
+  const steps = [
+    { t: 'Account created', s: fmtDateTime(p.created_at), done: true },
+    { t: 'Access given by admin', s: p.access_granted_at ? fmtDateTime(p.access_granted_at) : 'Waiting for admin', done: !!p.access_granted_at, now: kind === 'pending' },
+    { t: 'KYC submitted', s: p.kyc_submitted_at ? fmtDateTime(p.kyc_submitted_at) : 'Upload documents & details', done: kind === 'submitted' },
+    { t: 'KYC approved — HRMS access', s: kind === 'submitted' ? 'Under review' : 'Final step', done: false, now: kind === 'submitted' },
+  ];
+  const content = {
+    pending: {
+      ico: 'clock', bg: 'var(--amber-soft)', fg: 'var(--amber)',
+      title: 'Your request is with the admin',
+      text: `Thanks, ${esc(firstName(p.full_name))}. An admin will review your sign-up. Once access is given, you'll be asked to complete your KYC here.`,
+    },
+    submitted: {
+      ico: 'fileCheck', bg: 'var(--violet-soft)', fg: 'var(--violet)',
+      title: 'KYC submitted — under review',
+      text: 'The admin is verifying your documents. You will get access to the HRMS as soon as it is approved.',
+    },
+    inactive: {
+      ico: 'lock', bg: 'var(--gray-soft)', fg: 'var(--muted)',
+      title: 'Your account is inactive',
+      text: 'Please contact HR if you think this is a mistake.',
+    },
+  }[kind];
+  $('#app').innerHTML = `${soloTop()}<div class="center-wrap"><div class="card status-card">
+    <div class="big-ico" style="background:${content.bg};color:${content.fg}">${icon(content.ico)}</div>
+    <h2>${content.title}</h2><p>${content.text}</p>
+    ${kind !== 'inactive' ? `<div class="timeline">${steps.map((s) => `
+      <div class="t ${s.done ? 'done' : s.now ? 'now' : ''}"><i>${s.done ? check : ''}</i><div><b>${s.t}</b><span>${esc(s.s)}</span></div></div>`).join('')}</div>` : ''}
+    <div class="btns"><button class="btn" data-action="reload">${icon('refresh')}Check status</button></div>
+  </div></div>`;
+}
+
+/* ---------- KYC form ---------- */
+const kycDraftKey = () => `altius-hrms-kyc-draft-${state.user.id}`;
+function loadKycDraft() { try { return JSON.parse(localStorage.getItem(kycDraftKey()) || 'null'); } catch { return null; } }
+function saveKycDraft(d) { try { localStorage.setItem(kycDraftKey(), JSON.stringify(d)); } catch { /* storage unavailable */ } }
+function clearKycDraft() { try { localStorage.removeItem(kycDraftKey()); } catch { /* storage unavailable */ } }
+
+async function renderKycForm() {
+  const p = state.profile;
+  $('#app').innerHTML = `${soloTop()}<div class="loading">${spinnerHTML}</div>`;
+  let existing = null;
+  try { existing = await api.myKyc(); } catch { /* first submission */ }
+
+  // model: start from a previous (sent back) submission, then overlay the local draft
+  const k = {
+    date_of_birth: p.date_of_birth || '',
+    bank_account_number: existing?.bank_account_number || '',
+    bank_account_confirm: existing?.bank_account_number || '',
+    bank_ifsc: existing?.bank_ifsc || '',
+    emergency_name: existing?.emergency_name || '',
+    emergency_relationship: existing?.emergency_relationship || '',
+    emergency_phone: existing?.emergency_phone || '',
+    files: Object.fromEntries(DOCS.map((d) => [d.key, existing?.[d.col] ? { path: existing[d.col], name: fileNameFromPath(existing[d.col]) } : null])),
+  };
+  const draft = loadKycDraft();
+  if (draft) {
+    for (const key of Object.keys(k)) if (key !== 'files' && draft[key]) k[key] = draft[key];
+    for (const d of DOCS) if (draft.files?.[d.key]) k.files[d.key] = draft.files[d.key];
+  }
+  const savedPaths = new Set(DOCS.map((d) => existing?.[d.col]).filter(Boolean));
+  const persist = () => saveKycDraft(k);
+
+  const uploadTile = (d) => {
+    const f = k.files[d.key];
+    return `<div class="upload ${f ? 'done' : ''}" data-doc="${d.key}">
+      <div class="head"><b>${esc(d.label)}</b><span class="tag ${d.required ? 'req' : ''}">${d.required ? 'Required' : 'Optional'}</span></div>
+      ${f ? `
+        <div class="file"><span class="ico">${icon('fileCheck')}</span><div style="min-width:0"><div class="fname" title="${esc(f.name)}">${esc(f.name)}</div><div class="fsub">Uploaded</div></div></div>
+        <div class="acts"><button type="button" class="btn btn-sm" data-action="open-doc" data-path="${esc(f.path)}">${icon('eye', 'sm')}View</button>
+        <button type="button" class="btn btn-sm" data-pick="${d.key}">${icon('upload', 'sm')}Replace</button>
+        ${!d.required ? `<button type="button" class="btn btn-sm btn-ghost" data-clear="${d.key}" title="Remove">${icon('trash', 'sm')}</button>` : ''}</div>`
+      : `<div class="drop" data-pick="${d.key}" role="button" tabindex="0">${icon('upload')}<b>Click to upload</b><span>PDF or JPG · up to ${MAX_FILE_MB} MB</span>${d.hint ? `<span class="faint">${esc(d.hint)}</span>` : ''}</div>`}
+      <input type="file" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" hidden data-input="${d.key}">
+    </div>`;
+  };
+
+  $('#app').innerHTML = `${soloTop()}
+  <main class="solo">
+    <div class="solo-hero">
+      <h1>Complete your onboarding</h1>
+      <p>Hi ${esc(firstName(p.full_name))}, the admin has given you access. Upload your documents and details below — once submitted, HR will verify and activate your HRMS account.</p>
+      <div class="steps" id="kyc-steps"></div>
+    </div>
+    ${p.kyc_remarks ? `<div class="alert alert-warn">${icon('alert')}<div><b>Sent back by admin:</b> ${esc(p.kyc_remarks)}<br><span style="font-size:12.5px">Please make the corrections and submit again.</span></div></div>` : ''}
+    <form id="kyc-form" novalidate class="grid" style="gap:18px">
+      <section class="card">
+        <div class="card-head"><div><h3>Personal details</h3><p>From your sign-up. Contact HR if anything here is wrong.</p></div></div>
+        <div class="card-body grid g2">
+          <div class="field"><label>Full name</label><div class="locked"><span>${esc(p.full_name)}</span>${icon('lock')}</div></div>
+          <div class="field"><label>Email</label><div class="locked"><span>${esc(p.email)}</span>${icon('lock')}</div></div>
+          <div class="field"><label>Phone</label><div class="locked"><span>${esc(p.phone || '—')}</span>${icon('lock')}</div></div>
+          <div class="field"><label>Date of birth<span class="req">*</span></label><input class="input" type="date" name="date_of_birth" max="${todayISO()}" value="${esc(k.date_of_birth)}"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><div><h3>Documents</h3><p>Upload clear scans or photos. PDF or JPG, up to ${MAX_FILE_MB} MB each.</p></div></div>
+        <div class="card-body"><div class="uploads" id="uploads">${DOCS.map(uploadTile).join('')}</div></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><div><h3>Bank details</h3><p>Your salary will be credited to this account.</p></div></div>
+        <div class="card-body grid g3">
+          <div class="field"><label>Account number<span class="req">*</span></label><input class="input mono" name="bank_account_number" inputmode="numeric" autocomplete="off" placeholder="e.g. 50100123456789" value="${esc(k.bank_account_number)}"></div>
+          <div class="field"><label>Re-enter account number<span class="req">*</span></label><input class="input mono" name="bank_account_confirm" inputmode="numeric" autocomplete="off" placeholder="Confirm account number" value="${esc(k.bank_account_confirm)}"></div>
+          <div class="field"><label>IFSC code<span class="req">*</span></label><input class="input mono" name="bank_ifsc" autocomplete="off" placeholder="e.g. HDFC0001234" maxlength="11" style="text-transform:uppercase" value="${esc(k.bank_ifsc)}"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><div><h3>Emergency contact</h3><p>Who should we contact in an emergency?</p></div></div>
+        <div class="card-body grid g3">
+          <div class="field"><label>Name<span class="req">*</span></label><input class="input" name="emergency_name" placeholder="Full name" value="${esc(k.emergency_name)}"></div>
+          <div class="field"><label>Relationship<span class="req">*</span></label>
+            <select class="input" name="emergency_relationship"><option value="">Select</option>
+            ${RELATIONSHIPS.map((r) => `<option ${k.emergency_relationship === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+          <div class="field"><label>Contact number<span class="req">*</span></label><input class="input" type="tel" name="emergency_phone" placeholder="98765 43210" value="${esc(k.emergency_phone)}"></div>
+        </div>
+      </section>
+
+      <div id="kyc-msg"></div>
+      <div class="form-foot">
+        <span class="muted" style="font-size:12.5px">${icon('lock', 'sm')} Your documents are stored privately and visible only to HR.</span>
+        <button class="btn btn-primary" type="submit" style="height:42px;padding:0 22px">Submit for review ${icon('arrowRight')}</button>
+      </div>
+    </form>
+  </main>`;
+
+  const form = $('#kyc-form');
+  const val = (name) => String(form.elements[name].value || '').trim();
+
+  const updateSteps = () => {
+    const docsOk = DOCS.filter((d) => d.required).every((d) => k.files[d.key]);
+    const bankOk = /^\d{9,18}$/.test(k.bank_account_number) && k.bank_account_number === k.bank_account_confirm && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(k.bank_ifsc.toUpperCase());
+    const emOk = k.emergency_name && k.emergency_relationship && isPhone(k.emergency_phone);
+    const s = [['Personal', !!k.date_of_birth], ['Documents', docsOk], ['Bank', bankOk], ['Emergency contact', emOk]];
+    $('#kyc-steps').innerHTML = s.map(([t, ok], i) => `<span class="${ok ? 'ok' : ''}"><i>${ok ? icon('check', 'sm') : i + 1}</i>${t}</span>`).join('');
+  };
+  updateSteps();
+
+  form.addEventListener('input', (e) => {
+    const n = e.target.name;
+    if (n && n in k) { k[n] = n === 'bank_ifsc' ? e.target.value.toUpperCase().trim() : e.target.value.trim(); persist(); updateSteps(); }
+    e.target.classList.remove('invalid');
+    $('#kyc-msg').innerHTML = '';
+  });
+
+  const rerenderTile = (key) => {
+    const d = DOCS.find((x) => x.key === key);
+    const old = $(`.upload[data-doc="${key}"]`);
+    old.outerHTML = uploadTile(d);
+    updateSteps();
+  };
+
+  const uploadsEl = $('#uploads');
+  uploadsEl.addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-pick]');
+    if (pick) { $(`[data-input="${pick.dataset.pick}"]`).click(); return; }
+    const clr = e.target.closest('[data-clear]');
+    if (clr) {
+      const key = clr.dataset.clear;
+      const prev = k.files[key];
+      if (prev && !savedPaths.has(prev.path)) api.removeFiles([prev.path]).catch(() => {});
+      k.files[key] = null; persist(); rerenderTile(key);
+    }
+  });
+  uploadsEl.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('.drop[data-pick]')) { e.preventDefault(); e.target.click(); }
+  });
+  uploadsEl.addEventListener('change', async (e) => {
+    const input = e.target.closest('[data-input]');
+    if (!input || !input.files.length) return;
+    const key = input.dataset.input;
+    const file = input.files[0];
+    input.value = '';
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (!['pdf', 'jpg', 'jpeg'].includes(ext) || (file.type && !ALLOWED_TYPES.includes(file.type))) {
+      return toast('Only PDF or JPG files are allowed.', 'error');
+    }
+    if (file.size > MAX_FILE_MB * 1024 * 1024) return toast(`File is larger than ${MAX_FILE_MB} MB.`, 'error');
+    const tile = $(`.upload[data-doc="${key}"]`);
+    tile.classList.remove('invalid');
+    const area = $('.drop, .file', tile);
+    if (area) area.outerHTML = `<div class="drop" style="cursor:default">${spinnerHTML}<b>Uploading…</b><span>${esc(file.name)}</span></div>`;
+    $('.acts', tile)?.remove();
+    const path = `${state.user.id}/${key}-${Date.now()}.${ext === 'jpeg' ? 'jpg' : ext}`;
+    try {
+      await api.upload(path, file);
+      const prev = k.files[key];
+      if (prev && !savedPaths.has(prev.path)) api.removeFiles([prev.path]).catch(() => {});
+      k.files[key] = { path, name: file.name };
+      persist();
+      toast(`${DOCS.find((d) => d.key === key).label} uploaded.`);
+    } catch (err) {
+      toast(`Upload failed: ${friendlyError(err)}`, 'error');
+    }
+    rerenderTile(key);
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = $('#kyc-msg');
+    msg.innerHTML = '';
+    const errors = [];
+    const mark = (name) => form.elements[name]?.classList.add('invalid');
+
+    if (!val('date_of_birth')) { errors.push('Date of birth'); mark('date_of_birth'); }
+    for (const d of DOCS) {
+      if (d.required && !k.files[d.key]) { errors.push(d.label); $(`.upload[data-doc="${d.key}"]`).classList.add('invalid'); }
+    }
+    const acc = val('bank_account_number').replace(/\s/g, '');
+    const ifsc = val('bank_ifsc').toUpperCase();
+    if (!/^\d{9,18}$/.test(acc)) { errors.push('Valid account number (9–18 digits)'); mark('bank_account_number'); }
+    else if (acc !== val('bank_account_confirm').replace(/\s/g, '')) { errors.push('Account numbers must match'); mark('bank_account_confirm'); }
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) { errors.push('Valid IFSC code (e.g. HDFC0001234)'); mark('bank_ifsc'); }
+    if (!val('emergency_name')) { errors.push('Emergency contact name'); mark('emergency_name'); }
+    if (!val('emergency_relationship')) { errors.push('Emergency contact relationship'); mark('emergency_relationship'); }
+    if (!isPhone(val('emergency_phone'))) { errors.push('Valid emergency contact number'); mark('emergency_phone'); }
+
+    if (errors.length) {
+      msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<div><b>Please complete:</b> ${errors.map(esc).join(', ')}.</div></div>`;
+      msg.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const payload = {
+      date_of_birth: val('date_of_birth'),
+      bank_account_number: acc,
+      bank_ifsc: ifsc,
+      emergency_name: val('emergency_name'),
+      emergency_relationship: val('emergency_relationship'),
+      emergency_phone: normPhone(val('emergency_phone')),
+    };
+    for (const d of DOCS) payload[d.col] = k.files[d.key]?.path || null;
+
+    const btn = $('button[type=submit]', form);
+    try {
+      await withBusy(btn, 'Submitting…', () => api.rpc('submit_kyc', { p: payload }));
+      clearKycDraft();
+      toast('KYC submitted for review.');
+      await loadSelfAndRoute();
+    } catch (err) {
+      msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(friendlyError(err))}</span></div>`;
+    }
+  });
+}
+
+/* =====================================================================
+   APP SHELL (separate navigation for admin and team)
+   ===================================================================== */
+function adminCounts() {
+  const P = state.admin.profiles;
+  return {
+    pending: P.filter((p) => p.status === 'pending').length,
+    review: P.filter((p) => p.status === 'kyc_submitted').length,
+    awaiting: P.filter((p) => p.status === 'kyc_pending').length,
+    active: P.filter((p) => p.status === 'active').length,
+  };
+}
+
+const NAV = {
+  admin: () => {
+    const c = state.admin.loaded ? adminCounts() : {};
+    const accessBadge = (c.pending || 0) + (c.review || 0);
+    return [
+      { label: 'Overview' },
+      { key: 'dashboard', label: 'Dashboard', icon: 'grid' },
+      { label: 'People' },
+      { key: 'access', label: 'Access Control', icon: 'shield', badge: accessBadge },
+      { key: 'emd', label: 'Employee Master Data', icon: 'users' },
+      { label: 'Settings' },
+      { key: 'team-access', label: 'Team Access', icon: 'sliders' },
+    ];
+  },
+  team: () => [
+    { label: 'Menu' },
+    { key: 'home', label: 'Home', icon: 'home' },
+    { key: 'profile', label: 'My Profile', icon: 'user' },
+  ],
+};
+const PAGES = {
+  admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess },
+  team: { home: pageTeamHome, profile: pageMyProfile },
+};
+const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
+
+function paintShell(kind, active, view) {
+  const p = state.profile;
+  const navHTML = NAV[kind]().map((n) => n.key
+    ? `<a href="#/${n.key}" class="${n.key === active ? 'active' : ''}">${icon(n.icon)}<span>${n.label}</span>${n.badge ? `<span class="badge">${n.badge}</span>` : ''}</a>`
+    : `<div class="nav-label">${n.label}</div>`).join('');
+  const body = view
+    ? view.html
+    : `<div class="card"><div class="card-body grid" style="gap:12px">${'<div class="skeleton" style="height:16px"></div>'.repeat(5)}</div></div>`;
+  $('#app').innerHTML = `
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">${LOGO}<div>Altius HRMS<small>${kind === 'admin' ? 'Admin console' : 'Employee portal'}</small></div></div>
+      <nav class="nav">${navHTML}</nav>
+      <div class="side-foot">
+        ${person(p, `<span class="role-tag">${kind === 'admin' ? 'Admin' : 'Employee'}</span>`)}
+        <button class="icon-btn" data-action="signout" title="Sign out" aria-label="Sign out">${icon('logout')}</button>
+      </div>
+    </aside>
+    <div class="scrim" data-action="close-nav"></div>
+    <main class="main">
+      <header class="topbar">
+        <button class="icon-btn menu-btn" data-action="toggle-nav" aria-label="Menu">${icon('menu')}</button>
+        <div style="min-width:0"><h1>${esc(view?.title || '')}</h1>${view?.crumbs ? `<div class="crumbs">${view.crumbs}</div>` : ''}</div>
+        <div class="actions">${view?.actions || ''}</div>
+      </header>
+      <section class="content">${body}</section>
+    </main>
+  </div>`;
+  $$('.nav a').forEach((a) => a.addEventListener('click', () => $('.shell')?.classList.remove('nav-open')));
+}
+
+async function renderShell(kind) {
+  const seq = ++renderSeq;
+  const r = parseRoute();
+  const page = PAGES[kind][r.page];
+  if (!page) { history.replaceState(null, '', `#/${DEFAULT_PAGE[kind]}`); lastHash = location.hash; return renderShell(kind); }
+  if (kind === 'admin' && !state.admin.loaded) paintShell(kind, r.page, null);
+  else if (!$('.shell')) paintShell(kind, r.page, null);
+  try {
+    const view = await page(r);
+    if (seq !== renderSeq) return;
+    paintShell(kind, r.page, view);
+    view.mount?.();
+  } catch (e) {
+    if (seq !== renderSeq) return;
+    paintShell(kind, r.page, { title: 'Something went wrong', html: `<div class="alert alert-error">${icon('alert')}<span>${esc(friendlyError(e))}</span></div>` });
+  }
+}
+
+const emptyState = (ico, title, text) => `<div class="empty"><span class="ico">${icon(ico)}</span><b>${title}</b><span>${text}</span></div>`;
+
+/* =====================================================================
+   ADMIN PAGES
+   ===================================================================== */
+async function ensureAdmin(force = false) {
+  if (state.admin.loaded && !force) return;
+  const [profiles, salaries] = await Promise.all([api.allProfiles(), api.allSalaries()]);
+  state.admin = { loaded: true, profiles, salaries };
+}
+const byId = (id) => state.admin.profiles.find((p) => p.id === id);
+const salariesOf = (id) => state.admin.salaries
+  .filter((s) => s.employee_id === id)
+  .sort((a, b) => a.effective_month.localeCompare(b.effective_month));
+function salarySummary(id) {
+  const rows = salariesOf(id);
+  const latest = rows[rows.length - 1] || null;
+  const prev = rows[rows.length - 2] || null;
+  const pct = latest && prev && Number(prev.amount) > 0 ? ((Number(latest.amount) - Number(prev.amount)) / Number(prev.amount)) * 100 : null;
+  return { rows, latest, prev, pct };
+}
+const activeEmployees = () => state.admin.profiles.filter((p) => p.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name));
+const pctHTML = (pct) => pct === null ? '' : `<span class="${pct >= 0 ? 'delta-up' : 'delta-down'}">${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%</span>`;
+
+async function refreshAdmin() {
+  await ensureAdmin(true);
+  render();
+}
+
+/* ---------- Dashboard ---------- */
+async function pageDashboard() {
+  await ensureAdmin();
+  const c = adminCounts();
+  const P = state.admin.profiles;
+  const attention = P.filter((p) => p.status === 'pending' || p.status === 'kyc_submitted')
+    .sort((a, b) => new Date(b.kyc_submitted_at || b.created_at) - new Date(a.kyc_submitted_at || a.created_at)).slice(0, 6);
+  const recent = P.filter((p) => p.status === 'active' && p.date_of_joining)
+    .sort((a, b) => b.date_of_joining.localeCompare(a.date_of_joining)).slice(0, 6);
+  const thisMonth = todayISO().slice(0, 7) + '-01';
+  const payroll = activeEmployees().reduce((sum, e) => {
+    const inEffect = salariesOf(e.id).filter((x) => x.effective_month <= thisMonth).pop();
+    return sum + Number(inEffect?.amount || 0);
+  }, 0);
+
+  const stat = (href, label, value, foot, ico, bg, fg) => `
+    <a class="card stat" href="${href}"><div class="top"><span>${label}</span><span class="ico" style="background:${bg};color:${fg}">${icon(ico)}</span></div>
+    <div class="value">${value}</div><div class="foot">${foot}</div></a>`;
+
+  return {
+    title: `${greeting()}, ${firstName(state.profile.full_name)}`,
+    crumbs: new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+    html: `
+      <div class="stats">
+        ${stat('#/emd', 'Employees', c.active, `This month's payroll ${fmtINR(payroll)}`, 'users', 'var(--accent-soft)', 'var(--accent)')}
+        ${stat('#/access/requests', 'Signup requests', c.pending, 'Waiting for access decision', 'userPlus', 'var(--amber-soft)', 'var(--amber)')}
+        ${stat('#/access/kyc', 'KYC to review', c.review, 'Submitted, awaiting approval', 'fileCheck', 'var(--violet-soft)', 'var(--violet)')}
+        ${stat('#/access/awaiting', 'Awaiting KYC', c.awaiting, 'Access given, KYC not submitted', 'clock', 'var(--blue-soft)', 'var(--blue)')}
+      </div>
+      <div class="split">
+        <div class="card">
+          <div class="card-head"><div><h3>Needs your attention</h3><p>Sign-ups and KYC submissions waiting on you</p></div>
+            <div class="right"><a class="btn btn-sm" href="#/access">Open Access Control</a></div></div>
+          ${attention.length ? attention.map((p) => `
+            <div class="list-row">${person(p, esc(p.email))}
+              <div class="right">${statusChip(p.status)}<span class="faint nowrap" style="font-size:12px">${fmtRelative(p.kyc_submitted_at || p.created_at)}</span>
+              <a class="btn btn-sm" href="#/access/${p.status === 'pending' ? 'requests' : 'kyc'}">${p.status === 'pending' ? 'Decide' : 'Review'}</a></div></div>`).join('')
+            : emptyState('check', 'All caught up', 'No pending sign-ups or KYC reviews.')}
+        </div>
+        <div class="card">
+          <div class="card-head"><div><h3>Recently joined</h3><p>Latest employees by date of joining</p></div></div>
+          ${recent.length ? recent.map((p) => `
+            <div class="list-row">${person(p, esc(p.designation || 'Designation not set'))}
+              <div class="right"><span class="muted nowrap" style="font-size:12.5px">${fmtDate(p.date_of_joining)}</span>
+              <a class="icon-btn" href="#/emd/${p.id}" title="Open">${icon('arrowRight')}</a></div></div>`).join('')
+            : emptyState('users', 'No employees yet', 'Approved employees will appear here.')}
+        </div>
+      </div>`,
+  };
+}
+
+/* ---------- Access Control ---------- */
+async function pageAccess(r) {
+  await ensureAdmin();
+  const tab = ['requests', 'kyc', 'awaiting'].includes(r.id) ? r.id : 'requests';
+  const P = state.admin.profiles;
+  const lists = {
+    requests: P.filter((p) => p.status === 'pending').sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+    kyc: P.filter((p) => p.status === 'kyc_submitted').sort((a, b) => new Date(a.kyc_submitted_at) - new Date(b.kyc_submitted_at)),
+    awaiting: P.filter((p) => p.status === 'kyc_pending').sort((a, b) => new Date(b.access_granted_at) - new Date(a.access_granted_at)),
+  };
+  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['awaiting', 'Awaiting KYC']];
+  const rows = lists[tab];
+
+  let table;
+  if (!rows.length) {
+    table = {
+      requests: emptyState('inbox', 'No signup requests', 'New sign-ups will appear here for you to give access or reject.'),
+      kyc: emptyState('fileCheck', 'Nothing to review', 'When employees submit their KYC, it will appear here.'),
+      awaiting: emptyState('clock', 'No one is pending KYC', 'People you give access to appear here until they submit KYC.'),
+    }[tab];
+  } else if (tab === 'requests') {
+    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Requested</th><th></th></tr></thead><tbody>
+      ${rows.map((p) => `<tr>
+        <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
+        <td class="nowrap muted" title="${esc(fmtDateTime(p.created_at))}">${fmtRelative(p.created_at)}</td>
+        <td class="actions"><button class="btn btn-sm btn-danger" data-reject="${p.id}">${icon('x', 'sm')}Reject</button>
+        <button class="btn btn-sm btn-primary" data-grant="${p.id}">${icon('check', 'sm')}Give access</button></td></tr>`).join('')}
+      </tbody></table></div>`;
+  } else if (tab === 'kyc') {
+    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Submitted</th><th></th></tr></thead><tbody>
+      ${rows.map((p) => `<tr>
+        <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
+        <td class="nowrap muted" title="${esc(fmtDateTime(p.kyc_submitted_at))}">${fmtRelative(p.kyc_submitted_at)}</td>
+        <td class="actions"><button class="btn btn-sm btn-primary" data-review="${p.id}">${icon('eye', 'sm')}Review KYC</button></td></tr>`).join('')}
+      </tbody></table></div>`;
+  } else {
+    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Access given</th><th>Status</th></tr></thead><tbody>
+      ${rows.map((p) => `<tr>
+        <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
+        <td class="nowrap muted">${fmtDateTime(p.access_granted_at)}</td>
+        <td>${p.kyc_remarks ? `<span class="chip amber" title="${esc(p.kyc_remarks)}">Sent back</span>` : statusChip(p.status)}</td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
+  return {
+    title: 'Access Control',
+    crumbs: 'Approve sign-ups, then verify KYC before employees can use the HRMS',
+    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button>`,
+    html: `
+      <div><nav class="tabs">${tabs.map(([k, l]) => `<a href="#/access/${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${lists[k].length}</span></a>`).join('')}</nav></div>
+      <div class="card">${table}</div>`,
+    mount() {
+      $('#refresh-btn').addEventListener('click', (e) => withBusy(e.currentTarget, '', refreshAdmin));
+      $$('[data-grant]').forEach((b) => b.addEventListener('click', async () => {
+        const p = byId(b.dataset.grant);
+        try {
+          await withBusy(b, 'Giving access…', () => api.rpc('admin_grant_access', { p_user: p.id }));
+          toast(`Access given — ${p.full_name} can now fill the KYC form.`);
+          await refreshAdmin();
+        } catch (e) { toast(friendlyError(e), 'error'); }
+      }));
+      $$('[data-reject]').forEach((b) => b.addEventListener('click', async () => {
+        const p = byId(b.dataset.reject);
+        const ok = await confirmDialog({
+          title: 'Reject this sign-up?',
+          message: `<b>${esc(p.full_name)}</b> (${esc(p.email)}) will be removed and their sign-up cancelled. They will need to sign up again to request access.`,
+          confirmText: 'Reject sign-up', danger: true,
+        });
+        if (!ok) return;
+        try {
+          await withBusy(b, '', () => api.rpc('admin_reject_signup', { p_user: p.id }));
+          toast('Sign-up rejected and cancelled.');
+          await refreshAdmin();
+        } catch (e) { toast(friendlyError(e), 'error'); }
+      }));
+      $$('[data-review]').forEach((b) => b.addEventListener('click', () => openKycReview(b.dataset.review, b)));
+    },
+  };
+}
+
+function managerOptions(selected, excludeId) {
+  return `<option value="">— None —</option>` + activeEmployees().filter((e) => e.id !== excludeId)
+    .map((e) => `<option value="${e.id}" ${e.id === selected ? 'selected' : ''}>${esc(e.full_name)}${e.designation ? ` · ${esc(e.designation)}` : ''}</option>`).join('');
+}
+function monthYearSelects(name, y, m) {
+  const now = new Date().getFullYear();
+  const years = []; for (let i = now + 2; i >= 2010; i--) years.push(i);
+  return `<select class="input" data-m="${name}">${MONTHS.map((mn, i) => `<option value="${i + 1}" ${i + 1 === m ? 'selected' : ''}>${mn}</option>`).join('')}</select>
+          <select class="input" data-y="${name}">${years.map((yr) => `<option ${yr === y ? 'selected' : ''}>${yr}</option>`).join('')}</select>`;
+}
+
+function docListHTML(kyc) {
+  return `<div class="doc-list">${DOCS.map((d) => {
+    const path = kyc?.[d.col];
+    return `<div class="doc ${path ? '' : 'missing'}"><span class="ico">${icon(path ? 'file' : 'x')}</span>
+      <div class="meta"><b>${esc(d.label)}</b><span>${path ? esc(fileNameFromPath(path)) : d.required ? 'Missing' : 'Not provided (optional)'}</span></div>
+      ${path ? `<button class="btn btn-sm" data-action="open-doc" data-path="${esc(path)}">${icon('external', 'sm')}View</button>` : ''}</div>`;
+  }).join('')}</div>`;
+}
+
+async function openKycReview(id, btn) {
+  const p = byId(id);
+  let kyc;
+  try { kyc = await withBusy(btn, 'Loading…', () => api.kycFor(id)); }
+  catch (e) { return toast(friendlyError(e), 'error'); }
+  if (!kyc) return toast('No KYC record found for this employee.', 'error');
+  const now = new Date();
+
+  const { el, close } = openModal({
+    title: `KYC review — ${p.full_name}`,
+    subtitle: `${esc(p.email)} · ${esc(p.phone || '—')} · submitted ${esc(fmtDateTime(p.kyc_submitted_at))}`,
+    size: 'lg',
+    body: `
+      <div class="split" style="grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)">
+        <div class="grid" style="gap:22px">
+          <div><div class="section-title">Documents</div>${docListHTML(kyc)}</div>
+          <div><div class="section-title">Personal &amp; bank</div>
+            <div class="kv">
+              <div><div class="k">Date of birth</div><div class="v">${fmtDate(p.date_of_birth)}</div></div>
+              <div><div class="k">Phone</div><div class="v">${esc(p.phone || '—')}</div></div>
+              <div><div class="k">Account number</div><div class="v mono">${esc(kyc.bank_account_number)}</div></div>
+              <div><div class="k">IFSC</div><div class="v mono">${esc(kyc.bank_ifsc)}</div></div>
+            </div></div>
+          <div><div class="section-title">Emergency contact</div>
+            <div class="kv">
+              <div><div class="k">Name</div><div class="v">${esc(kyc.emergency_name)}</div></div>
+              <div><div class="k">Relationship</div><div class="v">${esc(kyc.emergency_relationship)}</div></div>
+              <div><div class="k">Contact number</div><div class="v">${esc(kyc.emergency_phone)}</div></div>
+            </div></div>
+        </div>
+        <form id="approve-form" class="card" style="background:var(--surface-2)" novalidate>
+          <div class="card-body grid" style="gap:14px">
+            <div><h3 style="font-size:15px">Approve &amp; onboard</h3><p class="muted" style="font-size:12.5px;margin-top:2px">Adds ${esc(firstName(p.full_name))} to Employee Master Data and gives HRMS access.</p></div>
+            <div class="field"><label>Date of joining<span class="req">*</span></label><input class="input" type="date" name="doj" value="${todayISO()}" required></div>
+            <div class="grid g2" style="gap:12px">
+              <div class="field"><label>Employee ID</label><input class="input" name="eid" placeholder="e.g. AI-0012"></div>
+              <div class="field"><label>Designation</label><input class="input" name="designation" placeholder="e.g. Analyst"></div>
+            </div>
+            <div class="field"><label>Reporting manager</label><select class="input" name="manager">${managerOptions('', id)}</select></div>
+            <div class="field"><label>Starting salary <span class="faint">(optional, monthly)</span></label>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px">${monthYearSelects('start', now.getFullYear(), now.getMonth() + 1)}
+              <input class="input mono" name="salary" inputmode="decimal" placeholder="₹ Amount"></div></div>
+            <div class="approve-msg"></div>
+          </div>
+        </form>
+      </div>`,
+    footer: `<button class="btn btn-danger left" data-sendback>${icon('arrowLeft', 'sm')}Send back to employee</button>
+             <button class="btn" data-close>Cancel</button>
+             <button class="btn btn-success" data-approve>${icon('check', 'sm')}Approve KYC</button>`,
+  });
+
+  const form = $('#approve-form', el);
+  form.elements.doj.addEventListener('change', () => {
+    const d = parseISODate(form.elements.doj.value);
+    if (!d) return;
+    $('[data-m="start"]', form).value = String(d.getMonth() + 1);
+    $('[data-y="start"]', form).value = String(d.getFullYear());
+  });
+  $('[data-approve]', el).addEventListener('click', async (e) => {
+    const f = Object.fromEntries(new FormData(form));
+    const msg = $('.approve-msg', form);
+    msg.innerHTML = '';
+    if (!f.doj) { msg.innerHTML = `<div class="error-text">Date of joining is required.</div>`; return; }
+    const salary = String(f.salary || '').replace(/[,₹\s]/g, '');
+    if (salary && !(Number(salary) > 0)) { msg.innerHTML = `<div class="error-text">Enter a valid salary amount, or leave it empty.</div>`; return; }
+    const sm = $('[data-m="start"]', form).value, sy = $('[data-y="start"]', form).value;
+    try {
+      await withBusy(e.currentTarget, 'Approving…', () => api.rpc('admin_approve_kyc', {
+        p_user: id, p_doj: f.doj, p_employee_code: f.eid || null, p_designation: f.designation || null,
+        p_manager: f.manager || null, p_salary_month: salary ? monthStart(sy, Number(sm)) : null, p_salary: salary ? Number(salary) : null,
+      }));
+      close();
+      toast(`${p.full_name} approved and added to Employee Master Data.`);
+      await refreshAdmin();
+    } catch (err) {
+      msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(friendlyError(err))}</span></div>`;
+    }
+  });
+
+  $('[data-sendback]', el).addEventListener('click', () => {
+    const dlg = openModal({
+      title: 'Send KYC back', size: 'sm',
+      subtitle: `${esc(p.full_name)} will be asked to correct and re-submit.`,
+      body: `<div class="field"><label>What needs to be fixed?</label><textarea class="input" id="sendback-note" placeholder="e.g. PAN image is blurry — please upload a clearer scan."></textarea></div>`,
+      footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-confirm>Send back</button>`,
+    });
+    $('#sendback-note', dlg.el).focus();
+    $('[data-confirm]', dlg.el).addEventListener('click', async (e) => {
+      const note = $('#sendback-note', dlg.el).value.trim();
+      if (!note) { $('#sendback-note', dlg.el).classList.add('invalid'); return; }
+      try {
+        await withBusy(e.currentTarget, 'Sending…', () => api.rpc('admin_send_back_kyc', { p_user: id, p_remarks: note }));
+        dlg.close(); close();
+        toast('KYC sent back to the employee.');
+        await refreshAdmin();
+      } catch (err) { toast(friendlyError(err), 'error'); }
+    });
+  });
+}
+
+/* ---------- Employee Master Data (list) ---------- */
+async function pageEmd() {
+  await ensureAdmin();
+  const all = activeEmployees();
+
+  const rowHTML = (e) => {
+    const s = salarySummary(e.id);
+    const mgr = byId(e.reporting_manager_id);
+    const future = s.latest && s.latest.effective_month > todayISO();
+    return `<tr data-href="#/emd/${e.id}">
+      <td>${person(e, esc(e.employee_code || 'No EID'))}</td>
+      <td class="trunc" title="${esc(e.email)}">${esc(e.email)}</td>
+      <td class="nowrap">${esc(e.phone || '—')}</td>
+      <td class="wrap">${esc(e.designation || '—')}</td>
+      <td class="wrap">${mgr ? esc(mgr.full_name) : '<span class="faint">—</span>'}</td>
+      <td class="num nowrap"><b style="color:var(--text);font-weight:600">${fmtINR(s.latest?.amount)}</b>${future ? `<div class="faint" style="font-size:11.5px">from ${fmtMonth(s.latest.effective_month)}</div>` : ''}</td>
+      <td class="nowrap">${s.prev ? `${fmtMonth(s.latest.effective_month)}<div style="font-size:11.5px">${pctHTML(s.pct)}</div>` : '<span class="faint">—</span>'}</td>
+      <td class="actions"><a class="btn btn-sm" style="padding:0 10px;font-size:12.5px" href="#/emd/${e.id}">Show detailed info</a></td>
+    </tr>`;
+  };
+  const filter = (term) => {
+    const t = term.trim().toLowerCase();
+    if (!t) return all;
+    return all.filter((e) => [e.full_name, e.email, e.phone, e.designation, e.employee_code, byId(e.reporting_manager_id)?.full_name]
+      .some((v) => String(v || '').toLowerCase().includes(t)));
+  };
+  const bodyHTML = (list) => list.length ? list.map(rowHTML).join('')
+    : `<tr><td colspan="8">${emptyState('search', 'No matches', 'Try a different name, email or designation.')}</td></tr>`;
+
+  return {
+    title: 'Employee Master Data',
+    crumbs: `${all.length} active employee${all.length === 1 ? '' : 's'}`,
+    actions: `<div class="search">${icon('search')}<input class="input" id="emd-search" placeholder="Search name, email, designation…" value="${esc(state.emdSearch)}"></div>
+              <button class="btn btn-sm" id="emd-export" ${all.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>`,
+    html: `<div class="card">${all.length ? `<div class="table-wrap"><table class="table compact">
+        <thead><tr><th>Name</th><th>Mail ID</th><th>Number</th><th>Designation</th><th>Reporting Manager</th><th class="num">Salary</th><th style="white-space:normal;min-width:84px">Last Increment</th><th></th></tr></thead>
+        <tbody id="emd-body">${bodyHTML(filter(state.emdSearch))}</tbody></table></div>`
+      : emptyState('users', 'No employees yet', 'Employees appear here once their KYC is approved in Access Control.')}</div>`,
+    mount() {
+      const input = $('#emd-search');
+      input.addEventListener('input', () => {
+        state.emdSearch = input.value;
+        const body = $('#emd-body');
+        if (body) body.innerHTML = bodyHTML(filter(input.value));
+      });
+      $('#emd-export').addEventListener('click', () => exportEmdCsv(filter(state.emdSearch)));
+      $('#emd-body')?.addEventListener('click', (ev) => {
+        const tr = ev.target.closest('tr[data-href]');
+        if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href;
+      });
+    },
+  };
+}
+
+function exportEmdCsv(list) {
+  const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const header = ['Employee ID', 'Name', 'Email', 'Phone', 'Designation', 'Reporting Manager', 'Date of Joining', 'Date of Birth', 'Current Salary', 'Salary Effective From', 'Last Increment', 'Increment %'];
+  const lines = list.map((e) => {
+    const s = salarySummary(e.id);
+    return [e.employee_code, e.full_name, e.email, e.phone, e.designation, byId(e.reporting_manager_id)?.full_name,
+      e.date_of_joining, e.date_of_birth, s.latest?.amount, s.latest ? fmtMonth(s.latest.effective_month) : '',
+      s.prev ? fmtMonth(s.latest.effective_month) : '', s.pct !== null ? s.pct.toFixed(1) : ''].map(cell).join(',');
+  });
+  const blob = new Blob(['﻿' + [header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `altius-employee-master-${todayISO()}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ---------- Employee Master Data (individual) ---------- */
+async function pageEmployee(r) {
+  await ensureAdmin();
+  const e = byId(r.id);
+  if (!e || !['active', 'inactive'].includes(e.status)) {
+    return {
+      title: 'Employee not found', crumbs: `<a href="#/emd">Employee Master Data</a>`,
+      html: `<div class="card">${emptyState('user', 'Employee not found', 'This person is not in the master data yet. They appear after KYC approval.')}</div>`,
+    };
+  }
+  const kyc = await api.kycFor(e.id);
+  const mgr = byId(e.reporting_manager_id);
+  let uid = 0;
+  const model = {
+    employee_code: e.employee_code || '',
+    designation: e.designation || '',
+    manager: e.reporting_manager_id || '',
+    rows: salariesOf(e.id).map((s) => { const d = parseISODate(s.effective_month); return { uid: ++uid, y: d.getFullYear(), m: d.getMonth() + 1, amount: String(Number(s.amount)) }; }),
+  };
+  const s = salarySummary(e.id);
+
+  const sortRows = () => model.rows.sort((a, b) => (a.y - b.y) || (a.m - b.m));
+  const deltaHTML = (i) => {
+    const row = model.rows[i], prev = model.rows[i - 1];
+    if (!prev) return '<span class="faint">Initial</span>';
+    const a = Number(row.amount), pa = Number(prev.amount);
+    if (!(a > 0 && pa > 0)) return '<span class="faint">—</span>';
+    return pctHTML(((a - pa) / pa) * 100) + `<span class="faint" style="font-size:12px"> vs ${MONTHS[prev.m - 1]} ${prev.y}</span>`;
+  };
+  const salaryRowsHTML = () => {
+    sortRows();
+    if (!model.rows.length) return `<div class="empty" style="padding:28px">${icon('wallet')}<span>No salary recorded yet. Add the first entry below.</span></div>`;
+    const lastIdx = model.rows.length - 1;
+    return model.rows.map((row, i) => {
+      const delta = deltaHTML(i);
+      const dup = model.rows.some((o) => o !== row && o.y === row.y && o.m === row.m);
+      return `<div class="salary-row" data-uid="${row.uid}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${monthYearSelects(`r${row.uid}`, row.y, row.m)}</div>
+        <div class="rs"><input class="input ${dup ? 'invalid' : ''}" data-amount="${row.uid}" inputmode="decimal" placeholder="Amount" value="${esc(row.amount)}"></div>
+        <div style="font-size:13px" data-delta="${row.uid}">${delta}</div>
+        <div>${i === lastIdx ? '<span class="chip green">Current</span>' : ''}${dup ? '<span class="chip red plain">Duplicate month</span>' : ''}</div>
+        <button type="button" class="icon-btn" data-remove="${row.uid}" title="Remove entry">${icon('trash')}</button>
+      </div>`;
+    }).join('');
+  };
+
+  const locked = (label, value) => `<div class="field"><label>${label}</label><div class="locked"><span>${esc(value)}</span>${icon('lock')}</div></div>`;
+
+  return {
+    title: e.full_name,
+    crumbs: `<a href="#/emd">Employee Master Data</a> &nbsp;/&nbsp; Detailed info`,
+    actions: `<a class="btn btn-sm" href="#/emd">${icon('arrowLeft', 'sm')}Back to list</a>`,
+    html: `
+      <div class="card emp-head">
+        ${avatar(e, 'lg')}
+        <div style="min-width:0"><h2>${esc(e.full_name)}</h2>
+          <div class="meta">${statusChip(e.status)}<span>${esc(e.employee_code || 'No EID')}</span><span>·</span><span>${esc(e.designation || 'No designation')}</span></div></div>
+        <div class="facts">
+          <div><div class="k">Current salary</div><div class="v">${fmtINR(s.latest?.amount)}</div></div>
+          <div><div class="k">Last increment</div><div class="v">${s.prev ? `${fmtMonth(s.latest.effective_month)} ${pctHTML(s.pct)}` : '—'}</div></div>
+          <div><div class="k">Reporting to</div><div class="v">${esc(mgr?.full_name || '—')}</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Personal information</h3><p>Locked — captured at sign-up, KYC and approval.</p></div></div>
+        <div class="card-body grid g3">
+          ${locked('Name', e.full_name)}${locked('Mail ID', e.email)}${locked('Phone', e.phone || '—')}
+          ${locked('Date of joining', fmtDate(e.date_of_joining))}${locked('Date of birth', fmtDate(e.date_of_birth))}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Employment</h3><p>Editable by admin.</p></div></div>
+        <div class="card-body grid g3" id="emp-fields">
+          <div class="field"><label>Employee ID (EID)</label><input class="input" name="employee_code" placeholder="e.g. AI-0012" value="${esc(model.employee_code)}"></div>
+          <div class="field"><label>Designation</label><input class="input" name="designation" placeholder="e.g. Analyst" value="${esc(model.designation)}"></div>
+          <div class="field"><label>Reporting manager</label><select class="input" name="manager">${managerOptions(model.manager, e.id)}</select></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>Salary</h3><p>Each entry applies from that month until the next revision. The latest month is the current salary.</p></div>
+          <div class="right"><button class="btn btn-sm" id="add-salary">${icon('plus', 'sm')}Add revision</button></div></div>
+        <div class="salary-row head"><div>Effective from (Month · Year)</div><div>Monthly salary</div><div>Change</div><div></div><div></div></div>
+        <div id="salary-rows">${salaryRowsHTML()}</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><div><h3>KYC</h3><p>Submitted by the employee during onboarding${e.approved_at ? ` · approved ${esc(fmtDate(e.approved_at.slice(0, 10)))}` : ''}.</p></div></div>
+        <div class="card-body">
+          ${kyc ? `<div class="split" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
+            <div>${docListHTML(kyc)}</div>
+            <div class="grid" style="gap:22px">
+              <div><div class="section-title">Bank details</div><div class="kv">
+                <div><div class="k">Account number</div><div class="v mono">${esc(kyc.bank_account_number)}</div></div>
+                <div><div class="k">IFSC</div><div class="v mono">${esc(kyc.bank_ifsc)}</div></div></div></div>
+              <div><div class="section-title">Emergency contact</div><div class="kv">
+                <div><div class="k">Name</div><div class="v">${esc(kyc.emergency_name)}</div></div>
+                <div><div class="k">Relationship</div><div class="v">${esc(kyc.emergency_relationship)}</div></div>
+                <div><div class="k">Contact number</div><div class="v">${esc(kyc.emergency_phone)}</div></div></div></div>
+            </div></div>` : `<p class="muted">No KYC on file${e.role === 'admin' ? ' (admin account)' : ''}.</p>`}
+        </div>
+      </div>
+
+      <div class="savebar hidden" id="savebar">
+        <div class="grow"><b>Unsaved changes</b> <span>— save to update Employee Master Data</span></div>
+        <button class="btn btn-sm" id="discard-btn">Discard</button>
+        <button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save</button>
+      </div>`,
+    mount() {
+      const markDirty = () => { state.dirty = true; $('#savebar').classList.remove('hidden'); };
+      const fields = $('#emp-fields');
+      fields.addEventListener('input', (ev) => { if (ev.target.name in model) { model[ev.target.name] = ev.target.value; markDirty(); } });
+      fields.addEventListener('change', (ev) => { if (ev.target.name in model) { model[ev.target.name] = ev.target.value; markDirty(); } });
+
+      const rowsEl = $('#salary-rows');
+      const redraw = () => { rowsEl.innerHTML = salaryRowsHTML(); };
+      rowsEl.addEventListener('input', (ev) => {
+        const id = ev.target.dataset.amount;
+        if (!id) return;
+        model.rows.find((x) => x.uid === Number(id)).amount = ev.target.value.replace(/[^\d.]/g, '');
+        ev.target.classList.remove('invalid');
+        model.rows.forEach((row, i) => { const c = $(`[data-delta="${row.uid}"]`, rowsEl); if (c) c.innerHTML = deltaHTML(i); });
+        markDirty();
+      });
+      rowsEl.addEventListener('change', (ev) => {
+        const t = ev.target;
+        if (t.dataset.amount) {
+          model.rows.forEach((row, i) => { const c = $(`[data-delta="${row.uid}"]`, rowsEl); if (c) c.innerHTML = deltaHTML(i); });
+        } else if (t.dataset.m || t.dataset.y) {
+          const id = Number((t.dataset.m || t.dataset.y).slice(1));
+          const row = model.rows.find((x) => x.uid === id);
+          if (t.dataset.m) row.m = Number(t.value); else row.y = Number(t.value);
+          markDirty(); redraw();
+        }
+      });
+      rowsEl.addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-remove]');
+        if (!b) return;
+        model.rows = model.rows.filter((x) => x.uid !== Number(b.dataset.remove));
+        markDirty(); redraw();
+      });
+      $('#add-salary').addEventListener('click', () => {
+        sortRows();
+        const last = model.rows[model.rows.length - 1];
+        let y, m;
+        if (last) { y = last.m === 12 ? last.y + 1 : last.y; m = last.m === 12 ? 1 : last.m + 1; }
+        else { const d = parseISODate(e.date_of_joining) || new Date(); y = d.getFullYear(); m = d.getMonth() + 1; }
+        const row = { uid: ++uid, y, m, amount: '' };
+        model.rows.push(row);
+        markDirty(); redraw();
+        $(`[data-amount="${row.uid}"]`)?.focus();
+      });
+
+      $('#discard-btn').addEventListener('click', () => { state.dirty = false; render(); });
+      $('#save-btn').addEventListener('click', async (ev) => {
+        const keys = model.rows.map((x) => `${x.y}-${x.m}`);
+        if (new Set(keys).size !== keys.length) return toast('Two salary entries have the same month. Remove or change one.', 'error');
+        const bad = model.rows.find((x) => !(Number(x.amount) > 0));
+        if (bad) { $(`[data-amount="${bad.uid}"]`)?.classList.add('invalid'); return toast('Enter a salary amount for every entry.', 'error'); }
+        try {
+          await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_save_employee', {
+            p_user: e.id,
+            p_employee_code: model.employee_code.trim() || null,
+            p_designation: model.designation.trim() || null,
+            p_manager: model.manager || null,
+            p_salaries: model.rows.map((x) => ({ month: monthStart(x.y, x.m), amount: Number(x.amount) })),
+          }));
+          state.dirty = false;
+          toast('Employee details saved.');
+          await refreshAdmin();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+/* ---------- Team Access settings ---------- */
+async function pageTeamAccess() {
+  await ensureAdmin();
+  const vis = await api.visibility();
+  const items = [
+    ['job_details', 'Job details', 'Employee ID, designation, reporting manager and date of joining on the employee\'s home and profile.'],
+    ['salary', 'Salary history', 'Employees can see their own salary revisions. Enforced by the database — hidden rows are never sent to the browser.'],
+    ['kyc_documents', 'KYC documents', 'Employees can open the documents and bank details they submitted during onboarding.'],
+  ];
+  return {
+    title: 'Team Access',
+    crumbs: 'Choose what employees can see about themselves in the employee portal',
+    html: `
+      <div class="alert alert-info">${icon('info')}<span>Team members only ever see their <b>own</b> records. Admin screens (Access Control, Employee Master Data, this page) are never available to team accounts.</span></div>
+      <div class="card" style="max-width:820px">
+        <div class="card-head"><div><h3>Visible to employees</h3><p>Changes apply immediately after saving.</p></div></div>
+        ${items.map(([k, t, d]) => `<label class="toggle-row"><div class="txt"><b>${t}</b><span>${d}</span></div>
+          <span class="switch"><input type="checkbox" data-vis="${k}" ${vis[k] ? 'checked' : ''}><span></span></span></label>`).join('')}
+        <div class="card-body" style="border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+          <button class="btn btn-primary" id="vis-save">${icon('check', 'sm')}Save settings</button></div>
+      </div>`,
+    mount() {
+      $('#vis-save').addEventListener('click', async (ev) => {
+        const value = Object.fromEntries($$('[data-vis]').map((i) => [i.dataset.vis, i.checked]));
+        try {
+          await withBusy(ev.currentTarget, 'Saving…', () => api.saveVisibility(value));
+          toast('Team access settings saved.');
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+/* =====================================================================
+   TEAM PAGES (employee portal)
+   ===================================================================== */
+async function loadTeamData() {
+  const [me, vis] = await Promise.all([api.myProfileFull(), api.visibility()]);
+  return { me: me || state.profile, vis };
+}
+
+async function pageTeamHome() {
+  const { me, vis } = await loadTeamData();
+  const card = (label, value, ico) => `<div class="card stat"><div class="top"><span>${label}</span><span class="ico" style="background:var(--accent-soft);color:var(--accent)">${icon(ico)}</span></div><div class="value" style="font-size:18px">${esc(value || '—')}</div></div>`;
+  return {
+    title: `${greeting()}, ${firstName(me.full_name)}`,
+    crumbs: new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+    html: `
+      ${vis.job_details ? `<div class="stats">
+        ${card('Employee ID', me.employee_code, 'user')}
+        ${card('Designation', me.designation, 'sparkle')}
+        ${card('Reporting manager', me.reporting_manager_name, 'users')}
+        ${card('Date of joining', me.date_of_joining ? fmtDate(me.date_of_joining) : '', 'clock')}
+      </div>` : ''}
+      <div class="card"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <span class="ico" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--green-soft);color:var(--green)">${icon('check')}</span>
+        <div style="flex:1;min-width:220px"><h3 style="font-size:15px">You're all set</h3>
+          <p class="muted" style="margin-top:2px">Your onboarding is complete. More features will appear here as HR enables them.</p></div>
+        <a class="btn" href="#/profile">View my profile ${icon('arrowRight', 'sm')}</a>
+      </div></div>`,
+  };
+}
+
+async function pageMyProfile() {
+  const { me, vis } = await loadTeamData();
+  const [salaries, kyc] = await Promise.all([
+    vis.salary ? api.mySalaries().catch(() => []) : [],
+    vis.kyc_documents ? api.myKyc().catch(() => null) : null,
+  ]);
+  const kv = (k, v, cls = '') => `<div><div class="k">${k}</div><div class="v ${cls}">${esc(v || '—')}</div></div>`;
+  const rows = [...salaries].sort((a, b) => b.effective_month.localeCompare(a.effective_month));
+  return {
+    title: 'My Profile',
+    crumbs: 'Your details as recorded by HR',
+    html: `
+      <div class="card emp-head">${avatar(me, 'lg')}
+        <div><h2>${esc(me.full_name)}</h2><div class="meta"><span>${esc(me.email)}</span>${vis.job_details && me.designation ? `<span>·</span><span>${esc(me.designation)}</span>` : ''}</div></div></div>
+      <div class="card"><div class="card-head"><div><h3>Personal information</h3><p>Contact HR to correct any of these.</p></div></div>
+        <div class="card-body kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+          ${kv('Name', me.full_name)}${kv('Mail ID', me.email)}${kv('Phone', me.phone)}
+          ${kv('Date of birth', me.date_of_birth ? fmtDate(me.date_of_birth) : '')}${kv('Date of joining', me.date_of_joining ? fmtDate(me.date_of_joining) : '')}
+        </div></div>
+      ${vis.job_details ? `<div class="card"><div class="card-head"><div><h3>Employment</h3></div></div>
+        <div class="card-body kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+          ${kv('Employee ID', me.employee_code)}${kv('Designation', me.designation)}${kv('Reporting manager', me.reporting_manager_name)}
+        </div></div>` : ''}
+      ${vis.salary ? `<div class="card"><div class="card-head"><div><h3>Salary history</h3><p>Latest first</p></div></div>
+        ${rows.length ? `<div class="table-wrap"><table class="table"><thead><tr><th>Effective from</th><th class="num">Monthly salary</th><th></th></tr></thead><tbody>
+          ${rows.map((r, i) => `<tr><td>${fmtMonth(r.effective_month)}</td><td class="num"><b style="color:var(--text)">${fmtINR(r.amount)}</b></td><td>${i === 0 ? '<span class="chip green">Current</span>' : ''}</td></tr>`).join('')}
+          </tbody></table></div>` : emptyState('wallet', 'No salary records yet', 'HR has not added salary details.')}</div>` : ''}
+      ${vis.kyc_documents && kyc ? `<div class="card"><div class="card-head"><div><h3>KYC</h3><p>Submitted during onboarding</p></div></div>
+        <div class="card-body split" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
+          <div>${docListHTML(kyc)}</div>
+          <div class="grid" style="gap:22px">
+            <div><div class="section-title">Bank details</div><div class="kv">${kv('Account number', maskAccount(kyc.bank_account_number), 'mono')}${kv('IFSC', kyc.bank_ifsc, 'mono')}</div></div>
+            <div><div class="section-title">Emergency contact</div><div class="kv">${kv('Name', kyc.emergency_name)}${kv('Relationship', kyc.emergency_relationship)}${kv('Contact number', kyc.emergency_phone)}</div></div>
+          </div></div></div>` : ''}`,
+  };
+}
+
+/* =====================================================================
+   BOOT
+   ===================================================================== */
+function renderSetup() {
+  $('#app').innerHTML = `<div class="center-wrap" style="min-height:100vh"><div class="card status-card" style="max-width:560px;text-align:left">
+    <div class="brand" style="margin-bottom:20px">${LOGO}<div>Altius HRMS<small>Setup required</small></div></div>
+    <h2>Connect Supabase</h2>
+    <p>${window.supabase ? 'Open <b>index.html</b> and set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the script (Supabase → Project Settings → API), then run <code>supabase/schema.sql</code> in the Supabase SQL editor.' : 'The Supabase library could not be loaded. Check your internet connection and reload.'}</p>
+  </div></div>`;
+}
+
+if (!db) {
+  renderSetup();
+} else {
+  $('#app').innerHTML = `<div class="loading full">${spinnerHTML}</div>`;
+  db.auth.onAuthStateChange((event, session) => {
+    // Defer: Supabase recommends not awaiting other calls inside this callback.
+    setTimeout(() => handleAuthEvent(event, session), 0);
+  });
+}
+
+async function handleAuthEvent(event, session) {
+  if (event === 'PASSWORD_RECOVERY') {
+    state.recovery = true; state.session = session; state.user = session?.user || null;
+    return renderAuth('reset');
+  }
+  if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') { state.session = session; return; }
+  const sameUser = state.user && session?.user && state.user.id === session.user.id;
+  state.session = session;
+  state.user = session?.user || null;
+  if (!session) {
+    state.profile = null;
+    state.admin = { loaded: false, profiles: [], salaries: [] };
+    state.recovery = false;
+    return renderAuth('login');
+  }
+  if (state.recovery) return;
+  if (sameUser && state.profile) return; // e.g. SIGNED_IN re-emitted on tab focus
+  await loadSelfAndRoute();
+}
+</script>
+</body>
+</html>
