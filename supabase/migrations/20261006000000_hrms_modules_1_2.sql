@@ -3,7 +3,9 @@
 --  Modules: 1) Sign up / Access control / KYC onboarding
 --           2) Employee Master Data (EMD) + salary history
 --
---  Run this whole file once in Supabase → SQL Editor → New query → Run.
+--  Apply with the Supabase CLI (`supabase link --project-ref <ref>` then
+--  `supabase db push`), or paste the whole file into Supabase → SQL Editor
+--  → New query → Run.
 --  It is safe to re-run: every object is created with IF NOT EXISTS /
 --  CREATE OR REPLACE, and policies are dropped before being re-created.
 --

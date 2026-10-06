@@ -465,10 +465,11 @@
 /* =====================================================================
    CONFIG — paste your Supabase project values here
    (Supabase → Project Settings → API). The anon key is meant to be
-   public; all access is enforced by Row Level Security in schema.sql.
+   public; all access is enforced by Row Level Security in
+   supabase/migrations/*.sql.
    ===================================================================== */
-const SUPABASE_URL = 'https://YOUR-PROJECT-REF.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR-SUPABASE-ANON-KEY';
+const SUPABASE_URL = 'https://bejhmbvwaexpafhkseod.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_Pv8a0r1Q8kNqqV34CcS5lw_dOaGpLZD';
 
 /* ===================================================================== */
 const BASE_ADMIN_EMAIL = 'sayan.mullick@altiusinvestech.com';
@@ -1960,7 +1961,7 @@ function renderSetup() {
   $('#app').innerHTML = `<div class="center-wrap" style="min-height:100vh"><div class="card status-card" style="max-width:560px;text-align:left">
     <div class="brand" style="margin-bottom:20px">${LOGO}<div>Altius HRMS<small>Setup required</small></div></div>
     <h2>Connect Supabase</h2>
-    <p>${window.supabase ? 'Open <b>index.html</b> and set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the script (Supabase → Project Settings → API), then run <code>supabase/schema.sql</code> in the Supabase SQL editor.' : 'The Supabase library could not be loaded. Check your internet connection and reload.'}</p>
+    <p>${window.supabase ? 'Open <b>index.html</b> and set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the script (Supabase → Project Settings → API), then apply <code>supabase/migrations</code> (<code>supabase db push</code> or the SQL editor).' : 'The Supabase library could not be loaded. Check your internet connection and reload.'}</p>
   </div></div>`;
 }
 

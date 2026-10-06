@@ -14,16 +14,26 @@ A single-file HRMS (`index.html`) for Altius Investech, with Supabase as the dat
 * **Admin** (`sayan.mullick@altiusinvestech.com` is the base admin): Dashboard, Access Control, Employee Master Data, and Team Access settings.
 * **Team**: a separate employee portal (Home, My Profile). A team member only ever sees their own records.
 
-The database enforces this split, not just the screens. Row Level Security and `SECURITY DEFINER` functions in `supabase/schema.sql` do the enforcing. Team accounts have no write access to any table. They can't change their own role or status, and they can't read anyone else's rows or files. Admin decides what employees can see about themselves (job details, salary history, KYC documents) on the **Team Access** page.
+The database enforces this split, not just the screens. Row Level Security and `SECURITY DEFINER` functions in the migration under `supabase/migrations/` do the enforcing. Team accounts have no write access to any table. They can't change their own role or status, and they can't read anyone else's rows or files. Admin decides what employees can see about themselves (job details, salary history, KYC documents) on the **Team Access** page.
 
 ---
 
 ## Setup (about 10 minutes)
 
-### 1. Create the Supabase project
-1. Go to <https://supabase.com> and create a project (the Mumbai region is closest).
-2. Open **SQL Editor → New query**, paste the whole of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
-   This creates the tables, security policies, functions and the private `kyc-documents` storage bucket. You can safely run it again later.
+### 1. Create the database schema
+The project is `bejhmbvwaexpafhkseod`, and `index.html` already points at it. Apply the migration in [`supabase/migrations/`](supabase/migrations) **one** of these two ways:
+
+**A. Supabase CLI** (from the repo root on your machine):
+```bash
+supabase login
+supabase init            # only adds supabase/config.toml; the migrations folder already exists
+supabase link --project-ref bejhmbvwaexpafhkseod   # asks for the database password
+supabase db push
+```
+
+**B. Dashboard:** open **SQL Editor → New query**, paste the whole migration file and click **Run**.
+
+Either way you get the tables, security policies, functions and the private `kyc-documents` storage bucket. The file is safe to run again. Future modules will be added as new files in `supabase/migrations/`.
 
 ### 2. Configure auth
 In **Authentication → URL Configuration**:
@@ -42,15 +52,15 @@ Either way, that email automatically becomes an **active admin**. Every other si
 
 > Why "right after": the admin role is tied to that email address. With email confirmation on, only someone with access to that inbox can claim it.
 
-### 4. Add your keys to `index.html`
-In Supabase go to **Project Settings → API** and copy the **Project URL** and the **anon / publishable** key. Paste them near the top of the `<script>` in `index.html`:
+### 4. Keys in `index.html` (already done)
+`index.html` already contains the project URL and the **publishable** key:
 
 ```js
-const SUPABASE_URL = 'https://xxxxxxxx.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOi...';   // or sb_publishable_...
+const SUPABASE_URL = 'https://bejhmbvwaexpafhkseod.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_…';
 ```
 
-The anon key is meant to be public. Row Level Security protects the data. **Never** put the `service_role` / secret key in this file.
+The publishable key is meant to be public. Row Level Security protects the data. **Never** put the secret / `service_role` key or the database password in this file or in the repo.
 
 ### 5. Deploy to Netlify
 * **Quickest:** drag `index.html` onto <https://app.netlify.com/drop>.
@@ -103,7 +113,7 @@ The entry with the latest month is the current salary. That entry's month and % 
 | File | Purpose |
 | --- | --- |
 | `index.html` | The whole app: HTML, CSS and JS. Loads `supabase-js` and the Inter font from CDNs. |
-| `supabase/schema.sql` | Tables, RLS policies, storage bucket and policies, and RPC functions. Re-runnable. |
+| `supabase/migrations/20261006000000_hrms_modules_1_2.sql` | Tables, RLS policies, storage bucket and policies, and RPC functions. Re-runnable. |
 
 ### Data model
 * `profiles`: one row per user (name, email, phone, role, status, EID, designation, reporting manager, DOJ, DOB, audit timestamps)
