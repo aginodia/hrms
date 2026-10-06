@@ -602,6 +602,10 @@ function friendlyError(err) {
   if (/JWT expired|invalid JWT/i.test(msg)) return 'Your session has expired. Please sign in again.';
   if (/row-level security|permission denied/i.test(msg)) return 'You do not have permission to do that.';
   if (/rate limit/i.test(msg)) return 'Too many attempts. Please wait a minute and try again.';
+  if (/timed out/i.test(msg)) return 'The server took too long to respond. Check your connection and try again.';
+  if (/Invalid API key|No API key/i.test(msg)) return 'The Supabase key in index.html is not valid for this project.';
+  if (/schema cache|relation .* does not exist/i.test(msg)) return 'The database is not set up yet — apply the schema in supabase/migrations first.';
+  if (/Email logins are disabled|signups not allowed/i.test(msg)) return 'Email sign-in is turned off in Supabase (Authentication → Providers → Email).';
   return msg;
 }
 
@@ -668,7 +672,21 @@ function confirmDialog({ title, message, confirmText = 'Confirm', danger = false
    Supabase client + data access
    --------------------------------------------------------------------- */
 const CONFIGURED = !SUPABASE_URL.includes('YOUR-PROJECT') && !SUPABASE_ANON_KEY.includes('YOUR-SUPABASE');
-const db = CONFIGURED && window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+// Every request gets a time limit so a stalled connection ends in a visible
+// error instead of a button that spins forever.
+function fetchWithTimeout(input, init = {}) {
+  if (init.signal) return fetch(input, init);
+  const url = String(input?.url || input);
+  const ms = url.includes('/storage/v1/') ? 90000 : 20000;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  return fetch(input, { ...init, signal: ctrl.signal })
+    .catch((e) => { throw e?.name === 'AbortError' ? new Error('Request timed out') : e; })
+    .finally(() => clearTimeout(timer));
+}
+const db = CONFIGURED && window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { fetch: fetchWithTimeout } })
+  : null;
 
 async function q(promise) {
   const { data, error } = await promise;
@@ -766,6 +784,13 @@ function render() {
 }
 
 async function loadSelfAndRoute() {
+  const loadingFor = state.user?.id;
+  if (!loadingFor || state.loadingUser === loadingFor) return;
+  state.loadingUser = loadingFor;
+  try { await loadSelfAndRouteInner(); } finally { state.loadingUser = null; }
+}
+
+async function loadSelfAndRouteInner() {
   $('#app').innerHTML = `<div class="loading full">${spinnerHTML}<span>Loading your workspace…</span></div>`;
   try {
     state.profile = await api.myProfile();
@@ -794,7 +819,7 @@ async function signOut() {
 /* Global click actions */
 const actions = {
   signout: () => signOut(),
-  reload: () => loadSelfAndRoute(),
+  reload: () => { state.loadingUser = null; loadSelfAndRoute(); },
   'open-doc': (el) => openDocument(el.dataset.path),
   'toggle-nav': () => $('.shell')?.classList.toggle('nav-open'),
   'close-nav': () => $('.shell')?.classList.remove('nav-open'),
@@ -916,8 +941,11 @@ async function handleAuthSubmit(view, form) {
     if (view === 'login') {
       if (!isEmail(email) || !f.password) return fail('Enter your email and password.');
       await withBusy(btn, 'Signing in…', async () => {
-        const { error } = await db.auth.signInWithPassword({ email, password: f.password });
+        const { data, error } = await db.auth.signInWithPassword({ email, password: f.password });
         if (error) throw error;
+        if (!data?.session) throw new Error('Sign-in did not return a session. Please try again.');
+        // Move on right away rather than waiting only for the auth event.
+        setTimeout(() => handleAuthEvent('SIGNED_IN', data.session), 0);
       });
     } else if (view === 'signup') {
       const name = String(f.full_name || '').trim();
@@ -1994,6 +2022,9 @@ async function handleAuthEvent(event, session) {
   if (sameUser && state.profile) return; // e.g. SIGNED_IN re-emitted on tab focus
   await loadSelfAndRoute();
 }
+
+// Never fail silently: surface unexpected errors to the user.
+window.addEventListener('unhandledrejection', (e) => toast(friendlyError(e.reason), 'error'));
 </script>
 </body>
 </html>
