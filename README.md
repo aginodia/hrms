@@ -10,7 +10,7 @@ A single-file HRMS (`index.html`) for Altius Investech, with Supabase as the dat
 | 2. Employee Master Data (EMD) | Team list (Name, Mail ID, Number, Designation, Reporting Manager, Salary, Last Increment) → detailed info per employee with locked personal fields, editable EID / designation / manager, a month-wise salary history, and the KYC documents |
 | 3. Payroll | Upload the month's punch-in/punch-out sheet → map sheet EmpCodes to employees → day-wise F / HD / L marking from HR's working-hours rules → admin adjustments → monthly payable per employee, minus Professional Tax, saved as the month's payroll |
 | 4. Finance | Variable (uploaded sheet), Bonus & Leave Encashment, Loans (repaid from Variable / Bonus), Monthly Expenses (from the Google Form), ESOPs (placeholder) |
-| 5. Exits & logs | Employment status (Active → Resigned / Terminated → F&F), Active and R&T sections in payroll, and an activity log for each section, by employee and by month |
+| 5. Exits & logs | Resignation → notice period → Resigned / Terminated (R&T) → F&F 60 days after the last working day; Active and R&T tabs in payroll; an activity log for each section, by employee and by month |
 
 **Two separate access levels**
 
@@ -117,7 +117,12 @@ Files upload as soon as they're picked, and the form keeps a local draft, so a p
 
 The entry with the latest month is the current salary. That entry's month and % change are shown as **Last Increment** in the EMD list. Click **Save** to store all edits (EID, designation, reporting manager, salary rows) in one go. A removed salary row is hidden but kept in the database as an audit trail.
 
-**Employment status (EMD → Show detailed info → Status).** Everyone starts as **Active**. Click **Resigned** or **Terminated**, then enter the last working day and an optional note. The EMD list has three tabs: **Active**, **Resigned & Terminated**, and **F&F completed**. Click **Mark active again** to undo a resignation. When the full and final settlement is done, click **Complete F&F** (here, or the **F&F** button in Payroll's R&T section). That ends the employee's journey: they drop out of every sheet (payroll, variable, bonus, loans), can no longer sign in, and stay read-only under **F&F completed**. F&F can't be undone.
+**Employment status (EMD → Show detailed info → Status).**
+1. **Resignation**: enter the date the employee resigned, then pick a notice period (30 / 45 / 60 / 90 days) or **Manual** to choose the last working day (LWD) from the calendar. The employee shows **On notice period** with the LWD, and stays in Active and in payroll. Use **Edit notice** or **Withdraw** if plans change.
+2. **Resigned** (or **Terminated**, available at any time): confirm the last working day. The employee moves to **Resigned & Terminated** in both EMD and Payroll.
+3. **F&F** is settled **60 days after the last working day**. The *Settle by* date and the days left are shown in EMD and Payroll. Clicking **Complete F&F** ends the employee's journey: they drop out of every sheet, can no longer sign in, and stay read-only under **F&F completed**. F&F can't be undone.
+
+The EMD list has three tabs: **Active** (including those on notice), **Resigned & Terminated**, and **F&F completed**. **Mark active again** clears an exit before F&F.
 
 **Signing out.** **Sign out** is in the top bar on every page (and at the bottom of the sidebar). It ends the session on this device, even if the network call to Supabase fails. If a session expires, the app returns to the sign-in screen with a message.
 
@@ -152,7 +157,13 @@ The entry with the latest month is the current salary. That entry's month and % 
 daily salary = monthly salary (the salary in effect for that month, from EMD; if the first salary entry starts later, that entry is used and flagged) ÷ 30
 payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest rupee. Paid Sundays count as full days.
 
-**Active and R&T sections.** The salary table is split into **Active** and **Resigned & Terminated**, each with its own totals. Each R&T row has an **F&F** button. Employees whose F&F is complete are left out, and a note lists them.
+**Active and R&T tabs.** The salary table has two tabs. **Active** lists working employees; those on notice get an *On notice · LWD* tag. **Resigned & Terminated** lists every R&T employee until F&F, even in months where they are not in the attendance sheet. Each row shows:
+* the last working day, highlighted;
+* the *Settle by* date;
+* the month's Final F / HD / L and net payable;
+* **Check** (opens the day-wise table, or the EMD record if they aren't in the sheet) and **F&F**, side by side.
+
+**Last working day in the calculation.** Days after the last working day are not counted (striped in the day-wise table). The LWD column is highlighted in red, and the table scrolls to it when it opens. If the sheet has punches after the LWD, a warning is shown.
 
 **Summary button.** Click **Summary** to open a count table for the month: **Name | FD | HD | HD-PM | Leave**, both pre-adjustment (system) and post-adjustment (final). HD is a half day for short hours; HD-PM is a half day from missed punches (every 3rd miss). Click a name to open that employee's day-wise table.
 
@@ -165,14 +176,21 @@ payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest
 2. Click **Upload sheet**, pick the payout month, review the preview (matched / not matched), then click **Import**. Rows are matched to employees **by Emp ID**, using the same rule as Payroll mapping. Rows that don't match are kept and flagged "Emp ID not in EMD". Uploading the same month again replaces the earlier rows (tick or untick **Replace**) and reverses any loan deductions on them.
 3. The table shows **Emp ID | Name | Variable | Loan remaining | Loan deduct (₹) | Deduct full | Net payout | Remarks | Details**.
 
-**Bonus & Leave Encash.** Use **Manage eligibility**, then **Add line** for each payment: Employee | Description | Month | Amount | Loan deduct (₹) | Net. Tick **Current salary** to use the employee's current salary as the amount; the amount is fixed when you save. Totals are shown per month. Removed lines are kept for audit. **Details** opens the employee's lines and log.
+**Bonus & Leave Encash.** Use **Manage eligibility**, then fill a line in **Add payments** for each payment: Employee | Description | Date | Amount | Loan deduct (₹) | Net. Tick **Current salary** to use the employee's current salary. If the employee has a loan, enter a deduction or tick **Deduct full**; otherwise the cell shows *No loan*. Click **Save payments**: the lines leave the add section and go into the **Payments log**. Saved payments can't be edited or deleted, so the log stays complete. The log has one line per payment:
+
+| Date | Employee | E-Code | Desc. | Amount | Loan deduction | Net amount |
+| --- | --- | --- | --- | --- | --- | --- |
+| 26/10/2026 | Sayan | 0003 | Bonus | 20,000 | 18,000 | 2,000 |
+
+It can be filtered by month. Clicking an employee's name shows only their payments.
 
 **Loans.** **Add a loan** form: pick the **Name**, and the **Emp ID** is filled in from EMD; then enter the **Amount taken** and the **Date**, and click **Add**. The list shows **Emp ID | Name | Amount | DD-MM-YYYY | Loan remaining | Details**. A loan is repaid through the **Loan deduct** column on Variable and Bonus lines:
 * Type an amount to deduct part of the line, or tick **Deduct full** to deduct the whole line (capped at what is still owed).
 * Example: a variable of ₹50,000 with *Deduct full*, against a ₹2,00,000 loan, leaves **₹1,50,000** remaining, and the variable's net payout is ₹0.
 * If an employee has several loans, the oldest is repaid first.
 * Changing or removing the line, or re-uploading the variable month, reverses the deduction automatically.
-* **Details** on a loan lists each repayment (source, month, amount, remaining after). A loan can be removed only while it has no repayments (for loans added by mistake).
+* **Add repayment** on a loan's **Details** page records money paid back directly: **Date** (shown as dd-mm-yyyy) and **Amount**, plus an optional note. It can't be more than what is still owed. The loan remaining goes down, and the repayment is logged.
+* **Details** lists the loan and every repayment or deduction, oldest first, with the remaining amount after each. A loan can be removed only while it has no repayments (for loans added by mistake).
 
 **Logs.** Every change is logged with who made it and when: uploads, line changes, loan deductions, loans, status changes, F&F and payroll saves.
 * Each section's employee **Details** page shows that employee's log for the section.
@@ -188,7 +206,7 @@ payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest
 * **Reject** keeps the record (under Rejected) instead of deleting it, so HR has a history and can restore a request made by mistake.
 * **Reporting manager** is picked from active employees.
 * The base admin also appears in EMD, so their own salary and designation can be recorded.
-* **Exits:** an R&T employee stays in payroll, variable and bonus until F&F, because their last month's salary and dues are still paid. Variable rows for an F&F'd employee's Emp ID are not matched.
+* **Exits:** an R&T employee stays in payroll and variable until F&F, because their last month's salary and dues are still paid. On notice counts as Active. Variable rows for an F&F'd employee's Emp ID are not matched.
 * **Variable eligibility** is no longer used: the uploaded sheet decides who gets variable. Bonus still uses eligibility.
 * **Payroll:** Sunday is a weekly off and, by default, paid, so a full month of attendance gives the full salary with the ÷30 rule. A 31-day month can therefore pay slightly more than the monthly salary; HR can turn paid Sundays off. A day missing from the sheet counts as leave. The same time punched twice counts as one punch, and 00:00 counts as no punch.
 
@@ -203,6 +221,7 @@ payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261009000000_notice_bonus_ledger_repayments.sql` | Notice period (resignation date + last working day), the add-only bonus ledger with payment dates, and manual loan repayments. Admin-only. Re-runnable. |
 | `supabase/migrations/20261008000000_exits_variable_upload_loans.sql` | Employment status and F&F, the finance activity log, variable sheet uploads, loans and loan deductions from Variable / Bonus. Admin-only. Re-runnable. |
 
 ### Data model
@@ -219,7 +238,7 @@ payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest
 * `comp_eligibility`: who is eligible for Variable / Bonus
 * `variable_entries`: the earlier calculated variable entries (kept, no longer used by the UI)
 * `variable_uploads` / `variable_payouts`: uploaded variable sheets and their rows (Emp ID, name, amount, remarks, matched employee, loan deduction)
-* `loans` / `loan_deductions`: loans taken, and the repayments taken from Variable / Bonus lines (voided, not deleted, when reversed)
+* `loans` / `loan_deductions` / `loan_repayments`: loans taken, deductions from Variable / Bonus lines (voided, not deleted, when reversed), and manual repayments
 * `finance_log`: who did what, per section, employee and month
-* `bonus_payments`: bonus and leave-encashment lines (with loan deduction)
+* `bonus_payments`: bonus and leave-encashment payments (date, amount, loan deduction); read-only once saved
 * `expense_claims`: expenses synced from the Google Form responses sheet, matched to employees by Employee ID

@@ -148,6 +148,21 @@
   .chip.violet { background: var(--violet-soft); color: var(--violet); }
   .chip.red { background: var(--red-soft); color: var(--red); }
   .chip.gray { background: var(--gray-soft); color: var(--muted); }
+  .bn-wrap { overflow-x: auto; }
+  .bn-row { display: grid; grid-template-columns: minmax(190px, 1.5fr) minmax(170px, 1.5fr) 150px minmax(130px, 1fr) minmax(130px, 1fr) 100px 36px; gap: 10px; align-items: start; padding: 10px 20px; min-width: 980px; border-bottom: 1px solid var(--border); }
+  .bn-head { padding-top: 10px; padding-bottom: 10px; background: var(--surface-2, #FAFAFB); font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .bn-head .num { text-align: right; }
+  .bn-cell .input { height: 38px; width: 100%; }
+  .bn-sub { display: flex; align-items: center; gap: 6px; min-height: 20px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .bn-static { display: flex; align-items: center; background: var(--gray-soft); border-style: dashed; }
+  .bn-net { height: 38px; display: flex; align-items: center; justify-content: flex-end; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .bn-cell .icon-btn { margin-top: 3px; }
+  .card-foot { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 14px 20px; }
+  .chip.lwd { background: var(--red-soft); color: var(--red); font-weight: 600; }
+  .row-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+  .chips-line { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+  .status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .status-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
   .chip.dark { background: var(--primary); color: #fff; }
   .avatar {
     width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex: none;
@@ -438,6 +453,9 @@
   .att tr.hdr td, .att tr.hdr th { background: var(--surface-2); }
   .att tr.hdr.sub td { font-size: 11.5px; color: var(--muted); }
   .att td.sun { background: #FAFAFB; }
+  .att td.lwd { background: var(--red-soft); box-shadow: inset 2px 0 0 var(--red), inset -2px 0 0 var(--red); }
+  .att td.gone { background: repeating-linear-gradient(135deg, #FAFAFB 0 6px, #F1F1F4 6px 12px); }
+  .lwd-tag { font-size: 10px; font-weight: 700; color: var(--red); letter-spacing: .04em; }
   .att tr.final-row td, .att tr.final-row th { background: #FBFBFF; border-bottom: 0; }
   .att td.changed { box-shadow: inset 0 0 0 2px var(--accent); }
   .att .short { color: var(--amber); font-weight: 600; }
@@ -1492,11 +1510,23 @@ function salarySummary(id) {
   const pct = latest && prev && Number(prev.amount) > 0 ? ((Number(latest.amount) - Number(prev.amount)) / Number(prev.amount)) * 100 : null;
   return { rows, latest, prev, pct };
 }
-// Employment status: active / resigned / terminated, then F&F completed (journey ended).
-const empState = (e) => (e?.fnf_completed_at ? 'fnf' : e?.employment_status || 'active');
-const EMP_STATE = { active: ['Active', 'green'], resigned: ['Resigned', 'amber'], terminated: ['Terminated', 'red'], fnf: ['F&F completed', 'gray'] };
+// Employment status: active → on notice (resigned, serving notice; still active) → resigned / terminated (R&T) → F&F completed.
+const empState = (e) => (e?.fnf_completed_at ? 'fnf' : e?.employment_status && e.employment_status !== 'active' ? e.employment_status : e?.resignation_date ? 'notice' : 'active');
+const EMP_STATE = { active: ['Active', 'green'], notice: ['On notice period', 'blue'], resigned: ['Resigned', 'amber'], terminated: ['Terminated', 'red'], fnf: ['F&F completed', 'gray'] };
+const isRT = (e) => ['resigned', 'terminated'].includes(empState(e));
+const SETTLE_DAYS = 60; // F&F is settled 60 days after the last working day
 const empChip = (e) => { const [l, t] = EMP_STATE[empState(e)]; return `<span class="chip ${t}">${l}</span>`; };
 const fmtDMY = (iso) => { const d = parseISODate(iso); return d ? `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}` : '—'; };
+const addDaysISO = (iso, n) => { const d = parseISODate(iso); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const daysBetween = (a, b) => Math.round((parseISODate(b) - parseISODate(a)) / 86400000);
+const settleDue = (e) => (e?.exit_date ? addDaysISO(e.exit_date, SETTLE_DAYS) : null);
+const lwdChip = (e) => (e?.exit_date ? `<span class="chip lwd nowrap" title="Last working day">LWD ${fmtDMY(e.exit_date)}</span>` : '');
+const settleChip = (e) => {
+  const due = settleDue(e);
+  if (!due) return '';
+  const left = daysBetween(todayISO(), due);
+  return `<span class="chip ${left < 0 ? 'red' : left <= 7 ? 'amber' : 'gray'} plain nowrap" title="F&F is settled ${SETTLE_DAYS} days after the last working day">Settle by ${fmtDMY(due)} · ${left < 0 ? `${-left}d overdue` : left === 0 ? 'today' : `${left}d left`}</span>`;
+};
 const activeEmployees = () => state.admin.profiles.filter((p) => p.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name));
 const pctHTML = (pct) => pct === null ? '' : `<span class="${pct >= 0 ? 'delta-up' : 'delta-down'}">${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%</span>`;
 
@@ -1808,7 +1838,7 @@ async function openKycReview(id, btn) {
 async function pageEmd() {
   await ensureAdmin();
   const inEmd = state.admin.profiles.filter((p) => p.status === 'active' || p.fnf_completed_at).sort((a, b) => a.full_name.localeCompare(b.full_name));
-  const tabs = { active: inEmd.filter((p) => empState(p) === 'active'), rt: inEmd.filter((p) => ['resigned', 'terminated'].includes(empState(p))), fnf: inEmd.filter((p) => empState(p) === 'fnf') };
+  const tabs = { active: inEmd.filter((p) => ['active', 'notice'].includes(empState(p))), rt: inEmd.filter(isRT), fnf: inEmd.filter((p) => empState(p) === 'fnf') };
   const tab = tabs[state.emdTab] ? state.emdTab : 'active';
   const all = tabs[tab];
 
@@ -1817,7 +1847,7 @@ async function pageEmd() {
     const mgr = byId(e.reporting_manager_id);
     const future = s.latest && s.latest.effective_month > todayISO();
     return `<tr data-href="#/emd/${e.id}">
-      <td>${person(e, esc(e.employee_code || 'No EID'))}${empState(e) !== 'active' ? `<div style="margin-top:4px">${empChip(e)}${e.exit_date ? ` <span class="faint" style="font-size:11.5px">${fmtDMY(e.exit_date)}</span>` : ''}</div>` : ''}</td>
+      <td>${person(e, esc(e.employee_code || 'No EID'))}${empState(e) !== 'active' ? `<div class="chips-line">${empChip(e)}${lwdChip(e)}${isRT(e) ? settleChip(e) : ''}</div>` : ''}</td>
       <td class="trunc" title="${esc(e.email)}">${esc(e.email)}</td>
       <td class="nowrap">${esc(e.phone || '—')}</td>
       <td class="wrap">${esc(e.designation || '—')}</td>
@@ -1884,23 +1914,70 @@ function exportEmdCsv(list) {
 function employmentStatusCard(e) {
   const st = empState(e);
   const self = e.id === state.user.id;
+  const row = (inner, buttons) => `<div class="status-row">${inner}${self || !buttons ? '' : `<span class="status-actions">${buttons}</span>`}</div>`;
   let body;
   if (st === 'active') {
-    body = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${empChip(e)}<span class="muted" style="font-size:13px">Working — included in payroll and all finance sections.</span>
-      ${self ? '' : `<span style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-sm" data-emp-status="resigned">Resigned</button><button class="btn btn-sm btn-danger" data-emp-status="terminated">Terminated</button></span>`}</div>`;
+    body = row(`${empChip(e)}<span class="muted" style="font-size:13px">Working — included in payroll and all finance sections.</span>`,
+      `<button class="btn btn-sm" data-notice>Resignation</button><button class="btn btn-sm btn-danger" data-emp-status="terminated">Terminated</button>`);
+  } else if (st === 'notice') {
+    const left = daysBetween(todayISO(), e.exit_date);
+    body = row(`${empChip(e)}${lwdChip(e)}<span class="muted" style="font-size:13px">Resigned on ${fmtDMY(e.resignation_date)} · notice of ${daysBetween(e.resignation_date, e.exit_date)} days · ${left > 0 ? `${left} day(s) to go` : left === 0 ? 'last day today' : `last working day passed ${-left} day(s) ago`}${e.exit_note ? ` · ${esc(e.exit_note)}` : ''}. Still Active until marked Resigned.</span>`,
+      `<button class="btn btn-sm" data-notice="edit">Edit notice</button><button class="btn btn-sm" data-withdraw>Withdraw</button><button class="btn btn-sm btn-primary" data-emp-status="resigned">Resigned</button><button class="btn btn-sm btn-danger" data-emp-status="terminated">Terminated</button>`);
   } else if (st === 'fnf') {
-    body = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${empChip(e)}<span class="muted" style="font-size:13px">${EMP_STATE[e.employment_status]?.[0] || 'Exited'} on ${fmtDMY(e.exit_date)} · F&F completed ${fmtDate(String(e.fnf_completed_at).slice(0, 10))}. Their journey has ended — they are not included in any sheet and can no longer sign in.</span></div>`;
+    body = row(`${empChip(e)}<span class="muted" style="font-size:13px">${EMP_STATE[e.employment_status]?.[0] || 'Exited'} · last working day ${fmtDMY(e.exit_date)} · F&F completed ${fmtDate(String(e.fnf_completed_at).slice(0, 10))}. Their journey has ended — they are not included in any sheet and can no longer sign in.</span>`);
   } else {
-    body = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${empChip(e)}<span class="muted" style="font-size:13px">Last working day ${fmtDMY(e.exit_date)}${e.exit_note ? ` · ${esc(e.exit_note)}` : ''}. Shown under Resigned & Terminated in Payroll until F&F.</span>
-      ${self ? '' : `<span style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-sm" data-emp-status="active">Mark active again</button><button class="btn btn-sm btn-primary" data-fnf="${e.id}">Complete F&F</button></span>`}</div>`;
+    body = row(`${empChip(e)}${lwdChip(e)}${settleChip(e)}<span class="muted" style="font-size:13px">${e.resignation_date ? `Resigned on ${fmtDMY(e.resignation_date)} · ` : ''}${e.exit_note ? `${esc(e.exit_note)} · ` : ''}In Resigned & Terminated (EMD and Payroll) until F&F.</span>`,
+      `<button class="btn btn-sm" data-emp-status="active">Mark active again</button><button class="btn btn-sm btn-primary" data-fnf="${e.id}">Complete F&F</button>`);
   }
-  return `<div class="card" id="emp-status-card"><div class="card-head"><div><h3>Status</h3><p>Employment status</p></div></div><div class="card-body">${body}</div></div>`;
+  return `<div class="card" id="emp-status-card"><div class="card-head"><div><h3>Status</h3><p>Resignation → notice period → Resigned (R&T) → F&F ${SETTLE_DAYS} days after the last working day</p></div></div><div class="card-body">${body}</div></div>`;
+}
+const NOTICE_PRESETS = [30, 45, 60, 90];
+function openNoticeDialog(e) {
+  const editing = !!e.resignation_date;
+  const resign0 = e.resignation_date || todayISO();
+  const days0 = editing ? daysBetween(e.resignation_date, e.exit_date) : 30;
+  const preset0 = editing && !NOTICE_PRESETS.includes(days0) ? 'manual' : String(days0);
+  const dlg = openModal({
+    title: editing ? 'Edit notice period' : 'Resignation', size: 'sm', subtitle: `${esc(e.full_name)} · ${esc(e.employee_code || '')}`,
+    body: `<div class="grid" style="gap:14px">
+        <div class="field"><label>Resignation date<span class="req">*</span></label><input class="input" type="date" id="rs-date" value="${resign0}"></div>
+        <div class="field"><label>Notice period</label><select class="input" id="rs-preset">${NOTICE_PRESETS.map((n) => `<option value="${n}" ${String(n) === preset0 ? 'selected' : ''}>${n} days</option>`).join('')}<option value="manual" ${preset0 === 'manual' ? 'selected' : ''}>Manual — pick the last working day</option></select></div>
+        <div class="field"><label>Last working day<span class="req">*</span></label><input class="input" type="date" id="rs-lwd" value="${e.exit_date || addDaysISO(resign0, 30)}"><div class="hint" id="rs-info"></div></div>
+        <div class="field"><label>Note <span class="faint">(optional)</span></label><textarea class="input" id="rs-note" placeholder="e.g. Resignation mail received, moving cities">${esc(e.exit_note || '')}</textarea></div>
+        <p class="muted" style="font-size:12.5px">The employee shows <b>On notice period</b> and stays Active (in payroll) until you click <b>Resigned</b>.</p></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${editing ? 'Save notice' : 'Put on notice'}</button>`,
+  });
+  const d = $('#rs-date', dlg.el), pre = $('#rs-preset', dlg.el), lwd = $('#rs-lwd', dlg.el);
+  const info = () => {
+    const n = d.value && lwd.value ? daysBetween(d.value, lwd.value) : null;
+    $('#rs-info', dlg.el).innerHTML = n == null ? '' : n < 0 ? '<span class="error-text">Before the resignation date</span>'
+      : `${fmtDMY(lwd.value)} · notice of ${n} day(s) · F&F settlement by ${fmtDMY(addDaysISO(lwd.value, SETTLE_DAYS))}`;
+  };
+  const fromPreset = () => { if (pre.value !== 'manual' && d.value) lwd.value = addDaysISO(d.value, Number(pre.value)); info(); };
+  d.addEventListener('change', fromPreset);
+  pre.addEventListener('change', () => { if (pre.value === 'manual') { lwd.focus(); lwd.showPicker?.(); } fromPreset(); });
+  lwd.addEventListener('change', () => { const n = daysBetween(d.value, lwd.value); pre.value = NOTICE_PRESETS.includes(n) ? String(n) : 'manual'; info(); });
+  if (!editing) fromPreset(); else info();
+  $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+    if (!d.value || !lwd.value) return toast('Pick the resignation date and the last working day.', 'error');
+    if (lwd.value < d.value) return toast('The last working day cannot be before the resignation date.', 'error');
+    try {
+      await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_set_notice', { p_user: e.id, p_resign_date: d.value, p_last_day: lwd.value, p_note: $('#rs-note', dlg.el).value }));
+      dlg.close(); toast(`${e.full_name} is on notice — last working day ${fmtDMY(lwd.value)}.`); state.fin.loaded = false; await refreshAdmin();
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
 }
 function mountEmploymentStatus(e) {
+  $('[data-notice]')?.addEventListener('click', () => openNoticeDialog(e));
+  $('[data-withdraw]')?.addEventListener('click', async () => {
+    if (!(await confirmDialog({ title: 'Withdraw resignation?', message: `${esc(e.full_name)} goes back to plain Active and the notice period is cleared.`, confirmText: 'Withdraw' }))) return;
+    try { await api.rpc('admin_set_notice', { p_user: e.id, p_resign_date: null, p_last_day: null }); toast('Resignation withdrawn.'); state.fin.loaded = false; await refreshAdmin(); }
+    catch (err) { toast(friendlyError(err), 'error'); }
+  });
   $$('[data-emp-status]').forEach((b) => b.addEventListener('click', () => {
     const to = b.dataset.empStatus;
     if (to === 'active') {
-      confirmDialog({ title: 'Mark active again?', message: `${esc(e.full_name)} goes back to the Active list.`, confirmText: 'Mark active' }).then(async (ok) => {
+      confirmDialog({ title: 'Mark active again?', message: `${esc(e.full_name)} goes back to the Active list and the exit is cleared.`, confirmText: 'Mark active' }).then(async (ok) => {
         if (!ok) return;
         try { await api.rpc('admin_set_employment_status', { p_user: e.id, p_status: 'active' }); toast(`${e.full_name} is active again.`); state.fin.loaded = false; await refreshAdmin(); }
         catch (err) { toast(friendlyError(err), 'error'); }
@@ -1909,15 +1986,19 @@ function mountEmploymentStatus(e) {
     }
     const dlg = openModal({
       title: to === 'resigned' ? 'Mark as resigned' : 'Mark as terminated', size: 'sm', subtitle: `${esc(e.full_name)} · ${esc(e.employee_code || '')}`,
-      body: `<div class="grid" style="gap:14px"><div class="field"><label>Last working day</label><input class="input" type="date" id="exit-date" value="${todayISO()}"></div>
-        <div class="field"><label>Note <span class="faint">(optional)</span></label><textarea class="input" id="exit-note" placeholder="${to === 'resigned' ? 'e.g. Resignation accepted, notice served' : 'e.g. Reason for termination'}"></textarea></div>
-        <p class="muted" style="font-size:12.5px">They move to Resigned & Terminated in Payroll. Click <b>F&F</b> there (or here) once the full and final settlement is done.</p></div>`,
+      body: `<div class="grid" style="gap:14px"><div class="field"><label>Last working day</label><input class="input" type="date" id="exit-date" value="${e.exit_date || todayISO()}"><div class="hint" id="exit-info"></div></div>
+        <div class="field"><label>Note <span class="faint">(optional)</span></label><textarea class="input" id="exit-note" placeholder="${to === 'resigned' ? 'e.g. Notice served' : 'e.g. Reason for termination'}">${esc(e.exit_note || '')}</textarea></div>
+        <p class="muted" style="font-size:12.5px">They move to <b>Resigned & Terminated</b> in Employee Master Data and Payroll, and stay there until F&F. Settlement is done ${SETTLE_DAYS} days after the last working day.</p></div>`,
       footer: `<button class="btn" data-close>Cancel</button><button class="btn ${to === 'terminated' ? 'btn-danger-solid' : 'btn-primary'}" data-ok>${to === 'resigned' ? 'Mark resigned' : 'Mark terminated'}</button>`,
     });
+    const ex = $('#exit-date', dlg.el);
+    const info = () => { $('#exit-info', dlg.el).textContent = ex.value ? `F&F settlement by ${fmtDMY(addDaysISO(ex.value, SETTLE_DAYS))}` : ''; };
+    ex.addEventListener('change', info); info();
     $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+      if (!ex.value) return toast('Pick the last working day.', 'error');
       try {
-        await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_set_employment_status', { p_user: e.id, p_status: to, p_exit_date: $('#exit-date', dlg.el).value || null, p_note: $('#exit-note', dlg.el).value }));
-        dlg.close(); toast(`${e.full_name} marked ${to}.`); state.fin.loaded = false; await refreshAdmin();
+        await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_set_employment_status', { p_user: e.id, p_status: to, p_exit_date: ex.value, p_note: $('#exit-note', dlg.el).value }));
+        dlg.close(); toast(`${e.full_name} marked ${to} — moved to Resigned & Terminated.`); state.fin.loaded = false; await refreshAdmin();
       } catch (err) { toast(friendlyError(err), 'error'); }
     });
   }));
@@ -2234,7 +2315,7 @@ const stChip = (s, title) => `<span class="st st-${s}" title="${esc(title || ST_
    Rules: both punches and ≥ full-day hours → F; both but shorter → HD;
    one punch missing → missed punch (every 3rd one is a half day, the rest
    count as full days); no punches → L; Sunday → weekly off. */
-function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd) {
+function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd, lwd = null) {
   const byDate = new Map(rows.map((r) => [r.work_date, r]));
   // Staff added to the HRMS after they actually joined have a later joining date
   // in EMD than their first punch; their punches win.
@@ -2252,7 +2333,7 @@ function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd) {
     const outM = inM != null && rawOut === inM ? null : rawOut; // the same time twice is a single punch
     const need = wd === 6 ? rules.saturday_full_minutes : rules.weekday_full_minutes;
     let mins = null, sys, missNo = null;
-    if (doj && iso < doj) sys = 'NA';
+    if ((doj && iso < doj) || (lwd && iso > lwd)) sys = 'NA'; // before joining / after the last working day
     else if (wd === 0) sys = 'WO';
     else if (inM != null && outM != null) {
       mins = outM - inM;
@@ -2269,9 +2350,11 @@ function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd) {
       iso, d: i, wd, dayLabel: r?.day_label || DAY_NAMES[wd], in: r?.punch_in || null, out: outM == null ? null : r?.punch_out,
       inM, outM, mins, need, sys, missNo, editable, systemFinal, saved: adj, final: adj || systemFinal,
       missing: sys === 'MP' || sys === 'MPH' ? (inM == null ? 'IN' : 'OUT') : null,
+      lwd: iso === lwd, afterLwd: !!lwd && iso > lwd,
     });
   }
   days.dojIgnored = dojIgnored;
+  days.punchAfterLwd = !!lwd && rows.some((r) => r.work_date > lwd && (r.punch_in || r.punch_out));
   return days;
 }
 function tally(days, which) {
@@ -2339,19 +2422,20 @@ function payrollSheet() {
     const emp = byId(map.get(g.code));
     if (emp?.fnf_completed_at) { exited.push({ g, emp }); continue; } // journey ended — not channelled
     if (!emp) { unmapped.push(g); continue; }
-    const days = computeAttendance(g.rows, run.month, P.rules, adjByCode.get(g.code) || new Map(), emp.date_of_joining);
+    const days = computeAttendance(g.rows, run.month, P.rules, adjByCode.get(g.code) || new Map(), emp.date_of_joining, emp.exit_date);
     const pre = tally(days, 'system');
     const post = tally(days, 'final');
     const sal = salaryForMonth(emp.id, run.month);
     const salary = sal ? sal.amount : null;
     const notes = [];
     if (days.dojIgnored) notes.push(`Date of joining in Employee Master Data is ${fmtDate(emp.date_of_joining)}, but the sheet has punches before it — it is ignored for ${fmtMonth(run.month)}. Correct the date of joining if it is wrong.`);
+    if (days.punchAfterLwd) notes.push(`The sheet has punches after the last working day (${fmtDMY(emp.exit_date)}) — those days are not counted. Correct the last working day in Employee Master Data if it is wrong.`);
     if (sal?.fallback) notes.push(`No salary entry covers ${fmtMonth(run.month)} — using ${fmtINR(sal.amount)} from ${fmtMonth(sal.from)}. Add the right salary month in Employee Master Data if needed.`);
     const check = idCheck(g.code, emp);
     if (check && !check.ok) notes.unshift(`EmpCode in the sheet is ${g.code}, but ${check.text.replace('ID mismatch — EMD has', 'the Employee ID in EMD is')}. Check the mapping.`);
     const pay = payFor(post, salary, P.rules);
     const pt = salary ? ptFor(salary) : 0;
-    mapped.push({ g, emp, days, pre, post, salary, notes, rt: empState(emp) !== 'active', idOk: !check || check.ok, prePay: payFor(pre, salary, P.rules), ...pay, pt, net: Math.max(0, pay.payable - pt) });
+    mapped.push({ g, emp, days, pre, post, salary, notes, rt: isRT(emp), idOk: !check || check.ok, prePay: payFor(pre, salary, P.rules), ...pay, pt, net: Math.max(0, pay.payable - pt) });
   }
   mapped.sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
   return { run, groups, mapped, unmapped, exited };
@@ -2648,6 +2732,8 @@ async function pagePayrollCalc() {
   const totalPt = mapped.reduce((s, m) => s + m.pt, 0);
   const totalNet = mapped.reduce((s, m) => s + m.net, 0);
   const noSalary = mapped.filter((m) => m.salary == null);
+  const rtAll = state.admin.profiles.filter(isRT).sort((a, b) => String(a.exit_date).localeCompare(String(b.exit_date)));
+  const seg = state.payrollSeg === 'rt' ? 'rt' : 'active';
   return {
     ...base,
     html: `${payrollTabs('calc')}
@@ -2670,11 +2756,15 @@ async function pagePayrollCalc() {
           <button class="btn btn-sm btn-primary" id="save-payroll" ${mapped.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payroll</button></div></div>
         ${mapped.length ? '' : emptyState('users', 'No mapped employees yet', 'Map the sheet’s EmpCodes to employees in the <a href="#/payroll/mapping">Mapping</a> tab.')}
       </div>
-      ${mapped.length ? payrollSectionHTML('Active', 'Working employees', mapped.filter((m) => !m.rt), false) : ''}
-      ${mapped.some((m) => m.rt) ? payrollSectionHTML('Resigned & Terminated', 'Final month(s) before F&F — click F&F once the settlement is done; they then leave every sheet', mapped.filter((m) => m.rt), true) : ''}
+      <div><nav class="tabs" id="pay-seg">
+        <a href="#/payroll" data-seg="active" class="${seg === 'active' ? 'active' : ''}">Active<span class="count">${mapped.filter((m) => !m.rt).length}</span></a>
+        <a href="#/payroll" data-seg="rt" class="${seg === 'rt' ? 'active' : ''}">Resigned & Terminated<span class="count">${rtAll.length}</span></a></nav></div>
+      ${seg === 'active' ? (mapped.length ? payrollSectionHTML('Active', 'Working employees, including those on notice period', mapped.filter((m) => !m.rt)) : '')
+        : rtSectionHTML(run, mapped, rtAll)}
       ${exited.length ? `<p class="muted" style="font-size:12.5px">${exited.length} employee(s) in this sheet have F&F completed and are not included: ${exited.map((x) => esc(x.emp.full_name)).join(', ')}.</p>` : ''}`,
     mount() {
       mountPayrollActions();
+      $$('#pay-seg [data-seg]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); state.payrollSeg = a.dataset.seg; render(); }));
       $$('.pay-table tbody').forEach((tb) => tb.addEventListener('click', (ev) => {
         const tr = ev.target.closest('tr[data-href]');
         if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href;
@@ -2699,7 +2789,7 @@ async function pagePayrollCalc() {
   };
 }
 
-function payrollSectionHTML(title, sub, list, rt) {
+function payrollSectionHTML(title, sub, list) {
   const cell = (c, k) => `<td class="num">${c[k]}</td>`;
   const t = list.reduce((a, m) => ({ earned: a.earned + m.payable, pt: a.pt + m.pt, net: a.net + m.net }), { earned: 0, pt: 0, net: 0 });
   return `<div class="card">
@@ -2714,8 +2804,7 @@ function payrollSectionHTML(title, sub, list, rt) {
       </thead>
       <tbody>${list.map((m) => `<tr data-href="#/payroll/emp/${encodeURIComponent(m.g.code)}">
         <td><a href="#/payroll/emp/${encodeURIComponent(m.g.code)}" class="plain-link" title="Day-wise attendance">${person(m.emp, esc(m.emp.employee_code || 'No EID'))}</a>
-          ${rt ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${empChip(m.emp)}<span class="faint nowrap" style="font-size:11.5px">LWD ${fmtDMY(m.emp.exit_date)}</span>
-            <button class="btn btn-sm btn-primary" data-fnf="${m.emp.id}" style="height:26px;padding:0 10px" title="Full & final settlement done — end their journey">F&F</button></div>` : ''}
+          ${empState(m.emp) === 'notice' ? `<div class="chips-line">${empChip(m.emp)}${lwdChip(m.emp)}</div>` : ''}
           ${m.notes.length ? `<div title="${esc(m.notes.join(' '))}" style="margin-top:4px"><span class="chip ${m.idOk ? 'amber' : 'red'} plain">${icon('alert', 'sm')} ${m.idOk ? 'Check' : 'ID mismatch'}</span></div>` : ''}</td>
         <td class="mono">${esc(m.g.code)}</td>
         <td class="num">${m.salary == null ? '<span class="chip amber plain">Not set</span>' : fmtINR(m.salary)}</td>
@@ -2729,6 +2818,39 @@ function payrollSectionHTML(title, sub, list, rt) {
       </tbody>
       <tfoot><tr><td colspan="10" style="text-align:right;font-weight:600">Total</td><td class="num nowrap">${fmtINR(t.earned)}</td><td class="num nowrap">− ${fmtINR(t.pt)}</td><td class="num nowrap"><b style="color:var(--text)">${fmtINR(t.net)}</b></td></tr></tfoot>
     </table></div>` : emptyState('users', 'No one here', 'Nobody in this section for this month.')}
+  </div>`;
+}
+
+// Resigned & Terminated: everyone in R&T stays here (whatever the month) until F&F,
+// with the last working day highlighted and F&F due 60 days after it.
+function rtSectionHTML(run, mapped, people) {
+  const byEmp = new Map(mapped.map((m) => [m.emp.id, m]));
+  const inMonth = (iso) => iso && iso.slice(0, 7) === run.month.slice(0, 7);
+  const t = people.reduce((a, p) => { const m = byEmp.get(p.id); return m ? { earned: a.earned + m.payable, pt: a.pt + m.pt, net: a.net + m.net } : a; }, { earned: 0, pt: 0, net: 0 });
+  return `<div class="card">
+    <div class="card-head"><div><h3>Resigned & Terminated <span class="chip plain gray" style="margin-left:6px">${people.length}</span></h3><p>Stay here until F&F is settled (${SETTLE_DAYS} days after the last working day). Days after the last working day are not counted.</p></div>
+      <div class="right"><b class="nowrap">${fmtINR(t.net)}</b><span class="muted" style="font-size:12.5px">net in ${fmtMonth(run.month)}</span></div></div>
+    ${people.length ? `<div class="table-wrap"><table class="table compact pay-table rt-table">
+      <thead>
+        <tr><th rowspan="2">Employee</th><th rowspan="2">Last working day</th><th rowspan="2">F&F settlement</th><th rowspan="2" class="num">Monthly salary</th>
+          <th colspan="3" class="grp">Final — ${fmtMonth(run.month)}</th><th rowspan="2" class="num">Net payable</th><th rowspan="2"></th></tr>
+        <tr><th class="num">F</th><th class="num">HD</th><th class="num">L</th></tr>
+      </thead>
+      <tbody>${people.map((p) => {
+        const m = byEmp.get(p.id);
+        const check = m ? `#/payroll/emp/${encodeURIComponent(m.g.code)}` : `#/emd/${p.id}`;
+        return `<tr data-href="${check}">
+        <td><a href="${check}" class="plain-link">${person(p, esc(p.employee_code || 'No EID'))}</a><div class="chips-line">${empChip(p)}</div></td>
+        <td class="nowrap">${lwdChip(p)}${inMonth(p.exit_date) ? '<div class="faint" style="font-size:11.5px;margin-top:3px">in this month</div>' : ''}</td>
+        <td class="nowrap">${settleChip(p)}</td>
+        ${m ? `<td class="num">${m.salary == null ? '<span class="chip amber plain">Not set</span>' : fmtINR(m.salary)}</td>
+          <td class="num">${m.post.F}</td><td class="num">${m.post.HD}</td><td class="num">${m.post.L}</td>
+          <td class="num nowrap"><b style="color:var(--text)">${fmtINR(m.net)}</b><div class="faint" style="font-size:11.5px">${fmtINR(m.payable)} − PT ${fmtINR(m.pt)}</div></td>`
+        : `<td colspan="5" class="muted" style="text-align:center;font-size:12.5px">Not in the ${fmtMonth(run.month)} attendance sheet</td>`}
+        <td class="actions nowrap"><div class="row-actions"><a class="btn btn-sm" href="${check}" title="${m ? 'Day-wise attendance' : 'Employee details'}">${icon('eye', 'sm')}Check</a>
+          <button class="btn btn-sm btn-primary" data-fnf="${p.id}" title="Full & final settlement done — end their journey">F&F</button></div></td></tr>`;
+      }).join('')}</tbody>
+    </table></div>` : emptyState('users', 'No one in Resigned & Terminated', 'Mark an employee Resigned or Terminated in Employee Master Data → Show detailed info → Status.')}
   </div>`;
 }
 
@@ -2815,15 +2937,16 @@ async function pagePayrollEmployee(code) {
   };
   const gridHTML = () => {
     const days = daysNow();
-    const head = (label, fn, cls = '') => `<tr class="${cls}"><th class="lbl">${label}</th>${days.map((d) => `<td class="${d.wd === 0 ? 'sun' : ''}">${fn(d)}</td>`).join('')}</tr>`;
+    const dc = (d) => `${d.wd === 0 ? 'sun' : ''} ${d.lwd ? 'lwd' : ''} ${d.afterLwd ? 'gone' : ''}`;
+    const head = (label, fn, cls = '') => `<tr class="${cls}"><th class="lbl">${label}</th>${days.map((d) => `<td class="${dc(d)}">${fn(d)}</td>`).join('')}</tr>`;
     return `<table class="att">
-      <thead>${head('Date', (d) => `<b>${pad(d.d)}</b>`, 'hdr')}${head('Day', (d) => esc(d.dayLabel), 'hdr sub')}</thead>
+      <thead>${head('Date', (d) => `<b>${pad(d.d)}</b>${d.lwd ? '<div class="lwd-tag">LWD</div>' : ''}`, 'hdr')}${head('Day', (d) => esc(d.dayLabel), 'hdr sub')}</thead>
       <tbody>
         ${head('IN', (d) => (d.inM == null ? '<span class="faint">—</span>' : fmtClock(d.in)))}
         ${head('OUT', (d) => (d.outM == null ? '<span class="faint">—</span>' : fmtClock(d.out)))}
         ${head('Worked', (d) => (d.mins == null ? '<span class="faint">—</span>' : `<span class="${d.mins < d.need ? 'short' : ''}">${fmtDuration(d.mins).replace(' ', '')}</span>`))}
         ${head('System', (d) => stChip(d.sys, d.sys === 'MP' || d.sys === 'MPH' ? `${ST_TITLE[d.sys]} (missed ${d.missing}, miss #${d.missNo})` : d.sys === 'HD' ? `${ST_TITLE.HD}: ${fmtDuration(d.mins)} of ${fmtDuration(d.need)}` : ST_TITLE[d.sys]))}
-        <tr class="final-row"><th class="lbl">Final<div class="faint" style="font-weight:400;font-size:11px">change HD / L / missed / —</div></th>${days.map((d) => `<td class="${d.wd === 0 ? 'sun' : ''} ${d.editable && d.final !== d.systemFinal ? 'changed' : ''}">${d.editable
+        <tr class="final-row"><th class="lbl">Final<div class="faint" style="font-weight:400;font-size:11px">change HD / L / missed / —</div></th>${days.map((d) => `<td class="${dc(d)} ${d.editable && d.final !== d.systemFinal ? 'changed' : ''}">${d.editable
           ? `<select class="st-select st-${d.final}" data-day="${d.iso}">${(d.sys === 'NA' ? ['NA', 'F', 'HD', 'L'] : ['F', 'HD', 'L']).map((s) => `<option value="${s}" ${s === d.final ? 'selected' : ''}>${ST_LABEL[s]}</option>`).join('')}</select>`
           : stChip(d.final)}</td>`).join('')}</tr>
       </tbody></table>`;
@@ -2855,7 +2978,7 @@ async function pagePayrollEmployee(code) {
     html: `
       <div class="card emp-head">${avatar(m.emp, 'lg')}
         <div style="min-width:0"><h2>${esc(m.emp.full_name)}</h2>
-          <div class="meta"><span>${esc(m.emp.employee_code || 'No EID')}</span><span>·</span><span>EmpCode ${esc(m.g.code)}${m.g.name && m.g.name !== m.emp.full_name ? ` (“${esc(m.g.name)}” in sheet)` : ''}</span><span>·</span><span>${esc(m.emp.designation || 'No designation')}</span></div></div>
+          <div class="meta">${empState(m.emp) !== 'active' ? `${empChip(m.emp)}${lwdChip(m.emp)}` : ''}<span>${esc(m.emp.employee_code || 'No EID')}</span><span>·</span><span>EmpCode ${esc(m.g.code)}${m.g.name && m.g.name !== m.emp.full_name ? ` (“${esc(m.g.name)}” in sheet)` : ''}</span><span>·</span><span>${esc(m.emp.designation || 'No designation')}</span></div></div>
         <div class="facts">
           <div><div class="k">Monthly salary</div><div class="v">${fmtINR(m.salary)}</div></div>
           <div><div class="k">Daily salary (÷30)</div><div class="v">${m.salary == null ? '—' : fmtINR2(m.daily)}</div></div>
@@ -2876,6 +2999,8 @@ async function pagePayrollEmployee(code) {
         <button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save changes</button>
       </div>`,
     mount() {
+      const lw = $('#att-grid td.lwd');
+      if (lw) $('#att-grid').scrollLeft = Math.max(0, lw.offsetLeft - 360); // bring the last working day into view
       const redraw = () => {
         $('#att-summary').innerHTML = summaryHTML();
         const scroll = $('#att-grid').scrollLeft;
@@ -3124,13 +3249,14 @@ async function pagePayrollPt() {
 /* =====================================================================
    FINANCE — Variable, Bonus & Leave Encash, Monthly Expense, ESOPs
    ===================================================================== */
-state.fin = { loaded: false, eligibility: [], bonus: [], expenses: [], expenseSource: null, variablePayouts: [], loans: [], loanDeductions: [], log: [] };
+state.fin = { loaded: false, eligibility: [], bonus: [], expenses: [], expenseSource: null, variablePayouts: [], loans: [], loanDeductions: [], loanRepayments: [], log: [] };
 
 const finApi = {
   eligibility: () => fetchAll(() => db.from('comp_eligibility').select('employee_id, program, eligible').order('employee_id')),
   variablePayouts: () => fetchAll(() => db.from('variable_payouts').select('*').is('removed_at', null).order('pay_month', { ascending: false })),
   loans: () => fetchAll(() => db.from('loans').select('*').is('removed_at', null).order('taken_on', { ascending: false })),
   loanDeductions: () => fetchAll(() => db.from('loan_deductions').select('*').is('voided_at', null).order('created_at')),
+  loanRepayments: () => fetchAll(() => db.from('loan_repayments').select('*').is('voided_at', null).order('paid_on')),
   log: () => fetchAll(() => db.from('finance_log').select('*').order('created_at', { ascending: false })),
   bonus: () => fetchAll(() => db.from('bonus_payments').select('*').is('removed_at', null).order('pay_month', { ascending: false })),
   expenses: () => fetchAll(() => db.from('expense_claims').select('*').order('submitted_at', { ascending: false })),
@@ -3145,10 +3271,10 @@ const finApi = {
 async function ensureFinance(force = false) {
   await ensureAdmin();
   if (state.fin.loaded && !force) return;
-  const [eligibility, bonus, expenses, expenseSource, variablePayouts, loans, loanDeductions, log] = await Promise.all([
+  const [eligibility, bonus, expenses, expenseSource, variablePayouts, loans, loanDeductions, loanRepayments, log] = await Promise.all([
     finApi.eligibility(), finApi.bonus(), finApi.expenses(), finApi.expenseSource(),
-    finApi.variablePayouts(), finApi.loans(), finApi.loanDeductions(), finApi.log()]);
-  state.fin = { loaded: true, eligibility, bonus, expenses, expenseSource, variablePayouts, loans, loanDeductions, log };
+    finApi.variablePayouts(), finApi.loans(), finApi.loanDeductions(), finApi.loanRepayments(), finApi.log()]);
+  state.fin = { loaded: true, eligibility, bonus, expenses, expenseSource, variablePayouts, loans, loanDeductions, loanRepayments, log };
 }
 const currentSalary = (empId) => { const rows = salariesOf(empId); return rows.length ? Number(rows[rows.length - 1].amount) : null; };
 const eligibleIds = (program) => new Set(state.fin.eligibility.filter((x) => x.program === program && x.eligible).map((x) => x.employee_id));
@@ -3220,7 +3346,9 @@ function mountLogMonth() {
 }
 
 /* ---------- Loans helpers ---------- */
-const loanDeducted = (loanId) => state.fin.loanDeductions.filter((d) => d.loan_id === loanId).reduce((s, d) => s + Number(d.amount), 0);
+// Repaid = deductions from Variable / Bonus lines + manual repayments
+const loanDeducted = (loanId) => state.fin.loanDeductions.filter((d) => d.loan_id === loanId).reduce((s, d) => s + Number(d.amount), 0)
+  + state.fin.loanRepayments.filter((x) => x.loan_id === loanId).reduce((s, x) => s + Number(x.amount), 0);
 const loanLeft = (loan) => Number(loan.amount) - loanDeducted(loan.id);
 const empLoanLeft = (empId) => state.fin.loans.filter((l) => l.employee_id === empId).reduce((s, l) => s + loanLeft(l), 0);
 
@@ -3438,44 +3566,62 @@ async function pageVariableEmployee(id) {
 }
 
 /* ---------- Bonus & Leave Encash ---------- */
+const bonusDate = (b) => b.pay_date || b.pay_month;
+const fmtSlash = (iso) => fmtDMY(iso).replace(/-/g, '/');
+// Loan deduction cell: the amount, or "No loan" when the employee had no loan at the time.
+function bonusLoanCell(b) {
+  if (Number(b.loan_deduction) > 0) return `${fmtINR(b.loan_deduction)}${b.deduct_full ? ' <span class="chip plain gray">full</span>' : ''}`;
+  const hadLoan = state.fin.loans.some((l) => l.employee_id === b.employee_id && l.taken_on <= bonusDate(b));
+  return hadLoan ? '<span class="faint">Not deducted</span>' : '<span class="faint">No loan</span>';
+}
+// One line per payment: Date | Employee | E-Code | Desc. | Amount | Loan Deduction | Net Amount
+function bonusLedgerHTML(lines, { showEmployee = true } = {}) {
+  const list = [...lines].sort((a, b) => String(bonusDate(b)).localeCompare(String(bonusDate(a))) || String(b.created_at).localeCompare(String(a.created_at)));
+  const tot = list.reduce((a, b) => ({ amt: a.amt + Number(b.amount), ded: a.ded + Number(b.loan_deduction) }), { amt: 0, ded: 0 });
+  if (!list.length) return emptyState('wallet', 'No payments yet', 'Saved payments show here, one line each.');
+  return `<div class="table-wrap"><table class="table compact ledger"><thead><tr><th>Date</th>${showEmployee ? '<th>Employee</th><th>E-Code</th>' : ''}<th>Desc.</th><th class="num">Amount</th><th class="num">Loan deduction</th><th class="num">Net amount</th></tr></thead>
+    <tbody>${list.map((b) => { const e = byId(b.employee_id); return `<tr>
+      <td class="nowrap">${fmtSlash(bonusDate(b))}</td>
+      ${showEmployee ? `<td>${e ? `<a class="plain-link" href="#/bonus/${e.id}"><b style="color:var(--text);font-weight:600">${esc(e.full_name)}</b></a>` : '—'}</td><td class="mono">${esc(e?.employee_code || '—')}</td>` : ''}
+      <td class="wrap">${esc(b.description)}${b.use_current_salary ? ' <span class="chip plain gray">current salary</span>' : ''}</td>
+      <td class="num nowrap">${fmtINR(b.amount)}</td><td class="num nowrap">${bonusLoanCell(b)}</td>
+      <td class="num nowrap"><b style="color:var(--text)">${fmtINR(Number(b.amount) - Number(b.loan_deduction))}</b></td></tr>`; }).join('')}</tbody>
+    <tfoot><tr><td colspan="${showEmployee ? 4 : 2}" style="text-align:right;font-weight:600">Total</td><td class="num nowrap">${fmtINR(tot.amt)}</td><td class="num nowrap">${fmtINR(tot.ded)}</td><td class="num nowrap"><b style="color:var(--text)">${fmtINR(tot.amt - tot.ded)}</b></td></tr></tfoot>
+  </table></div>`;
+}
+
 async function pageBonus(r) {
   await ensureFinance();
   if (r?.id) return pageBonusEmployee(r.id);
   const emps = eligibleEmployees('bonus');
-  const empIds = new Set(emps.map((e) => e.id));
   let uid = 0;
-  const toRow = (b) => { const d = parseISODate(b.pay_month); return { key: ++uid, id: b.id, employee_id: b.employee_id, description: b.description, y: d.getFullYear(), m: d.getMonth() + 1, amount: String(Number(b.amount)), use_current_salary: b.use_current_salary, loan: String(Number(b.loan_deduction) || ''), full: b.deduct_full, savedLoan: Number(b.loan_deduction) || 0, removed: false, dirty: false }; };
-  const rows = state.fin.bonus.map(toRow);
-  const now = new Date();
-  const rowAmount = (r) => (r.use_current_salary && (r.dirty || !r.id) ? currentSalary(r.employee_id) || 0 : num(r.amount));
-  const loanRoom = (r) => (r.employee_id ? empLoanLeft(r.employee_id) + r.savedLoan : 0);
-  const rowDeduction = (r) => (r.full ? Math.min(rowAmount(r), loanRoom(r)) : num(r.loan));
-  const live = () => rows.filter((r) => !r.removed);
+  const blank = () => ({ key: ++uid, employee_id: '', description: '', pay_date: todayISO(), amount: '', use_current_salary: false, loan: '', full: false });
+  const rows = [blank()];
+  const rowAmount = (r) => (r.use_current_salary ? currentSalary(r.employee_id) || 0 : num(r.amount));
+  const room = (r) => (r.employee_id ? empLoanLeft(r.employee_id) : 0);
+  const rowDeduction = (r) => (room(r) > 0 ? (r.full ? Math.min(rowAmount(r), room(r)) : num(r.loan)) : 0);
+  const touched = (r) => r.employee_id || r.description.trim() || num(r.amount) > 0;
   const lineHTML = (r) => {
+    const loanLeft = room(r);
     const sal = currentSalary(r.employee_id);
-    const ineligible = r.employee_id && !empIds.has(r.employee_id);
-    const room = loanRoom(r);
-    return `<tr data-key="${r.key}">
-      <td style="min-width:190px"><select class="input" data-k="employee_id" style="height:36px"><option value="">Select employee</option>
-        ${emps.map((e) => `<option value="${e.id}" ${e.id === r.employee_id ? 'selected' : ''}>${esc(e.full_name)}${e.employee_code ? ` · ${esc(e.employee_code)}` : ''}</option>`).join('')}
-        ${ineligible ? `<option value="${r.employee_id}" selected>${esc(byId(r.employee_id)?.full_name || 'Former employee')} (not eligible)</option>` : ''}</select>
-        ${room > 0 ? `<div class="faint" style="font-size:11.5px;margin-top:3px">Loan remaining ${fmtINR(empLoanLeft(r.employee_id))}</div>` : ''}</td>
-      <td style="min-width:180px"><input class="input" data-k="description" placeholder="e.g. Diwali bonus / Leave encashment" value="${esc(r.description)}" style="height:36px"></td>
-      <td style="min-width:190px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${monthYearSelects(`b${r.key}`, r.y, r.m).replace(/class="input"/g, 'class="input" style="height:36px"')}</div></td>
-      <td style="min-width:120px"><div class="rs-in"><span>₹</span><input class="input mono" data-k="amount" inputmode="decimal" style="height:36px" value="${esc(r.use_current_salary ? String(rowAmount(r) || '') : r.amount)}" ${r.use_current_salary ? 'disabled' : ''}></div>
-        <label class="check-inline" style="margin-top:4px;font-size:12px" title="Use the employee’s current salary as the amount"><input type="checkbox" data-k="use_current_salary" ${r.use_current_salary ? 'checked' : ''}> Current salary</label>
-        ${r.use_current_salary && sal == null && r.employee_id ? '<div class="error-text">No salary in EMD</div>' : ''}</td>
-      <td style="min-width:120px">${room > 0 ? `<div class="rs-in"><span>₹</span><input class="input mono" data-k="loan" inputmode="decimal" style="height:36px" value="${esc(r.full ? String(rowDeduction(r)) : r.loan)}" ${r.full ? 'disabled' : ''}></div>
-        <label class="check-inline" style="margin-top:4px;font-size:12px"><input type="checkbox" data-k="full" ${r.full ? 'checked' : ''}> Deduct full</label>` : '<span class="faint">No loan</span>'}</td>
-      <td class="num nowrap" data-net><b>${fmtINR(rowAmount(r) - (room > 0 ? rowDeduction(r) : 0))}</b></td>
-      <td class="actions nowrap">${r.employee_id && r.id ? `<a class="btn btn-sm" href="#/bonus/${r.employee_id}">Details</a>` : ''}<button type="button" class="icon-btn" data-del="${r.key}" title="Remove line">${icon('trash')}</button></td></tr>`;
+    return `<div class="bn-row" data-key="${r.key}">
+      <div class="bn-cell"><select class="input" data-k="employee_id"><option value="">Select employee</option>
+          ${emps.map((e) => `<option value="${e.id}" ${e.id === r.employee_id ? 'selected' : ''}>${esc(e.full_name)}${e.employee_code ? ` · ${esc(e.employee_code)}` : ''}</option>`).join('')}</select>
+        <div class="bn-sub">${r.employee_id ? (loanLeft > 0 ? `Loan remaining ${fmtINR(loanLeft)}` : 'No loan') : ''}</div></div>
+      <div class="bn-cell"><input class="input" data-k="description" placeholder="e.g. Diwali bonus / Leave encashment" value="${esc(r.description)}"><div class="bn-sub"></div></div>
+      <div class="bn-cell"><input class="input" type="date" data-k="pay_date" value="${r.pay_date}"><div class="bn-sub">${r.pay_date ? fmtSlash(r.pay_date) : ''}</div></div>
+      <div class="bn-cell"><div class="rs-in"><span>₹</span><input class="input mono" data-k="amount" inputmode="decimal" value="${esc(r.use_current_salary ? String(rowAmount(r) || '') : r.amount)}" ${r.use_current_salary ? 'disabled' : ''}></div>
+        <label class="bn-sub check-inline"><input type="checkbox" data-k="use_current_salary" ${r.use_current_salary ? 'checked' : ''}> Current salary${r.use_current_salary && r.employee_id && sal == null ? ' <span class="error-text">· none in EMD</span>' : ''}</label></div>
+      <div class="bn-cell">${loanLeft > 0 ? `<div class="rs-in"><span>₹</span><input class="input mono" data-k="loan" inputmode="decimal" value="${esc(r.full ? String(rowDeduction(r)) : r.loan)}" ${r.full ? 'disabled' : ''}></div>
+          <label class="bn-sub check-inline"><input type="checkbox" data-k="full" ${r.full ? 'checked' : ''}> Deduct full</label>`
+        : `<div class="input bn-static faint">${r.employee_id ? 'No loan' : '—'}</div><div class="bn-sub"></div>`}</div>
+      <div class="bn-cell bn-net" data-net>${fmtINR(rowAmount(r) - rowDeduction(r))}</div>
+      <div class="bn-cell"><button type="button" class="icon-btn" data-del="${r.key}" title="Remove this unsaved line">${icon('x')}</button></div>
+    </div>`;
   };
-  const totalsHTML = () => {
-    const byMonth = new Map();
-    for (const r of live()) { const k = monthStart(r.y, r.m); byMonth.set(k, (byMonth.get(k) || 0) + rowAmount(r)); }
-    const list = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
-    return list.length ? list.map(([k, v]) => `<span class="chip plain gray" style="height:28px;padding:0 12px">${fmtMonth(k)} · <b style="margin-left:4px;color:var(--text)">${fmtINR(v)}</b></span>`).join(' ') : '<span class="muted">No lines yet.</span>';
-  };
+  const months = [...new Set(state.fin.bonus.map((b) => String(bonusDate(b)).slice(0, 7)))].sort().reverse();
+  const pick = state.bonusMonth === 'all' || months.includes(state.bonusMonth) ? state.bonusMonth : 'all';
+  const ledgerLines = state.fin.bonus.filter((b) => pick === 'all' || String(bonusDate(b)).startsWith(pick));
   return {
     title: 'Bonus & Leave Encash',
     crumbs: 'One-off payments to eligible employees',
@@ -3483,76 +3629,82 @@ async function pageBonus(r) {
     html: `
       ${emps.length ? '' : `<div class="alert alert-warn">${icon('alert')}<span>No one is eligible yet. Click <b>Manage eligibility</b> to pick the employees who can receive bonus or leave encashment.</span></div>`}
       <div class="card">
-        <div class="card-head"><div><h3>Payments</h3><p>Employee | Description | Month | Amount. Tick “Current salary” to use the employee’s current salary. If the employee has a loan, enter a loan deduction or tick “Deduct full”.</p></div>
+        <div class="card-head"><div><h3>Add payments</h3><p>Fill a line per payment and click Save. Saved payments move to the log below and cannot be edited or removed.</p></div>
           <div class="right"><button class="btn btn-sm" id="add-line" ${emps.length ? '' : 'disabled'}>${icon('plus', 'sm')}Add line</button></div></div>
-        <div class="card-body" id="bonus-totals" style="display:flex;gap:8px;flex-wrap:wrap;padding-bottom:0">${totalsHTML()}</div>
-        <div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th>Description</th><th>Month</th><th>Amount</th><th>Loan deduct (₹)</th><th class="num">Net</th><th></th></tr></thead>
-          <tbody id="bonus-body">${live().map(lineHTML).join('') || ''}</tbody></table></div>
-        ${rows.length ? '' : `<div id="bonus-empty">${emptyState('wallet', 'No payments yet', 'Click <b>Add line</b> to enter a bonus or leave encashment.')}</div>`}
+        <div class="bn-wrap"><div class="bn-row bn-head"><div>Employee</div><div>Description</div><div>Date</div><div>Amount</div><div>Loan deduct (₹)</div><div class="num">Net</div><div></div></div>
+          <div id="bonus-body">${emps.length ? rows.map(lineHTML).join('') : ''}</div></div>
+        <div class="card-foot"><span class="muted" id="bonus-total" style="font-size:13px"></span><button class="btn btn-primary" id="save-btn" ${emps.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payments</button></div>
       </div>
-      ${monthLogCard('bonus', 'bonus')}
-      <div class="savebar hidden" id="savebar"><div class="grow"><b>Unsaved changes</b> <span>— save to store the payments and loan deductions</span></div>
-        <button class="btn btn-sm" id="discard-btn">Discard</button><button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save</button></div>`,
+      <div class="card">
+        <div class="card-head"><div><h3>Payments log</h3><p>Every saved payment, one line each</p></div>
+          <div class="right"><select class="input" id="bonus-month" style="height:32px;width:auto;min-width:130px"><option value="all">All months</option>${months.map((m) => `<option value="${m}" ${m === pick ? 'selected' : ''}>${fmtMonth(m + '-01')}</option>`).join('')}</select></div></div>
+        ${bonusLedgerHTML(ledgerLines)}
+      </div>`,
     mount() {
-      mountLogMonth();
       const body = $('#bonus-body');
-      const markDirty = (r) => { if (r) r.dirty = true; state.dirty = true; $('#savebar').classList.remove('hidden'); $('#bonus-totals').innerHTML = totalsHTML(); };
-      const rowOf = (el) => rows.find((r) => r.key === Number(el.closest('tr').dataset.key));
-      const redrawRow = (r) => { body.querySelector(`tr[data-key="${r.key}"]`).outerHTML = lineHTML(r); };
-      const updateNet = (r) => {
-        const tr = body.querySelector(`tr[data-key="${r.key}"]`);
-        const loanIn = tr.querySelector('[data-k="loan"]');
-        if (loanIn && r.full) loanIn.value = String(rowDeduction(r));
-        tr.querySelector('[data-net]').innerHTML = `<b>${fmtINR(rowAmount(r) - (loanIn ? rowDeduction(r) : 0))}</b>`;
-      };
       $('#elig-btn').addEventListener('click', () => openEligibilityDialog('bonus', 'Bonus & Leave Encash'));
-      $('#add-line')?.addEventListener('click', () => {
-        const r = { key: ++uid, id: null, employee_id: '', description: '', y: now.getFullYear(), m: now.getMonth() + 1, amount: '', use_current_salary: false, loan: '', full: false, savedLoan: 0, removed: false, dirty: true };
-        rows.unshift(r);
-        $('#bonus-empty')?.remove();
-        body.insertAdjacentHTML('afterbegin', lineHTML(r));
-        markDirty(r);
-      });
+      $('#bonus-month').addEventListener('change', (e) => { state.bonusMonth = e.target.value; render(); });
+      if (!emps.length) return;
+      const rowOf = (el) => rows.find((r) => r.key === Number(el.closest('.bn-row').dataset.key));
+      const elOf = (r) => body.querySelector(`.bn-row[data-key="${r.key}"]`);
+      const total = () => {
+        const live = rows.filter(touched);
+        $('#bonus-total').innerHTML = live.length ? `${live.length} line(s) · ${fmtINR(live.reduce((s, r) => s + rowAmount(r), 0))} − loan ${fmtINR(live.reduce((s, r) => s + rowDeduction(r), 0))} = <b>${fmtINR(live.reduce((s, r) => s + rowAmount(r) - rowDeduction(r), 0))}</b> net` : '';
+        state.dirty = live.length > 0;
+      };
+      const updateNet = (r) => {
+        const el = elOf(r);
+        const loanIn = el.querySelector('[data-k="loan"]');
+        if (loanIn && r.full) loanIn.value = String(rowDeduction(r));
+        el.querySelector('[data-net]').textContent = fmtINR(rowAmount(r) - rowDeduction(r));
+        total();
+      };
+      const redraw = (r) => { elOf(r).outerHTML = lineHTML(r); total(); };
+      $('#add-line').addEventListener('click', () => { const r = blank(); rows.push(r); body.insertAdjacentHTML('beforeend', lineHTML(r)); });
       body.addEventListener('input', (ev) => {
         const k = ev.target.dataset.k;
-        if (k === 'description' || k === 'amount' || k === 'loan') { const r = rowOf(ev.target); r[k] = k === 'description' ? ev.target.value : ev.target.value.replace(/[^\d.]/g, ''); markDirty(r); if (k !== 'description') updateNet(r); }
+        if (!['description', 'amount', 'loan'].includes(k)) return;
+        const r = rowOf(ev.target);
+        r[k] = k === 'description' ? ev.target.value : ev.target.value.replace(/[^\d.]/g, '');
+        updateNet(r);
       });
       body.addEventListener('change', (ev) => {
-        const t = ev.target;
-        if (!t.closest('tr')) return;
+        const t = ev.target, k = t.dataset.k;
+        if (!t.closest('.bn-row')) return;
         const r = rowOf(t);
-        if (t.dataset.k === 'employee_id') { r.employee_id = t.value; markDirty(r); redrawRow(r); }
-        else if (t.dataset.k === 'use_current_salary') { r.use_current_salary = t.checked; markDirty(r); redrawRow(r); }
-        else if (t.dataset.k === 'full') { r.full = t.checked; markDirty(r); redrawRow(r); }
-        else if (t.dataset.m) { r.m = Number(t.value); markDirty(r); }
-        else if (t.dataset.y) { r.y = Number(t.value); markDirty(r); }
+        if (k === 'employee_id') { r.employee_id = t.value; r.loan = ''; r.full = false; redraw(r); }
+        else if (k === 'use_current_salary') { r.use_current_salary = t.checked; redraw(r); }
+        else if (k === 'full') { r.full = t.checked; redraw(r); }
+        else if (k === 'pay_date') { r.pay_date = t.value; t.closest('.bn-cell').querySelector('.bn-sub').textContent = t.value ? fmtSlash(t.value) : ''; }
       });
       body.addEventListener('click', (ev) => {
         const b = ev.target.closest('[data-del]');
         if (!b) return;
         const r = rowOf(b);
-        r.removed = true;
-        b.closest('tr').remove();
-        markDirty(r);
+        rows.splice(rows.indexOf(r), 1);
+        b.closest('.bn-row').remove();
+        if (!rows.length) { const n = blank(); rows.push(n); body.insertAdjacentHTML('beforeend', lineHTML(n)); }
+        total();
       });
-      $('#discard-btn').addEventListener('click', () => { state.dirty = false; render(); });
       $('#save-btn').addEventListener('click', async (ev) => {
         const btn = ev.currentTarget;
-        const changed = rows.filter((r) => r.dirty && !(r.removed && !r.id));
-        for (const r of changed.filter((x) => !x.removed)) {
+        const live = rows.filter(touched);
+        if (!live.length) return toast('Fill in at least one line.', 'error');
+        for (const r of live) {
           if (!r.employee_id) return toast('Pick the employee on every line.', 'error');
           if (!r.description.trim()) return toast('Enter a description on every line.', 'error');
+          if (!r.pay_date) return toast('Pick the date on every line.', 'error');
           if (r.use_current_salary && currentSalary(r.employee_id) == null) return toast(`${byId(r.employee_id)?.full_name} has no salary in Employee Master Data — untick “Current salary” or add one.`, 'error');
-          if (!r.use_current_salary && !(num(r.amount) > 0)) return toast('Enter an amount on every line.', 'error');
-          if (!r.full && num(r.loan) > rowAmount(r)) return toast('A loan deduction is more than the line amount.', 'error');
+          if (!(rowAmount(r) > 0)) return toast('Enter an amount on every line.', 'error');
+          if (!r.full && rowDeduction(r) > rowAmount(r)) return toast('A loan deduction is more than the amount.', 'error');
+          if (!r.full && rowDeduction(r) > room(r)) return toast(`The loan deduction for ${byId(r.employee_id).full_name} is more than the loan remaining (${fmtINR(room(r))}).`, 'error');
         }
-        const items = changed.map((r) => (r.removed ? { id: r.id, removed: true } : {
-          id: r.id, employee_id: r.employee_id, description: r.description.trim(), pay_month: monthStart(r.y, r.m),
-          amount: rowAmount(r), use_current_salary: r.use_current_salary, loan_deduction: r.full ? 0 : num(r.loan), deduct_full: r.full }));
+        const items = live.map((r) => ({ employee_id: r.employee_id, description: r.description.trim(), pay_date: r.pay_date, amount: rowAmount(r),
+          use_current_salary: r.use_current_salary, loan_deduction: r.full ? 0 : rowDeduction(r), deduct_full: r.full && room(r) > 0 }));
         try {
-          await withBusy(btn, 'Saving…', () => api.rpc('admin_save_bonus_lines', { p_items: items }));
+          await withBusy(btn, 'Saving…', () => api.rpc('admin_add_bonus_payments', { p_items: items }));
           state.dirty = false;
-          toast('Payments saved.');
+          toast(`${items.length} payment(s) saved to the log.`);
           await ensureFinance(true);
           render();
         } catch (err) { toast(friendlyError(err), 'error'); }
@@ -3565,7 +3717,7 @@ async function pageBonusEmployee(id) {
   const e = byId(id);
   const back = `<a class="btn btn-sm" href="#/bonus">${icon('arrowLeft', 'sm')}Back to Bonus & Leave Encash</a>`;
   if (!e) return { title: 'Bonus & Leave Encash', crumbs: '<a href="#/bonus">Bonus & Leave Encash</a>', actions: back, html: `<div class="card">${emptyState('user', 'Employee not found', '')}</div>` };
-  const lines = state.fin.bonus.filter((b) => b.employee_id === id).sort((a, b) => b.pay_month.localeCompare(a.pay_month));
+  const lines = state.fin.bonus.filter((b) => b.employee_id === id);
   return {
     title: e.full_name, crumbs: '<a href="#/bonus">Bonus & Leave Encash</a> &nbsp;/&nbsp; Details', actions: back,
     html: `
@@ -3575,12 +3727,8 @@ async function pageBonusEmployee(id) {
           <div><div class="k">Loan deducted</div><div class="v">${fmtINR(lines.reduce((s, b) => s + Number(b.loan_deduction), 0))}</div></div>
           <div><div class="k">Loan remaining</div><div class="v">${fmtINR(empLoanLeft(id))}</div></div></div>
       </div>
-      <div class="card"><div class="card-head"><div><h3>Payments</h3></div></div>
-        ${lines.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th>Description</th><th class="num">Amount</th><th class="num">Loan deducted</th><th class="num">Net</th></tr></thead><tbody>
-          ${lines.map((b) => `<tr><td>${fmtMonth(b.pay_month)}</td><td>${esc(b.description)}${b.use_current_salary ? ' <span class="chip plain gray">current salary</span>' : ''}</td><td class="num">${fmtINR(b.amount)}</td>
-            <td class="num">${Number(b.loan_deduction) ? `− ${fmtINR(b.loan_deduction)}${b.deduct_full ? ' <span class="chip plain gray">full</span>' : ''}` : '—'}</td><td class="num"><b style="color:var(--text)">${fmtINR(Number(b.amount) - Number(b.loan_deduction))}</b></td></tr>`).join('')}</tbody></table></div>`
-        : emptyState('wallet', 'No payments', '')}</div>
-      ${logCardHTML(state.fin.log.filter((x) => x.section === 'bonus' && x.employee_id === id), { title: 'Bonus log', sub: 'Lines added, changed, removed and loan deductions for this employee' })}`,
+      <div class="card"><div class="card-head"><div><h3>Payments log</h3><p>One line per payment</p></div><div class="right"><span class="chip plain gray">${lines.length}</span></div></div>
+        ${bonusLedgerHTML(lines)}</div>`,
   };
 }
 
@@ -3646,29 +3794,60 @@ async function pageLoanDetail(loanId) {
   const l = state.fin.loans.find((x) => x.id === loanId);
   if (!l) return { title: 'Loans', crumbs: '<a href="#/loans">Loans</a>', actions: back, html: `<div class="card">${emptyState('bank', 'Loan not found', 'It may have been removed.')}</div>` };
   const e = byId(l.employee_id);
-  const deds = state.fin.loanDeductions.filter((d) => d.loan_id === l.id).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  const left = loanLeft(l);
+  // Every repayment, oldest first: Variable / Bonus deductions and manual repayments
+  const events = [
+    ...state.fin.loanDeductions.filter((d) => d.loan_id === l.id).map((d) => {
+      if (d.source === 'variable') { const v = state.fin.variablePayouts.find((x) => x.id === d.source_id); return { on: String(d.created_at).slice(0, 10), at: d.created_at, from: `Variable${v ? ` · ${fmtMonth(v.pay_month)}` : ''}`, amount: Number(d.amount) }; }
+      const b = state.fin.bonus.find((x) => x.id === d.source_id);
+      return { on: b ? bonusDate(b) : String(d.created_at).slice(0, 10), at: d.created_at, from: `Bonus${b ? ` · ${esc(b.description)}` : ''}`, amount: Number(d.amount) };
+    }),
+    ...state.fin.loanRepayments.filter((x) => x.loan_id === l.id).map((x) => ({ on: x.paid_on, at: x.created_at, from: `Repayment${x.note ? ` · ${esc(x.note)}` : ''}`, amount: Number(x.amount) })),
+  ].sort((a, b) => a.on.localeCompare(b.on) || String(a.at).localeCompare(String(b.at)));
   let running = Number(l.amount);
-  const rows = deds.map((d) => { running -= Number(d.amount); return { d, after: running }; });
-  const lineLabel = (d) => {
-    if (d.source === 'variable') { const v = state.fin.variablePayouts.find((x) => x.id === d.source_id); return `Variable${v ? ` · ${fmtMonth(v.pay_month)}` : ''}`; }
-    const b = state.fin.bonus.find((x) => x.id === d.source_id); return `Bonus${b ? ` · ${esc(b.description)}` : ''}`;
-  };
+  const rows = events.map((x) => { running -= x.amount; return { ...x, after: running }; });
   return {
     title: e?.full_name || 'Loan', crumbs: '<a href="#/loans">Loans</a> &nbsp;/&nbsp; Details', actions: back,
     html: `
       <div class="card emp-head">${e ? avatar(e, 'lg') : ''}
         <div style="min-width:0"><h2>${esc(e?.full_name || '—')}</h2><div class="meta">${e ? empChip(e) : ''}<span>Emp ID ${esc(e?.employee_code || '—')}</span><span>·</span><span>Taken ${fmtDMY(l.taken_on)}</span>${l.note ? `<span>·</span><span>${esc(l.note)}</span>` : ''}</div></div>
         <div class="facts"><div><div class="k">Amount</div><div class="v">${fmtINR(l.amount)}</div></div><div><div class="k">Repaid</div><div class="v">${fmtINR(loanDeducted(l.id))}</div></div>
-          <div><div class="k">Loan remaining</div><div class="v">${fmtINR(loanLeft(l))}</div></div></div>
+          <div><div class="k">Loan remaining</div><div class="v" style="color:${left > 0 ? 'var(--text)' : 'var(--green)'}">${left > 0 ? fmtINR(left) : 'Repaid'}</div></div></div>
       </div>
-      <div class="card"><div class="card-head"><div><h3>Repayments</h3><p>Deductions taken from Variable and Bonus lines, oldest first</p></div>
-          <div class="right">${deds.length ? '' : `<button class="btn btn-sm btn-danger" id="loan-remove">${icon('trash', 'sm')}Remove loan</button>`}</div></div>
-        ${rows.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>From</th><th>Month</th><th class="num">Deducted</th><th class="num">Remaining after</th></tr></thead><tbody>
-          ${rows.map(({ d, after }) => `<tr><td class="nowrap">${fmtDMY(String(d.created_at).slice(0, 10))}</td><td>${lineLabel(d)}</td><td>${d.pay_month ? fmtMonth(d.pay_month) : '—'}</td>
-            <td class="num">− ${fmtINR(d.amount)}</td><td class="num"><b style="color:var(--text)">${fmtINR(after)}</b></td></tr>`).join('')}</tbody></table></div>`
-        : emptyState('wallet', 'No repayments yet', 'Set a loan deduction on this employee’s Variable or Bonus line to repay this loan.')}</div>
+      ${left > 0 ? `<form class="card" id="repay-form" novalidate>
+        <div class="card-head"><div><h3>Add repayment</h3><p>Money paid back directly (cash / bank transfer). It reduces the loan remaining and is logged.</p></div></div>
+        <div class="card-body grid g4" style="align-items:end">
+          <div class="field"><label>Date<span class="req">*</span></label><input class="input" type="date" name="paid_on" value="${todayISO()}" max="${todayISO()}"><div class="hint" id="repay-dmy">${fmtDMY(todayISO())}</div></div>
+          <div class="field"><label>Amount<span class="req">*</span></label><div class="rs-in"><span>₹</span><input class="input mono" name="amount" inputmode="decimal" placeholder="up to ${esc(fmtINR(left))}"></div><div class="hint" id="repay-after">Remaining ${fmtINR(left)}</div></div>
+          <div class="field"><label>Note <span class="faint">(optional)</span></label><input class="input" name="note" placeholder="e.g. Bank transfer"><div class="hint">&nbsp;</div></div>
+          <div class="field"><button class="btn btn-primary" type="submit" style="width:100%">${icon('plus', 'sm')}Add repayment</button><div class="hint">&nbsp;</div></div>
+        </div></form>` : ''}
+      <div class="card"><div class="card-head"><div><h3>Repayments</h3><p>Repayments and deductions from Variable / Bonus, oldest first</p></div>
+          <div class="right">${events.length ? '' : `<button class="btn btn-sm btn-danger" id="loan-remove">${icon('trash', 'sm')}Remove loan</button>`}</div></div>
+        ${rows.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>From</th><th class="num">Amount</th><th class="num">Remaining after</th></tr></thead><tbody>
+          <tr><td class="nowrap">${fmtDMY(l.taken_on)}</td><td>Loan taken</td><td class="num">${fmtINR(l.amount)}</td><td class="num">${fmtINR(l.amount)}</td></tr>
+          ${rows.map((x) => `<tr><td class="nowrap">${fmtDMY(x.on)}</td><td>${x.from}</td><td class="num">− ${fmtINR(x.amount)}</td><td class="num"><b style="color:var(--text)">${fmtINR(x.after)}</b></td></tr>`).join('')}</tbody></table></div>`
+        : emptyState('wallet', 'No repayments yet', 'Add a repayment above, or set a loan deduction on this employee’s Variable or Bonus line.')}</div>
       ${logCardHTML(state.fin.log.filter((x) => x.section === 'loan' && x.employee_id === l.employee_id), { title: 'Loan log', sub: 'All loan activity for this employee' })}`,
     mount() {
+      const f = $('#repay-form');
+      if (f) {
+        f.elements.paid_on.addEventListener('change', () => { $('#repay-dmy').textContent = f.elements.paid_on.value ? fmtDMY(f.elements.paid_on.value) : ''; });
+        f.elements.amount.addEventListener('input', () => { const a = num(f.elements.amount.value); $('#repay-after').innerHTML = a > left ? '<span class="error-text">More than the loan remaining</span>' : `Remaining after ${fmtINR(left - a)}`; });
+        f.addEventListener('submit', async (ev) => {
+          ev.preventDefault();
+          const on = f.elements.paid_on.value, amount = num(f.elements.amount.value);
+          if (!on) return toast('Pick the repayment date.', 'error');
+          if (!(amount > 0)) return toast('Enter the repayment amount.', 'error');
+          if (amount > left) return toast(`The repayment is more than the loan remaining (${fmtINR(left)}).`, 'error');
+          try {
+            await withBusy($('button[type=submit]', f), 'Adding…', () => api.rpc('admin_add_loan_repayment', { p_loan: l.id, p_paid_on: on, p_amount: amount, p_note: f.elements.note.value }));
+            toast(`Repayment of ${fmtINR(amount)} on ${fmtDMY(on)} added — ${fmtINR(left - amount)} remaining.`);
+            await ensureFinance(true);
+            render();
+          } catch (err) { toast(friendlyError(err), 'error'); }
+        });
+      }
       $('#loan-remove')?.addEventListener('click', async () => {
         if (!(await confirmDialog({ title: 'Remove this loan?', message: 'Use this only for a loan added by mistake. It stays in the log.', confirmText: 'Remove', danger: true }))) return;
         try { await api.rpc('admin_remove_loan', { p_loan: l.id }); toast('Loan removed.'); await ensureFinance(true); location.hash = '#/loans'; }
