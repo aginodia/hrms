@@ -466,6 +466,7 @@
   .pay-table th.grp { text-align: center; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
   a.plain-link, a.plain-link:hover { color: inherit; text-decoration: none; }
   a.plain-link:hover .name { color: var(--accent); }
+  .sum-table tr.sum-sec td { background: var(--surface-2); font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding-top: 8px; padding-bottom: 8px; }
   .pay-table td.diff { color: var(--accent); font-weight: 600; }
   .pay-table tfoot td { background: var(--surface-2); border-top: 1px solid var(--border); padding: 12px; }
 
@@ -1399,6 +1400,7 @@ const NAV = {
       { key: 'payroll', label: 'Payroll', icon: 'wallet' },
       { key: 'variable', label: 'Variable', icon: 'trending' },
       { key: 'bonus', label: 'Bonus & Leave Encash', icon: 'gift' },
+      { key: 'loans', label: 'Loans', icon: 'bank' },
       { key: 'expenses', label: 'Monthly Expense', icon: 'receipt' },
       { key: 'esops', label: 'ESOPs', icon: 'pie' },
       { label: 'Settings' },
@@ -1413,7 +1415,7 @@ const NAV = {
 };
 const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, payroll: pagePayroll,
-    variable: pageVariable, bonus: pageBonus, expenses: pageExpenses, esops: pageEsops },
+    variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops },
   team: { home: pageTeamHome, profile: pageMyProfile },
 };
 const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
@@ -1490,6 +1492,11 @@ function salarySummary(id) {
   const pct = latest && prev && Number(prev.amount) > 0 ? ((Number(latest.amount) - Number(prev.amount)) / Number(prev.amount)) * 100 : null;
   return { rows, latest, prev, pct };
 }
+// Employment status: active / resigned / terminated, then F&F completed (journey ended).
+const empState = (e) => (e?.fnf_completed_at ? 'fnf' : e?.employment_status || 'active');
+const EMP_STATE = { active: ['Active', 'green'], resigned: ['Resigned', 'amber'], terminated: ['Terminated', 'red'], fnf: ['F&F completed', 'gray'] };
+const empChip = (e) => { const [l, t] = EMP_STATE[empState(e)]; return `<span class="chip ${t}">${l}</span>`; };
+const fmtDMY = (iso) => { const d = parseISODate(iso); return d ? `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()}` : '—'; };
 const activeEmployees = () => state.admin.profiles.filter((p) => p.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name));
 const pctHTML = (pct) => pct === null ? '' : `<span class="${pct >= 0 ? 'delta-up' : 'delta-down'}">${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%</span>`;
 
@@ -1800,14 +1807,17 @@ async function openKycReview(id, btn) {
 /* ---------- Employee Master Data (list) ---------- */
 async function pageEmd() {
   await ensureAdmin();
-  const all = activeEmployees();
+  const inEmd = state.admin.profiles.filter((p) => p.status === 'active' || p.fnf_completed_at).sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const tabs = { active: inEmd.filter((p) => empState(p) === 'active'), rt: inEmd.filter((p) => ['resigned', 'terminated'].includes(empState(p))), fnf: inEmd.filter((p) => empState(p) === 'fnf') };
+  const tab = tabs[state.emdTab] ? state.emdTab : 'active';
+  const all = tabs[tab];
 
   const rowHTML = (e) => {
     const s = salarySummary(e.id);
     const mgr = byId(e.reporting_manager_id);
     const future = s.latest && s.latest.effective_month > todayISO();
     return `<tr data-href="#/emd/${e.id}">
-      <td>${person(e, esc(e.employee_code || 'No EID'))}</td>
+      <td>${person(e, esc(e.employee_code || 'No EID'))}${empState(e) !== 'active' ? `<div style="margin-top:4px">${empChip(e)}${e.exit_date ? ` <span class="faint" style="font-size:11.5px">${fmtDMY(e.exit_date)}</span>` : ''}</div>` : ''}</td>
       <td class="trunc" title="${esc(e.email)}">${esc(e.email)}</td>
       <td class="nowrap">${esc(e.phone || '—')}</td>
       <td class="wrap">${esc(e.designation || '—')}</td>
@@ -1828,14 +1838,16 @@ async function pageEmd() {
 
   return {
     title: 'Employee Master Data',
-    crumbs: `${all.length} active employee${all.length === 1 ? '' : 's'}`,
+    crumbs: `${tabs.active.length} active · ${tabs.rt.length} resigned / terminated · ${tabs.fnf.length} F&F completed`,
     actions: `<div class="search">${icon('search')}<input class="input" id="emd-search" placeholder="Search name, email, designation…" value="${esc(state.emdSearch)}"></div>
               <button class="btn btn-sm" id="emd-export" ${all.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>`,
-    html: `<div class="card">${all.length ? `<div class="table-wrap"><table class="table compact">
+    html: `<div><nav class="tabs">${[['active', 'Active'], ['rt', 'Resigned & Terminated'], ['fnf', 'F&F completed']].map(([k, l]) => `<a href="#/emd" data-emd-tab="${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${tabs[k].length}</span></a>`).join('')}</nav></div>
+      <div class="card">${all.length ? `<div class="table-wrap"><table class="table compact">
         <thead><tr><th>Name</th><th>Mail ID</th><th>Number</th><th>Designation</th><th>Reporting Manager</th><th class="num">Salary</th><th style="white-space:normal;min-width:84px">Last Increment</th><th></th></tr></thead>
         <tbody id="emd-body">${bodyHTML(filter(state.emdSearch))}</tbody></table></div>`
-      : emptyState('users', 'No employees yet', 'Employees appear here once their KYC is approved in Access Control.')}</div>`,
+      : emptyState('users', tab === 'active' ? 'No employees yet' : 'No one here', tab === 'active' ? 'Employees appear here once their KYC is approved in Access Control.' : tab === 'rt' ? 'Employees marked Resigned or Terminated in their detailed info appear here until F&F.' : 'Employees whose F&F is completed are kept here for the record.')}</div>`,
     mount() {
+      $$('[data-emd-tab]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); state.emdTab = a.dataset.emdTab; render(); }));
       const input = $('#emd-search');
       input.addEventListener('input', () => {
         state.emdSearch = input.value;
@@ -1868,17 +1880,76 @@ function exportEmdCsv(list) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
+/* ---------- Employment status (Resigned / Terminated / F&F) ---------- */
+function employmentStatusCard(e) {
+  const st = empState(e);
+  const self = e.id === state.user.id;
+  let body;
+  if (st === 'active') {
+    body = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${empChip(e)}<span class="muted" style="font-size:13px">Working — included in payroll and all finance sections.</span>
+      ${self ? '' : `<span style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-sm" data-emp-status="resigned">Resigned</button><button class="btn btn-sm btn-danger" data-emp-status="terminated">Terminated</button></span>`}</div>`;
+  } else if (st === 'fnf') {
+    body = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${empChip(e)}<span class="muted" style="font-size:13px">${EMP_STATE[e.employment_status]?.[0] || 'Exited'} on ${fmtDMY(e.exit_date)} · F&F completed ${fmtDate(String(e.fnf_completed_at).slice(0, 10))}. Their journey has ended — they are not included in any sheet and can no longer sign in.</span></div>`;
+  } else {
+    body = `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">${empChip(e)}<span class="muted" style="font-size:13px">Last working day ${fmtDMY(e.exit_date)}${e.exit_note ? ` · ${esc(e.exit_note)}` : ''}. Shown under Resigned & Terminated in Payroll until F&F.</span>
+      ${self ? '' : `<span style="margin-left:auto;display:flex;gap:8px"><button class="btn btn-sm" data-emp-status="active">Mark active again</button><button class="btn btn-sm btn-primary" data-fnf="${e.id}">Complete F&F</button></span>`}</div>`;
+  }
+  return `<div class="card" id="emp-status-card"><div class="card-head"><div><h3>Status</h3><p>Employment status</p></div></div><div class="card-body">${body}</div></div>`;
+}
+function mountEmploymentStatus(e) {
+  $$('[data-emp-status]').forEach((b) => b.addEventListener('click', () => {
+    const to = b.dataset.empStatus;
+    if (to === 'active') {
+      confirmDialog({ title: 'Mark active again?', message: `${esc(e.full_name)} goes back to the Active list.`, confirmText: 'Mark active' }).then(async (ok) => {
+        if (!ok) return;
+        try { await api.rpc('admin_set_employment_status', { p_user: e.id, p_status: 'active' }); toast(`${e.full_name} is active again.`); state.fin.loaded = false; await refreshAdmin(); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      });
+      return;
+    }
+    const dlg = openModal({
+      title: to === 'resigned' ? 'Mark as resigned' : 'Mark as terminated', size: 'sm', subtitle: `${esc(e.full_name)} · ${esc(e.employee_code || '')}`,
+      body: `<div class="grid" style="gap:14px"><div class="field"><label>Last working day</label><input class="input" type="date" id="exit-date" value="${todayISO()}"></div>
+        <div class="field"><label>Note <span class="faint">(optional)</span></label><textarea class="input" id="exit-note" placeholder="${to === 'resigned' ? 'e.g. Resignation accepted, notice served' : 'e.g. Reason for termination'}"></textarea></div>
+        <p class="muted" style="font-size:12.5px">They move to Resigned & Terminated in Payroll. Click <b>F&F</b> there (or here) once the full and final settlement is done.</p></div>`,
+      footer: `<button class="btn" data-close>Cancel</button><button class="btn ${to === 'terminated' ? 'btn-danger-solid' : 'btn-primary'}" data-ok>${to === 'resigned' ? 'Mark resigned' : 'Mark terminated'}</button>`,
+    });
+    $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+      try {
+        await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_set_employment_status', { p_user: e.id, p_status: to, p_exit_date: $('#exit-date', dlg.el).value || null, p_note: $('#exit-note', dlg.el).value }));
+        dlg.close(); toast(`${e.full_name} marked ${to}.`); state.fin.loaded = false; await refreshAdmin();
+      } catch (err) { toast(friendlyError(err), 'error'); }
+    });
+  }));
+  $$('[data-fnf]').forEach((b) => b.addEventListener('click', () => completeFnf(byId(b.dataset.fnf))));
+}
+async function completeFnf(e) {
+  const ok = await confirmDialog({
+    title: 'Complete F&F?',
+    message: `This ends <b>${esc(e.full_name)}</b>’s journey: they leave every sheet (payroll, variable, bonus, loans, expenses), can no longer sign in, and are kept under <b>F&F completed</b> in Employee Master Data. This cannot be undone.`,
+    confirmText: 'Complete F&F', danger: true,
+  });
+  if (!ok) return;
+  try {
+    await api.rpc('admin_complete_fnf', { p_user: e.id });
+    toast(`F&F completed for ${e.full_name}.`);
+    state.payroll.runs = null;
+    state.fin.loaded = false;
+    await refreshAdmin();
+  } catch (err) { toast(friendlyError(err), 'error'); }
+}
+
 /* ---------- Employee Master Data (individual) ---------- */
 async function pageEmployee(r) {
   await ensureAdmin();
   const e = byId(r.id);
-  if (!e || e.status !== 'active') {
+  if (!e || !(e.status === 'active' || e.fnf_completed_at)) {
     return {
       title: 'Employee not found', crumbs: `<a href="#/emd">Employee Master Data</a>`,
       html: `<div class="card">${emptyState('user', 'Employee not found', 'This person is not in the master data yet. They appear after KYC approval.')}</div>`,
     };
   }
-  const kyc = await api.kycFor(e.id);
+  const [kyc] = await Promise.all([api.kycFor(e.id), ensureFinance()]);
   const mgr = byId(e.reporting_manager_id);
   let uid = 0;
   const model = {
@@ -1924,13 +1995,15 @@ async function pageEmployee(r) {
       <div class="card emp-head">
         ${avatar(e, 'lg')}
         <div style="min-width:0"><h2>${esc(e.full_name)}</h2>
-          <div class="meta">${statusChip(e.status)}<span>${esc(e.employee_code || 'No EID')}</span><span>·</span><span>${esc(e.designation || 'No designation')}</span></div></div>
+          <div class="meta">${empChip(e)}<span>${esc(e.employee_code || 'No EID')}</span><span>·</span><span>${esc(e.designation || 'No designation')}</span></div></div>
         <div class="facts">
           <div><div class="k">Current salary</div><div class="v">${fmtINR(s.latest?.amount)}</div></div>
           <div><div class="k">Last increment</div><div class="v">${s.prev ? `${fmtMonth(s.latest.effective_month)} ${pctHTML(s.pct)}` : '—'}</div></div>
           <div><div class="k">Reporting to</div><div class="v">${esc(mgr?.full_name || '—')}</div></div>
         </div>
       </div>
+
+      ${employmentStatusCard(e)}
 
       <div class="card">
         <div class="card-head"><div><h3>Personal information</h3><p>Locked — captured at sign-up, KYC and approval.</p></div></div>
@@ -1973,12 +2046,17 @@ async function pageEmployee(r) {
         </div>
       </div>
 
+      ${logCardHTML(state.fin.log.filter((x) => x.employee_id === e.id), { title: 'Activity log', sub: 'Status, payroll, variable, bonus and loan activity for this employee', showSection: true })}
       <div class="savebar hidden" id="savebar">
         <div class="grow"><b>Unsaved changes</b> <span>— save to update Employee Master Data</span></div>
         <button class="btn btn-sm" id="discard-btn">Discard</button>
         <button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save</button>
       </div>`,
     mount() {
+      mountEmploymentStatus(e);
+      if (empState(e) === 'fnf') { // read-only after F&F
+        $$('#emp-fields input, #emp-fields select, #salary-rows input, #salary-rows select, #salary-rows button, #add-salary').forEach((x) => { x.disabled = true; });
+      }
       const markDirty = () => { state.dirty = true; $('#savebar').classList.remove('hidden'); };
       const fields = $('#emp-fields');
       fields.addEventListener('input', (ev) => { if (ev.target.name in model) { model[ev.target.name] = ev.target.value; markDirty(); } });
@@ -2247,7 +2325,7 @@ const codeMapIndex = () => new Map(state.payroll.codeMap.filter((m) => m.employe
 function payrollSheet() {
   const P = state.payroll;
   const run = currentRun();
-  if (!run || !P.data) return { run, mapped: [], unmapped: [], groups: [] };
+  if (!run || !P.data) return { run, mapped: [], unmapped: [], exited: [], groups: [] };
   const groups = groupPunches(P.data.punches);
   const map = codeMapIndex();
   const adjByCode = new Map();
@@ -2256,9 +2334,10 @@ function payrollSheet() {
     if (!adjByCode.has(a.emp_code)) adjByCode.set(a.emp_code, new Map());
     adjByCode.get(a.emp_code).set(a.work_date, a.final_status);
   }
-  const mapped = [], unmapped = [];
+  const mapped = [], unmapped = [], exited = [];
   for (const g of groups) {
     const emp = byId(map.get(g.code));
+    if (emp?.fnf_completed_at) { exited.push({ g, emp }); continue; } // journey ended — not channelled
     if (!emp) { unmapped.push(g); continue; }
     const days = computeAttendance(g.rows, run.month, P.rules, adjByCode.get(g.code) || new Map(), emp.date_of_joining);
     const pre = tally(days, 'system');
@@ -2272,10 +2351,10 @@ function payrollSheet() {
     if (check && !check.ok) notes.unshift(`EmpCode in the sheet is ${g.code}, but ${check.text.replace('ID mismatch — EMD has', 'the Employee ID in EMD is')}. Check the mapping.`);
     const pay = payFor(post, salary, P.rules);
     const pt = salary ? ptFor(salary) : 0;
-    mapped.push({ g, emp, days, pre, post, salary, notes, idOk: !check || check.ok, prePay: payFor(pre, salary, P.rules), ...pay, pt, net: Math.max(0, pay.payable - pt) });
+    mapped.push({ g, emp, days, pre, post, salary, notes, rt: empState(emp) !== 'active', idOk: !check || check.ok, prePay: payFor(pre, salary, P.rules), ...pay, pt, net: Math.max(0, pay.payable - pt) });
   }
   mapped.sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
-  return { run, groups, mapped, unmapped };
+  return { run, groups, mapped, unmapped, exited };
 }
 
 /* ---------- Excel parsing (in the browser; the file is never uploaded) ---------- */
@@ -2529,10 +2608,11 @@ function payrollActions() {
     ? `<select class="input" id="run-select" style="height:34px;width:auto;min-width:150px" title="Payroll month">
         ${P.runs.map((r) => `<option value="${r.id}" ${r.id === P.runId ? 'selected' : ''}>${fmtMonth(r.month)}</option>`).join('')}</select>`
     : '';
-  return `${runSelect}<button class="btn btn-sm btn-primary" id="upload-att">${icon('upload', 'sm')}Upload attendance</button>`;
+  return `${runSelect}${P.runs.length ? `<button class="btn btn-sm" id="payroll-summary">${icon('grid', 'sm')}Summary</button>` : ''}<button class="btn btn-sm btn-primary" id="upload-att">${icon('upload', 'sm')}Upload attendance</button>`;
 }
 function mountPayrollActions() {
   $('#upload-att')?.addEventListener('click', pickAttendanceFile);
+  $('#payroll-summary')?.addEventListener('click', openPayrollSummary);
   $('#run-select')?.addEventListener('change', async (e) => {
     state.payroll.runId = e.target.value;
     render();
@@ -2557,7 +2637,7 @@ function noRunState() {
 
 async function pagePayrollCalc() {
   const P = state.payroll;
-  const { run, mapped, unmapped, groups } = payrollSheet();
+  const { run, mapped, unmapped, groups, exited } = payrollSheet();
   const base = { title: 'Payroll', crumbs: 'Monthly salary calculation from attendance', actions: payrollActions() };
   if (!run) {
     return { ...base, html: payrollTabs('calc') + noRunState(), mount() { mountPayrollActions(); $('#upload-att-empty')?.addEventListener('click', pickAttendanceFile); } };
@@ -2568,7 +2648,6 @@ async function pagePayrollCalc() {
   const totalPt = mapped.reduce((s, m) => s + m.pt, 0);
   const totalNet = mapped.reduce((s, m) => s + m.net, 0);
   const noSalary = mapped.filter((m) => m.salary == null);
-  const cell = (c, k) => `<td class="num">${c[k]}</td>`;
   return {
     ...base,
     html: `${payrollTabs('calc')}
@@ -2576,7 +2655,7 @@ async function pagePayrollCalc() {
         <div class="card stat"><div class="top"><span>Month</span><span class="ico" style="background:var(--accent-soft);color:var(--accent)">${icon('calendar')}</span></div>
           <div class="value" style="font-size:22px">${fmtMonth(run.month)}</div><div class="foot" title="${esc(fmtDateTime(run.uploaded_at))}">${esc(run.source_file_name || 'Uploaded sheet')} · ${fmtRelative(run.uploaded_at)}</div></div>
         <div class="card stat"><div class="top"><span>Employees in sheet</span><span class="ico" style="background:var(--blue-soft);color:var(--blue)">${icon('users')}</span></div>
-          <div class="value">${groups.length}</div><div class="foot">${mapped.length} mapped · ${unmapped.length} not mapped</div></div>
+          <div class="value">${groups.length}</div><div class="foot">${mapped.length} mapped · ${unmapped.length} not mapped${exited.length ? ` · ${exited.length} F&F done` : ''}</div></div>
         <div class="card stat"><div class="top"><span>Total net payable</span><span class="ico" style="background:var(--green-soft);color:var(--green)">${icon('wallet')}</span></div>
           <div class="value" style="font-size:24px">${fmtINR(totalNet)}</div><div class="foot">${fmtINR(total)} earned − ${fmtINR(totalPt)} PT</div></div>
         <div class="card stat"><div class="top"><span>Payroll status</span><span class="ico" style="background:var(--violet-soft);color:var(--violet)">${icon('fileCheck')}</span></div>
@@ -2589,32 +2668,18 @@ async function pagePayrollCalc() {
         <div class="card-head"><div><h3>Salary calculation — ${fmtMonth(run.month)}</h3><p>${rulesSummary(P.rules)} · Daily salary = monthly ÷ 30 · Earned = (Full day${P.rules.sunday_paid_off ? ' + WO' : ''}) × daily + Half day × daily × 0.5 · Net = Earned − Professional Tax</p></div>
           <div class="right"><button class="btn btn-sm" id="export-payroll" ${mapped.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>
           <button class="btn btn-sm btn-primary" id="save-payroll" ${mapped.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payroll</button></div></div>
-        ${mapped.length ? `<div class="table-wrap"><table class="table compact pay-table">
-          <thead>
-            <tr><th rowspan="2">Employee</th><th rowspan="2">EmpCode</th><th rowspan="2" class="num">Monthly salary</th>
-              <th colspan="3" class="grp">Pre-adjustment (system)</th><th colspan="3" class="grp">Post-adjustment (final)</th>
-              <th rowspan="2" class="num">WO</th><th rowspan="2" class="num">Earned</th><th rowspan="2" class="num">PT</th><th rowspan="2" class="num">Net payable</th></tr>
-            <tr><th class="num">F</th><th class="num">HD</th><th class="num">L</th><th class="num">F</th><th class="num">HD</th><th class="num">L</th></tr>
-          </thead>
-          <tbody>${mapped.map((m) => `<tr data-href="#/payroll/emp/${encodeURIComponent(m.g.code)}">
-            <td><a href="#/payroll/emp/${encodeURIComponent(m.g.code)}" class="plain-link" title="Day-wise attendance">${person(m.emp, esc(m.emp.employee_code || 'No EID'))}</a>${m.notes.length ? `<div title="${esc(m.notes.join(' '))}" style="margin-top:4px"><span class="chip ${m.idOk ? 'amber' : 'red'} plain">${icon('alert', 'sm')} ${m.idOk ? 'Check' : 'ID mismatch'}</span></div>` : ''}</td><td class="mono">${esc(m.g.code)}</td>
-            <td class="num">${m.salary == null ? '<span class="chip amber plain">Not set</span>' : fmtINR(m.salary)}</td>
-            ${cell(m.pre, 'F')}${cell(m.pre, 'HD')}${cell(m.pre, 'L')}
-            <td class="num ${m.post.F !== m.pre.F ? 'diff' : ''}">${m.post.F}</td><td class="num ${m.post.HD !== m.pre.HD ? 'diff' : ''}">${m.post.HD}</td><td class="num ${m.post.L !== m.pre.L ? 'diff' : ''}">${m.post.L}</td>
-            <td class="num">${m.post.WO}</td>
-            <td class="num nowrap">${fmtINR(m.payable)}${m.payable !== m.prePay.payable ? `<div class="faint" style="font-size:11.5px">system ${fmtINR(m.prePay.payable)}</div>` : ''}</td>
-            <td class="num nowrap">${m.pt ? `− ${fmtINR(m.pt)}` : '—'}</td>
-            <td class="num nowrap"><b style="color:var(--text)">${fmtINR(m.net)}</b></td></tr>`).join('')}
-          </tbody>
-          <tfoot><tr><td colspan="10" style="text-align:right;font-weight:600">Total</td><td class="num nowrap">${fmtINR(total)}</td><td class="num nowrap">− ${fmtINR(totalPt)}</td><td class="num nowrap"><b style="color:var(--text)">${fmtINR(totalNet)}</b></td></tr></tfoot>
-        </table></div>` : emptyState('users', 'No mapped employees yet', 'Map the sheet’s EmpCodes to employees in the <a href="#/payroll/mapping">Mapping</a> tab.')}
-      </div>`,
+        ${mapped.length ? '' : emptyState('users', 'No mapped employees yet', 'Map the sheet’s EmpCodes to employees in the <a href="#/payroll/mapping">Mapping</a> tab.')}
+      </div>
+      ${mapped.length ? payrollSectionHTML('Active', 'Working employees', mapped.filter((m) => !m.rt), false) : ''}
+      ${mapped.some((m) => m.rt) ? payrollSectionHTML('Resigned & Terminated', 'Final month(s) before F&F — click F&F once the settlement is done; they then leave every sheet', mapped.filter((m) => m.rt), true) : ''}
+      ${exited.length ? `<p class="muted" style="font-size:12.5px">${exited.length} employee(s) in this sheet have F&F completed and are not included: ${exited.map((x) => esc(x.emp.full_name)).join(', ')}.</p>` : ''}`,
     mount() {
       mountPayrollActions();
-      $('.pay-table tbody')?.addEventListener('click', (ev) => {
+      $$('.pay-table tbody').forEach((tb) => tb.addEventListener('click', (ev) => {
         const tr = ev.target.closest('tr[data-href]');
         if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href;
-      });
+      }));
+      $$('[data-fnf]').forEach((b) => b.addEventListener('click', () => completeFnf(byId(b.dataset.fnf))));
       $('#export-payroll')?.addEventListener('click', () => exportPayrollCsv(run, mapped));
       $('#save-payroll')?.addEventListener('click', async (ev) => {
         const results = mapped.filter((m) => m.salary != null).map((m) => ({
@@ -2632,6 +2697,71 @@ async function pagePayrollCalc() {
       });
     },
   };
+}
+
+function payrollSectionHTML(title, sub, list, rt) {
+  const cell = (c, k) => `<td class="num">${c[k]}</td>`;
+  const t = list.reduce((a, m) => ({ earned: a.earned + m.payable, pt: a.pt + m.pt, net: a.net + m.net }), { earned: 0, pt: 0, net: 0 });
+  return `<div class="card">
+    <div class="card-head"><div><h3>${title} <span class="chip plain gray" style="margin-left:6px">${list.length}</span></h3><p>${sub}</p></div>
+      <div class="right"><b class="nowrap">${fmtINR(t.net)}</b><span class="muted" style="font-size:12.5px">net</span></div></div>
+    ${list.length ? `<div class="table-wrap"><table class="table compact pay-table">
+      <thead>
+        <tr><th rowspan="2">Employee</th><th rowspan="2">EmpCode</th><th rowspan="2" class="num">Monthly salary</th>
+          <th colspan="3" class="grp">Pre-adjustment (system)</th><th colspan="3" class="grp">Post-adjustment (final)</th>
+          <th rowspan="2" class="num">WO</th><th rowspan="2" class="num">Earned</th><th rowspan="2" class="num">PT</th><th rowspan="2" class="num">Net payable</th></tr>
+        <tr><th class="num">F</th><th class="num">HD</th><th class="num">L</th><th class="num">F</th><th class="num">HD</th><th class="num">L</th></tr>
+      </thead>
+      <tbody>${list.map((m) => `<tr data-href="#/payroll/emp/${encodeURIComponent(m.g.code)}">
+        <td><a href="#/payroll/emp/${encodeURIComponent(m.g.code)}" class="plain-link" title="Day-wise attendance">${person(m.emp, esc(m.emp.employee_code || 'No EID'))}</a>
+          ${rt ? `<div style="margin-top:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">${empChip(m.emp)}<span class="faint nowrap" style="font-size:11.5px">LWD ${fmtDMY(m.emp.exit_date)}</span>
+            <button class="btn btn-sm btn-primary" data-fnf="${m.emp.id}" style="height:26px;padding:0 10px" title="Full & final settlement done — end their journey">F&F</button></div>` : ''}
+          ${m.notes.length ? `<div title="${esc(m.notes.join(' '))}" style="margin-top:4px"><span class="chip ${m.idOk ? 'amber' : 'red'} plain">${icon('alert', 'sm')} ${m.idOk ? 'Check' : 'ID mismatch'}</span></div>` : ''}</td>
+        <td class="mono">${esc(m.g.code)}</td>
+        <td class="num">${m.salary == null ? '<span class="chip amber plain">Not set</span>' : fmtINR(m.salary)}</td>
+        ${cell(m.pre, 'F')}${cell(m.pre, 'HD')}${cell(m.pre, 'L')}
+        <td class="num ${m.post.F !== m.pre.F ? 'diff' : ''}">${m.post.F}</td><td class="num ${m.post.HD !== m.pre.HD ? 'diff' : ''}">${m.post.HD}</td><td class="num ${m.post.L !== m.pre.L ? 'diff' : ''}">${m.post.L}</td>
+        <td class="num">${m.post.WO}</td>
+        <td class="num nowrap">${fmtINR(m.payable)}${m.payable !== m.prePay.payable ? `<div class="faint" style="font-size:11.5px">system ${fmtINR(m.prePay.payable)}</div>` : ''}</td>
+        <td class="num nowrap">${m.pt ? `− ${fmtINR(m.pt)}` : '—'}</td>
+        <td class="num nowrap"><b style="color:var(--text)">${fmtINR(m.net)}</b></td>
+</tr>`).join('')}
+      </tbody>
+      <tfoot><tr><td colspan="10" style="text-align:right;font-weight:600">Total</td><td class="num nowrap">${fmtINR(t.earned)}</td><td class="num nowrap">− ${fmtINR(t.pt)}</td><td class="num nowrap"><b style="color:var(--text)">${fmtINR(t.net)}</b></td></tr></tfoot>
+    </table></div>` : emptyState('users', 'No one here', 'Nobody in this section for this month.')}
+  </div>`;
+}
+
+// Name | FD | HD | HD-PM | Leave — pre (system) and post (final) for every employee in the month
+function openPayrollSummary() {
+  const { run, mapped } = payrollSheet();
+  if (!run) return;
+  const counts = (days, which) => {
+    const c = { FD: 0, HD: 0, HDPM: 0, L: 0 };
+    for (const d of days) {
+      const st = which === 'pre' ? SYSTEM_TO_FINAL[d.sys] : d.final;
+      if (st === 'F') c.FD += 1;
+      else if (st === 'L') c.L += 1;
+      else if (st === 'HD') c[d.sys === 'MPH' ? 'HDPM' : 'HD'] += 1;
+    }
+    return c;
+  };
+  const rows = mapped.map((m) => ({ m, pre: counts(m.days, 'pre'), post: counts(m.days, 'post') }));
+  const tds = (c, diff) => ['FD', 'HD', 'HDPM', 'L'].map((k) => `<td class="num ${diff && diff[k] !== c[k] ? 'diff' : ''}">${c[k]}</td>`).join('');
+  const section = (label, list) => (list.length ? `<tr class="sum-sec"><td colspan="9">${label} · ${list.length}</td></tr>` + list.map((r) => `<tr>
+      <td><a href="#/payroll/emp/${encodeURIComponent(r.m.g.code)}" data-close-link>${esc(r.m.emp.full_name)}</a><div class="faint" style="font-size:11.5px">${esc(r.m.emp.employee_code || r.m.g.code)}</div></td>
+      ${tds(r.pre)}${tds(r.post, r.pre)}</tr>`).join('') : '');
+  const { el, close } = openModal({
+    title: `Summary — ${fmtMonth(run.month)}`, size: 'lg',
+    subtitle: 'FD = full day · HD = half day (short hours) · HD-PM = half day from missed punches (every 3rd miss) · Leave. Click a name for the day-wise table.',
+    body: rows.length ? `<div class="table-wrap"><table class="table compact pay-table sum-table">
+        <thead><tr><th rowspan="2">Name</th><th colspan="4" class="grp">Pre-adjustment (system)</th><th colspan="4" class="grp">Post-adjustment (final)</th></tr>
+          <tr>${['FD', 'HD', 'HD-PM', 'Leave', 'FD', 'HD', 'HD-PM', 'Leave'].map((h) => `<th class="num">${h}</th>`).join('')}</tr></thead>
+        <tbody>${section('Active', rows.filter((r) => !r.m.rt))}${section('Resigned & Terminated', rows.filter((r) => r.m.rt))}</tbody></table></div>`
+      : emptyState('users', 'No mapped employees', 'Map the sheet in the Mapping tab first.'),
+    footer: `<button class="btn" data-close>Close</button>`,
+  });
+  $$('[data-close-link]', el).forEach((a) => a.addEventListener('click', () => close()));
 }
 
 function exportPayrollCsv(run, mapped) {
@@ -2994,11 +3124,14 @@ async function pagePayrollPt() {
 /* =====================================================================
    FINANCE — Variable, Bonus & Leave Encash, Monthly Expense, ESOPs
    ===================================================================== */
-state.fin = { loaded: false, eligibility: [], variable: [], bonus: [], expenses: [], expenseSource: null };
+state.fin = { loaded: false, eligibility: [], bonus: [], expenses: [], expenseSource: null, variablePayouts: [], loans: [], loanDeductions: [], log: [] };
 
 const finApi = {
   eligibility: () => fetchAll(() => db.from('comp_eligibility').select('employee_id, program, eligible').order('employee_id')),
-  variable: () => fetchAll(() => db.from('variable_entries').select('*').is('removed_at', null).order('period_month', { ascending: false })),
+  variablePayouts: () => fetchAll(() => db.from('variable_payouts').select('*').is('removed_at', null).order('pay_month', { ascending: false })),
+  loans: () => fetchAll(() => db.from('loans').select('*').is('removed_at', null).order('taken_on', { ascending: false })),
+  loanDeductions: () => fetchAll(() => db.from('loan_deductions').select('*').is('voided_at', null).order('created_at')),
+  log: () => fetchAll(() => db.from('finance_log').select('*').order('created_at', { ascending: false })),
   bonus: () => fetchAll(() => db.from('bonus_payments').select('*').is('removed_at', null).order('pay_month', { ascending: false })),
   expenses: () => fetchAll(() => db.from('expense_claims').select('*').order('submitted_at', { ascending: false })),
   expenseSource: async () => {
@@ -3012,9 +3145,10 @@ const finApi = {
 async function ensureFinance(force = false) {
   await ensureAdmin();
   if (state.fin.loaded && !force) return;
-  const [eligibility, variable, bonus, expenses, expenseSource] = await Promise.all([
-    finApi.eligibility(), finApi.variable(), finApi.bonus(), finApi.expenses(), finApi.expenseSource()]);
-  state.fin = { loaded: true, eligibility, variable, bonus, expenses, expenseSource };
+  const [eligibility, bonus, expenses, expenseSource, variablePayouts, loans, loanDeductions, log] = await Promise.all([
+    finApi.eligibility(), finApi.bonus(), finApi.expenses(), finApi.expenseSource(),
+    finApi.variablePayouts(), finApi.loans(), finApi.loanDeductions(), finApi.log()]);
+  state.fin = { loaded: true, eligibility, bonus, expenses, expenseSource, variablePayouts, loans, loanDeductions, log };
 }
 const currentSalary = (empId) => { const rows = salariesOf(empId); return rows.length ? Number(rows[rows.length - 1].amount) : null; };
 const eligibleIds = (program) => new Set(state.fin.eligibility.filter((x) => x.program === program && x.eligible).map((x) => x.employee_id));
@@ -3059,38 +3193,223 @@ function openEligibilityDialog(program, label) {
   });
 }
 
-/* ---------- Variable ---------- */
-const variableResult = (x) => num(x.buy) * num(x.buy_commission_pct) / 100 + num(x.sell) * num(x.sell_commission_pct) / 100
-  - num(x.current_salary) * num(x.duration_months) * num(x.sales_time_pct) / 100;
+/* ---------- Activity log ---------- */
+const LOG_SECTION = { emd: 'Status', payroll: 'Payroll', variable: 'Variable', bonus: 'Bonus', loan: 'Loan' };
+function logCardHTML(rows, { title = 'Log', sub = '', showEmployee = false, showSection = false, controls = '' } = {}) {
+  const list = [...rows].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  return `<div class="card"><div class="card-head"><div><h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</div><div class="right">${controls}<span class="chip plain gray">${list.length}</span></div></div>
+    ${list.length ? `<div class="table-wrap" style="max-height:360px;overflow-y:auto"><table class="table compact"><thead><tr><th>When</th>${showEmployee ? '<th>Employee</th>' : ''}${showSection ? '<th>Section</th>' : ''}<th>Action</th><th>Month</th><th class="num">Amount</th><th>By</th></tr></thead><tbody>
+      ${list.map((x) => `<tr><td class="nowrap muted" title="${esc(fmtDateTime(x.created_at))}">${fmtDateTime(x.created_at)}</td>
+        ${showEmployee ? `<td>${x.employee_id && byId(x.employee_id) ? esc(byId(x.employee_id).full_name) : `<span class="faint">${esc(x.details?.emp_code ? `Emp ID ${x.details.emp_code} (unmatched)` : '—')}</span>`}</td>` : ''}
+        ${showSection ? `<td><span class="chip plain gray">${LOG_SECTION[x.section] || x.section}</span></td>` : ''}
+        <td>${esc(x.action)}</td><td class="nowrap">${x.month ? fmtMonth(x.month) : '—'}</td>
+        <td class="num nowrap">${x.amount == null ? '—' : fmtINR(x.amount)}</td><td class="nowrap muted">${esc(byId(x.created_by)?.full_name || '—')}</td></tr>`).join('')}
+      </tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Nothing logged yet.</p></div>`}
+  </div>`;
+}
+const logMonths = (section) => [...new Set(state.fin.log.filter((x) => x.section === section && x.month).map((x) => x.month))].sort().reverse();
+function monthLogCard(section, key) {
+  const months = logMonths(section);
+  const pick = state.logMonth?.[key] && (state.logMonth[key] === 'all' || months.includes(state.logMonth[key])) ? state.logMonth[key] : (months[0] || 'all');
+  const rows = state.fin.log.filter((x) => x.section === section && (pick === 'all' || x.month === pick));
+  const controls = `<select class="input" data-log-month="${key}" style="height:32px;width:auto;min-width:130px"><option value="all" ${pick === 'all' ? 'selected' : ''}>All months</option>${months.map((m) => `<option value="${m}" ${m === pick ? 'selected' : ''}>${fmtMonth(m)}</option>`).join('')}</select>`;
+  return logCardHTML(rows, { title: 'Month log', sub: 'Everything done in this section for the selected month', showEmployee: true, controls });
+}
+function mountLogMonth() {
+  $$('[data-log-month]').forEach((sel) => sel.addEventListener('change', () => { state.logMonth = { ...(state.logMonth || {}), [sel.dataset.logMonth]: sel.value }; render(); }));
+}
+
+/* ---------- Loans helpers ---------- */
+const loanDeducted = (loanId) => state.fin.loanDeductions.filter((d) => d.loan_id === loanId).reduce((s, d) => s + Number(d.amount), 0);
+const loanLeft = (loan) => Number(loan.amount) - loanDeducted(loan.id);
+const empLoanLeft = (empId) => state.fin.loans.filter((l) => l.employee_id === empId).reduce((s, l) => s + loanLeft(l), 0);
+
+/* ---------- Variable (uploaded sheet) ---------- */
+const VAR_COLS = {
+  code: ['empid', 'employeeid', 'empcode', 'employeecode', 'ecode', 'code', 'id'],
+  name: ['name', 'empname', 'employeename', 'employee'],
+  amount: ['variableamount', 'variable', 'amount', 'variablepay', 'payout', 'netvariable', 'netamount', 'total', 'finalamount'],
+  remarks: ['remarks', 'remark', 'note', 'notes', 'comment', 'comments'],
+};
+function parseVariableRows(rows) {
+  const norm = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (let h = 0; h < Math.min(rows.length, 30); h++) {
+    const cells = (rows[h] || []).map(norm);
+    const find = (names) => { for (const n of names) { const i = cells.indexOf(n); if (i >= 0) return i; } return -1; };
+    const c = { code: find(VAR_COLS.code), name: find(VAR_COLS.name), amount: find(VAR_COLS.amount), remarks: find(VAR_COLS.remarks) };
+    if (c.code < 0 || c.amount < 0) continue;
+    const out = [];
+    for (const row of rows.slice(h + 1)) {
+      const code = typeof row[c.code] === 'number' ? String(row[c.code]) : String(row[c.code] ?? '').trim();
+      if (!code) continue;
+      const amt = row[c.amount];
+      out.push({ emp_code: code, emp_name: c.name >= 0 ? String(row[c.name] ?? '').trim() : '', amount: typeof amt === 'number' ? amt : num(amt), remarks: c.remarks >= 0 ? String(row[c.remarks] ?? '').trim() : '' });
+    }
+    return out;
+  }
+  throw new Error('Could not find the columns. The sheet needs an “Emp ID” column and a “Variable Amount” column (download the template).');
+}
+function downloadVariableTemplate() {
+  const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const lines = activeEmployees().map((e) => [e.employee_code || '', e.full_name, '', ''].map(cell).join(','));
+  const blob = new Blob(['﻿' + ['Emp ID,Name,Variable Amount,Remarks', ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'altius-variable-template.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+function pickVariableFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls,.csv';
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      await loadXLSX();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      let rows = null, lastErr = null;
+      for (const n of wb.SheetNames) {
+        try { rows = parseVariableRows(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' })); break; } catch (e) { lastErr = e; }
+      }
+      if (!rows) throw lastErr;
+      showVariableImport(file, rows);
+    } catch (e) { toast(friendlyError(e), 'error'); }
+  });
+  input.click();
+}
+function showVariableImport(file, rows) {
+  const now = new Date();
+  const byCode = (code) => activeEmployees().find((e) => normCode(e.employee_code) && normCode(e.employee_code) === normCode(code));
+  const { el, close } = openModal({
+    title: 'Upload variable sheet', size: 'md', subtitle: `${esc(file.name)} · rows are matched to employees by Emp ID`,
+    body: `<div class="field" style="margin-bottom:14px"><label>Payout month</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:280px">${monthYearSelects('vup', now.getFullYear(), now.getMonth() + 1)}</div></div>
+      <div id="vup-summary"></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-save>${icon('upload', 'sm')}Import</button>`,
+  });
+  const month = () => monthStart($('[data-y="vup"]', el).value, Number($('[data-m="vup"]', el).value));
+  const draw = () => {
+    const existing = state.fin.variablePayouts.filter((v) => v.pay_month === month()).length;
+    const matched = rows.filter((r) => byCode(r.emp_code));
+    $('#vup-summary', el).innerHTML = `
+      <div class="kv" style="margin-bottom:12px"><div><div class="k">Rows</div><div class="v">${rows.length}</div></div><div><div class="k">Matched by Emp ID</div><div class="v">${matched.length}</div></div>
+        <div><div class="k">Total variable</div><div class="v">${fmtINR(rows.reduce((s, r) => s + Number(r.amount || 0), 0))}</div></div><div><div class="k">Not matched</div><div class="v">${rows.length - matched.length}</div></div></div>
+      ${existing ? `<label class="check-inline" style="margin-bottom:10px"><input type="checkbox" id="vup-replace" checked> Replace the ${existing} row(s) already uploaded for ${fmtMonth(month())} (their loan deductions are reversed)</label>` : ''}
+      <div class="table-wrap" style="max-height:240px;border:1px solid var(--border);border-radius:10px"><table class="table compact"><thead><tr><th>Emp ID</th><th>Name in sheet</th><th>Employee (EMD)</th><th class="num">Amount</th></tr></thead><tbody>
+        ${rows.map((r) => { const e = byCode(r.emp_code); return `<tr><td class="mono">${esc(r.emp_code)}</td><td>${esc(r.emp_name || '—')}</td><td>${e ? esc(e.full_name) : '<span class="chip red plain">Emp ID not in EMD</span>'}</td><td class="num">${fmtINR(r.amount)}</td></tr>`; }).join('')}
+      </tbody></table></div>`;
+  };
+  $$('[data-m="vup"], [data-y="vup"]', el).forEach((s) => s.addEventListener('change', draw));
+  draw();
+  $('[data-save]', el).addEventListener('click', async (ev) => {
+    const replace = $('#vup-replace', el) ? $('#vup-replace', el).checked : true;
+    try {
+      const res = await withBusy(ev.currentTarget, 'Importing…', () => api.rpc('admin_import_variable', { p_month: month(), p_file_name: file.name, p_rows: rows, p_replace: replace }));
+      close();
+      state.variableMonth = month();
+      toast(`Variable for ${fmtMonth(month())} imported — ${res?.rows ?? rows.length} row(s)${res?.unmatched ? `, ${res.unmatched} not matched` : ''}.`);
+      await ensureFinance(true);
+      render();
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
+}
 
 async function pageVariable(r) {
   await ensureFinance();
   if (r.id) return pageVariableEmployee(r.id);
-  const emps = eligibleEmployees('variable');
-  const entriesOf = (id) => state.fin.variable.filter((v) => v.employee_id === id);
+  const all = state.fin.variablePayouts;
+  const months = [...new Set(all.map((v) => v.pay_month))].sort().reverse();
+  const month = state.variableMonth && months.includes(state.variableMonth) ? state.variableMonth : months[0];
+  const lines = all.filter((v) => v.pay_month === month).sort((a, b) => String(a.emp_name || a.emp_code).localeCompare(String(b.emp_name || b.emp_code)));
+  const edits = new Map(lines.map((v) => [v.id, { amount: String(Number(v.loan_deduction) || ''), full: v.deduct_full }]));
+  const lineHTML = (v) => {
+    const e = byId(v.employee_id);
+    const ed = edits.get(v.id);
+    const left = e ? empLoanLeft(e.id) + Number(v.loan_deduction) : 0; // what this line could still take
+    const ded = ed.full ? Math.min(Number(v.amount), left) : num(ed.amount);
+    return `<tr data-id="${v.id}">
+      <td class="mono">${esc(v.emp_code)}</td>
+      <td>${e ? `<a class="plain-link" href="#/variable/${e.id}">${person(e, esc(e.designation || ''))}</a>` : `${esc(v.emp_name || '—')}<div><span class="chip red plain">Emp ID not in EMD</span></div>`}</td>
+      <td class="num nowrap"><b style="color:var(--text)">${fmtINR(v.amount)}</b></td>
+      <td class="num nowrap">${e ? (left > 0 ? fmtINR(empLoanLeft(e.id)) : '<span class="faint">No loan</span>') : '—'}</td>
+      <td style="min-width:130px">${e && left > 0 ? `<div class="rs-in"><span>₹</span><input class="input mono" data-ded="${v.id}" inputmode="decimal" style="height:34px" value="${esc(ed.full ? String(ded) : ed.amount)}" ${ed.full ? 'disabled' : ''}></div>` : '<span class="faint">—</span>'}</td>
+      <td class="nowrap">${e && left > 0 ? `<label class="check-inline"><input type="checkbox" data-full="${v.id}" ${ed.full ? 'checked' : ''}> Deduct full</label>` : ''}</td>
+      <td class="num nowrap" data-net><b>${fmtINR(Number(v.amount) - (e ? ded : 0))}</b></td>
+      <td class="wrap" style="max-width:180px;font-size:12.5px">${esc(v.remarks || '')}</td>
+      <td class="actions nowrap">${e ? `<a class="btn btn-sm" href="#/variable/${e.id}">Details</a>` : ''}<button class="icon-btn" data-remove="${v.id}" title="Remove line">${icon('trash')}</button></td></tr>`;
+  };
+  const totals = () => lines.reduce((a, v) => { const e = byId(v.employee_id); const ed = edits.get(v.id); const left = e ? empLoanLeft(e.id) + Number(v.loan_deduction) : 0; const ded = e ? (ed.full ? Math.min(Number(v.amount), left) : num(ed.amount)) : 0; return { gross: a.gross + Number(v.amount), ded: a.ded + ded }; }, { gross: 0, ded: 0 });
   return {
     title: 'Variable',
-    crumbs: 'Variable pay for eligible employees',
-    actions: `<button class="btn btn-sm btn-primary" id="elig-btn">${icon('users', 'sm')}Manage eligibility</button>`,
+    crumbs: 'Upload the calculated variable sheet — rows are matched to employees by Emp ID',
+    actions: `${months.length ? `<select class="input" id="var-month" style="height:34px;width:auto;min-width:140px">${months.map((m) => `<option value="${m}" ${m === month ? 'selected' : ''}>${fmtMonth(m)}</option>`).join('')}</select>` : ''}
+      <button class="btn btn-sm" id="var-template">${icon('download', 'sm')}Template</button><button class="btn btn-sm btn-primary" id="var-upload">${icon('upload', 'sm')}Upload sheet</button>`,
     html: `
-      <div class="alert alert-info">${icon('info')}<span>Variable = (Buy × Buy commission + Sell × Sell commission) − (Current salary × Duration × Sales time allocated %). Commissions and sales time are entered in %, duration in months.</span></div>
+      ${months.length ? '' : `<div class="alert alert-info">${icon('info')}<span>Download the <b>Template</b> (Emp ID · Name · Variable Amount · Remarks, prefilled with your employees), fill in the calculated amounts, then <b>Upload sheet</b>. Your own sheet works too if it has an “Emp ID” column and a “Variable Amount” (or “Amount”) column.</span></div>`}
       <div class="card">
-        <div class="card-head"><div><h3>Eligible employees</h3><p>${emps.length} of ${activeEmployees().length} employees are eligible for variable pay</p></div></div>
-        ${emps.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th class="num">Current salary</th><th class="num">Calculations</th><th>Latest</th><th class="num">Latest variable</th><th></th></tr></thead><tbody>
-          ${emps.map((e) => {
-            const list = entriesOf(e.id);
-            const last = list[0];
-            return `<tr data-href="#/variable/${e.id}"><td>${person(e, esc(e.employee_code || 'No Employee ID'))}</td>
-              <td class="num">${fmtINR(currentSalary(e.id))}</td><td class="num">${list.length}</td>
-              <td>${last ? fmtMonth(last.period_month) : '<span class="faint">—</span>'}</td>
-              <td class="num">${last ? `<b class="${Number(last.result) < 0 ? 'delta-down' : ''}" style="${Number(last.result) < 0 ? '' : 'color:var(--text)'}">${fmtINR(last.result)}</b>` : '<span class="faint">—</span>'}</td>
-              <td class="actions"><a class="btn btn-sm" href="#/variable/${e.id}">Detailed info</a></td></tr>`;
-          }).join('')}</tbody></table></div>`
-        : emptyState('users', 'No one is eligible yet', 'Click <b>Manage eligibility</b> to pick the employees who get variable pay.')}
-      </div>`,
+        <div class="card-head"><div><h3>${month ? `Variable — ${fmtMonth(month)}` : 'Variable'}</h3><p id="var-totals">${month ? (() => { const t = totals(); return `${lines.length} line(s) · ${fmtINR(t.gross)} variable − ${fmtINR(t.ded)} loan deduction = <b>${fmtINR(t.gross - t.ded)}</b> net`; })() : 'No sheet uploaded yet'}</p></div></div>
+        ${lines.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Emp ID</th><th>Name</th><th class="num">Variable</th><th class="num">Loan remaining</th><th>Loan deduct (₹)</th><th></th><th class="num">Net payout</th><th>Remarks</th><th></th></tr></thead>
+          <tbody id="var-body">${lines.map(lineHTML).join('')}</tbody></table></div>` : emptyState('upload', 'No variable uploaded', 'Click <b>Upload sheet</b> to import the calculated variable for a month.')}
+      </div>
+      ${monthLogCard('variable', 'variable')}
+      <div class="savebar hidden" id="savebar"><div class="grow"><b>Unsaved loan deductions</b> <span>— save to deduct from the loans</span></div>
+        <button class="btn btn-sm" id="discard-btn">Discard</button><button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save deductions</button></div>`,
     mount() {
-      $('#elig-btn').addEventListener('click', () => openEligibilityDialog('variable', 'Variable'));
-      $('.table tbody')?.addEventListener('click', (ev) => { const tr = ev.target.closest('tr[data-href]'); if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href; });
+      mountLogMonth();
+      $('#var-template').addEventListener('click', downloadVariableTemplate);
+      $('#var-upload').addEventListener('click', pickVariableFile);
+      $('#var-month')?.addEventListener('change', (e) => { state.variableMonth = e.target.value; render(); });
+      const body = $('#var-body');
+      if (!body) return;
+      const dirty = new Set();
+      const refresh = (id, redraw = true) => {
+        const v = lines.find((x) => x.id === id);
+        if (redraw) body.querySelector(`tr[data-id="${id}"]`).outerHTML = lineHTML(v);
+        else body.querySelector(`tr[data-id="${id}"] [data-net]`).innerHTML = `<b>${fmtINR(Number(v.amount) - num(edits.get(id).amount))}</b>`;
+        const t = totals();
+        $('#var-totals').innerHTML = `${lines.length} line(s) · ${fmtINR(t.gross)} variable − ${fmtINR(t.ded)} loan deduction = <b>${fmtINR(t.gross - t.ded)}</b> net`;
+        state.dirty = dirty.size > 0;
+        $('#savebar').classList.toggle('hidden', !dirty.size);
+      };
+      body.addEventListener('input', (ev) => {
+        const id = ev.target.dataset.ded;
+        if (!id) return;
+        edits.get(id).amount = ev.target.value.replace(/[^\d.]/g, '');
+        dirty.add(id);
+        refresh(id, false);
+      });
+      body.addEventListener('change', (ev) => {
+        const id = ev.target.dataset.full;
+        if (!id) return;
+        edits.get(id).full = ev.target.checked;
+        dirty.add(id);
+        refresh(id);
+      });
+      body.addEventListener('click', async (ev) => {
+        const b = ev.target.closest('[data-remove]');
+        if (!b) return;
+        if (!(await confirmDialog({ title: 'Remove this line?', message: 'The line and any loan deduction on it are reversed. It stays in the log.', confirmText: 'Remove', danger: true }))) return;
+        try { await api.rpc('admin_remove_variable_payout', { p_id: b.dataset.remove }); toast('Line removed.'); state.dirty = false; await ensureFinance(true); render(); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      });
+      $('#discard-btn').addEventListener('click', () => { state.dirty = false; render(); });
+      $('#save-btn').addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        for (const id of dirty) {
+          const v = lines.find((x) => x.id === id);
+          if (!edits.get(id).full && num(edits.get(id).amount) > Number(v.amount)) return toast(`Loan deduction for ${esc(v.emp_name || v.emp_code)} is more than the variable amount.`, 'error');
+        }
+        try {
+          await withBusy(btn, 'Saving…', async () => {
+            for (const id of dirty) await api.rpc('admin_set_loan_deduction', { p_source: 'variable', p_id: id, p_amount: num(edits.get(id).amount), p_full: edits.get(id).full });
+          });
+          state.dirty = false;
+          toast('Loan deductions saved.');
+          await ensureFinance(true);
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
     },
   };
 }
@@ -3098,139 +3417,58 @@ async function pageVariable(r) {
 async function pageVariableEmployee(id) {
   const e = byId(id);
   const back = `<a class="btn btn-sm" href="#/variable">${icon('arrowLeft', 'sm')}Back to Variable</a>`;
-  if (!e || !eligibleIds('variable').has(id)) {
-    return { title: 'Variable', crumbs: '<a href="#/variable">Variable</a>', actions: back,
-      html: `<div class="card">${emptyState('user', 'Not eligible for variable pay', 'Mark this employee eligible from <a href="#/variable">Manage eligibility</a> first.')}</div>` };
-  }
-  const salary = currentSalary(id);
-  const entries = state.fin.variable.filter((v) => v.employee_id === id);
-  const now = new Date();
-  const blank = () => ({ id: null, y: now.getFullYear(), m: now.getMonth() + 1, duration_months: '', buy: '', sell: '', buy_commission_pct: '', sell_commission_pct: '', sales_time_pct: '', note: '' });
-  let form = blank();
-  const fields = [
-    ['duration_months', 'Duration', 'months', 'e.g. 3'], ['buy', 'Buy', '₹', 'Buy value'], ['sell', 'Sell', '₹', 'Sell value'],
-    ['buy_commission_pct', 'Buy commission', '%', 'e.g. 0.5'], ['sell_commission_pct', 'Sell commission', '%', 'e.g. 0.5'],
-    ['sales_time_pct', 'Sales | time allocated', '%', 'e.g. 60'],
-  ];
-  const formHTML = () => `
-    <div class="grid g3">
-      <div class="field"><label>Month</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${monthYearSelects('var', form.y, form.m)}</div></div>
-      ${fields.map(([k, label, unit, ph]) => `<div class="field"><label>${label} <span class="faint">(${unit})</span></label>
-        <input class="input mono" data-f="${k}" inputmode="decimal" placeholder="${ph}" value="${esc(form[k])}"></div>`).join('')}
-      <div class="field"><label>Current salary <span class="faint">(from EMD)</span></label><div class="locked"><span>${fmtINR(salary)}</span>${icon('lock')}</div></div>
-      <div class="field span-2"><label>Note <span class="faint">(optional)</span></label><input class="input" data-f="note" placeholder="e.g. Q2 deals" value="${esc(form.note)}"></div>
-    </div>`;
-  const previewHTML = () => {
-    const x = { ...form, current_salary: salary || 0 };
-    const earn = num(x.buy) * num(x.buy_commission_pct) / 100 + num(x.sell) * num(x.sell_commission_pct) / 100;
-    const cost = num(x.current_salary) * num(x.duration_months) * num(x.sales_time_pct) / 100;
-    const res = earn - cost;
-    return `<div class="pay-line ${res >= 0 ? 'strong' : ''}" style="${res < 0 ? 'background:var(--red-soft);color:#7F1D1D' : ''}">
-      (${fmtINR(num(x.buy))} × ${fmtPct(x.buy_commission_pct)} + ${fmtINR(num(x.sell))} × ${fmtPct(x.sell_commission_pct)})
-      − (${fmtINR(x.current_salary)} × ${num(x.duration_months)} × ${fmtPct(x.sales_time_pct)})
-      = ${fmtINR(earn)} − ${fmtINR(cost)} = <b>${fmtINR(res)}</b>${res < 0 ? ' · negative — nothing payable' : ''}</div>`;
-  };
-  const historyHTML = () => entries.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th class="num">Duration</th><th class="num">Buy</th><th class="num">Sell</th>
-      <th class="num">Buy comm.</th><th class="num">Sell comm.</th><th class="num">Sales time</th><th class="num">Salary</th><th class="num">Variable</th><th></th></tr></thead><tbody>
-      ${entries.map((v) => `<tr><td>${fmtMonth(v.period_month)}${v.note ? `<div class="faint" style="font-size:12px">${esc(v.note)}</div>` : ''}</td>
-        <td class="num">${num(v.duration_months)} mo</td><td class="num">${fmtINR(v.buy)}</td><td class="num">${fmtINR(v.sell)}</td>
-        <td class="num">${fmtPct(v.buy_commission_pct)}</td><td class="num">${fmtPct(v.sell_commission_pct)}</td><td class="num">${fmtPct(v.sales_time_pct)}</td>
-        <td class="num">${fmtINR(v.current_salary)}</td>
-        <td class="num"><b class="${Number(v.result) < 0 ? 'delta-down' : ''}" style="${Number(v.result) < 0 ? '' : 'color:var(--text)'}">${fmtINR(v.result)}</b></td>
-        <td class="actions"><button class="icon-btn" data-edit="${v.id}" title="Edit">${icon('file')}</button><button class="icon-btn" data-remove="${v.id}" title="Remove">${icon('trash')}</button></td></tr>`).join('')}
-      </tbody></table></div>` : emptyState('wallet', 'No calculations yet', 'Fill in the form above and save the first calculation.');
-
+  if (!e) return { title: 'Variable', crumbs: '<a href="#/variable">Variable</a>', actions: back, html: `<div class="card">${emptyState('user', 'Employee not found', '')}</div>` };
+  const lines = state.fin.variablePayouts.filter((v) => v.employee_id === id).sort((a, b) => b.pay_month.localeCompare(a.pay_month));
   return {
-    title: e.full_name, crumbs: '<a href="#/variable">Variable</a> &nbsp;/&nbsp; Detailed info', actions: back,
+    title: e.full_name, crumbs: '<a href="#/variable">Variable</a> &nbsp;/&nbsp; Details', actions: back,
     html: `
       <div class="card emp-head">${avatar(e, 'lg')}
-        <div style="min-width:0"><h2>${esc(e.full_name)}</h2><div class="meta"><span>${esc(e.employee_code || 'No Employee ID')}</span><span>·</span><span>${esc(e.designation || 'No designation')}</span></div></div>
-        <div class="facts"><div><div class="k">Current salary</div><div class="v">${fmtINR(salary)}</div></div>
-          <div><div class="k">Calculations</div><div class="v">${entries.length}</div></div>
-          <div><div class="k">Total variable</div><div class="v">${fmtINR(entries.reduce((s, v) => s + Math.max(0, Number(v.result)), 0))}</div></div></div>
+        <div style="min-width:0"><h2>${esc(e.full_name)}</h2><div class="meta">${empChip(e)}<span>${esc(e.employee_code || 'No Employee ID')}</span><span>·</span><span>${esc(e.designation || 'No designation')}</span></div></div>
+        <div class="facts"><div><div class="k">Total variable</div><div class="v">${fmtINR(lines.reduce((s, v) => s + Number(v.amount), 0))}</div></div>
+          <div><div class="k">Loan deducted</div><div class="v">${fmtINR(lines.reduce((s, v) => s + Number(v.loan_deduction), 0))}</div></div>
+          <div><div class="k">Loan remaining</div><div class="v">${fmtINR(empLoanLeft(id))}</div></div></div>
       </div>
-      ${salary == null ? `<div class="alert alert-warn">${icon('alert')}<span>No salary in Employee Master Data — the salary part of the formula is taken as ₹0.</span></div>` : ''}
-      <form class="card" id="var-form" novalidate>
-        <div class="card-head"><div><h3 id="var-title">New calculation</h3><p>Variable = (Buy × Buy commission + Sell × Sell commission) − (Current salary × Duration × Sales time allocated %)</p></div></div>
-        <div class="card-body"><div id="var-fields">${formHTML()}</div><div id="var-preview">${previewHTML()}</div>
-          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button type="button" class="btn hidden" id="var-cancel">Cancel edit</button>
-          <button class="btn btn-primary" type="submit">${icon('check', 'sm')}Save calculation</button></div></div>
-      </form>
-      <div class="card"><div class="card-head"><div><h3>Payout history</h3><p>Saved calculations, latest first</p></div></div>${historyHTML()}</div>`,
-    mount() {
-      const f = $('#var-form');
-      f.addEventListener('input', (ev) => {
-        const k = ev.target.dataset.f;
-        if (k) { form[k] = k === 'note' ? ev.target.value : ev.target.value.replace(/[^\d.]/g, ''); $('#var-preview').innerHTML = previewHTML(); }
-      });
-      f.addEventListener('change', (ev) => {
-        if (ev.target.dataset.m === 'var') form.m = Number(ev.target.value);
-        if (ev.target.dataset.y === 'var') form.y = Number(ev.target.value);
-      });
-      const setForm = (v) => {
-        form = v; $('#var-fields').innerHTML = formHTML(); $('#var-preview').innerHTML = previewHTML();
-        $('#var-title').textContent = v.id ? 'Edit calculation' : 'New calculation';
-        $('#var-cancel').classList.toggle('hidden', !v.id);
-      };
-      $('#var-cancel').addEventListener('click', () => setForm(blank()));
-      f.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-        if (!(num(form.duration_months) > 0)) return toast('Enter the duration in months.', 'error');
-        if (num(form.sales_time_pct) > 100) return toast('Sales time allocated cannot be more than 100%.', 'error');
-        try {
-          await withBusy($('button[type=submit]', f), 'Saving…', () => api.rpc('admin_save_variable_entry', { p: {
-            id: form.id, employee_id: id, period_month: monthStart(form.y, form.m), duration_months: num(form.duration_months),
-            buy: num(form.buy), sell: num(form.sell), buy_commission_pct: num(form.buy_commission_pct), sell_commission_pct: num(form.sell_commission_pct),
-            sales_time_pct: num(form.sales_time_pct), current_salary: salary || 0, note: form.note } }));
-          toast('Variable calculation saved.');
-          await ensureFinance(true);
-          render();
-        } catch (err) { toast(friendlyError(err), 'error'); }
-      });
-      $$('[data-edit]').forEach((b) => b.addEventListener('click', () => {
-        const v = entries.find((x) => x.id === b.dataset.edit);
-        const d = parseISODate(v.period_month);
-        setForm({ id: v.id, y: d.getFullYear(), m: d.getMonth() + 1, note: v.note || '',
-          ...Object.fromEntries(fields.map(([k]) => [k, String(Number(v[k]))])) });
-        f.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }));
-      $$('[data-remove]').forEach((b) => b.addEventListener('click', async () => {
-        if (!(await confirmDialog({ title: 'Remove this calculation?', message: 'It will no longer count. The record is kept for audit.', confirmText: 'Remove', danger: true }))) return;
-        try {
-          await api.rpc('admin_remove_variable_entry', { p_id: b.dataset.remove });
-          toast('Calculation removed.');
-          await ensureFinance(true);
-          render();
-        } catch (err) { toast(friendlyError(err), 'error'); }
-      }));
-    },
+      <div class="card"><div class="card-head"><div><h3>Variable by month</h3></div></div>
+        ${lines.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th class="num">Variable</th><th class="num">Loan deducted</th><th class="num">Net payout</th><th>Remarks</th></tr></thead><tbody>
+          ${lines.map((v) => `<tr><td>${fmtMonth(v.pay_month)}</td><td class="num">${fmtINR(v.amount)}</td><td class="num">${Number(v.loan_deduction) ? `− ${fmtINR(v.loan_deduction)}${v.deduct_full ? ' <span class="chip plain gray">full</span>' : ''}` : '—'}</td>
+            <td class="num"><b style="color:var(--text)">${fmtINR(Number(v.amount) - Number(v.loan_deduction))}</b></td><td>${esc(v.remarks || '')}</td></tr>`).join('')}</tbody></table></div>`
+        : emptyState('wallet', 'No variable yet', 'Uploaded variable for this employee shows here.')}</div>
+      ${logCardHTML(state.fin.log.filter((x) => x.section === 'variable' && x.employee_id === id), { title: 'Variable log', sub: 'Uploads, loan deductions and removals for this employee' })}`,
   };
 }
 
 /* ---------- Bonus & Leave Encash ---------- */
-async function pageBonus() {
+async function pageBonus(r) {
   await ensureFinance();
+  if (r?.id) return pageBonusEmployee(r.id);
   const emps = eligibleEmployees('bonus');
   const empIds = new Set(emps.map((e) => e.id));
   let uid = 0;
-  const toRow = (b) => { const d = parseISODate(b.pay_month); return { key: ++uid, id: b.id, employee_id: b.employee_id, description: b.description, y: d.getFullYear(), m: d.getMonth() + 1, amount: String(Number(b.amount)), use_current_salary: b.use_current_salary, removed: false, dirty: false }; };
+  const toRow = (b) => { const d = parseISODate(b.pay_month); return { key: ++uid, id: b.id, employee_id: b.employee_id, description: b.description, y: d.getFullYear(), m: d.getMonth() + 1, amount: String(Number(b.amount)), use_current_salary: b.use_current_salary, loan: String(Number(b.loan_deduction) || ''), full: b.deduct_full, savedLoan: Number(b.loan_deduction) || 0, removed: false, dirty: false }; };
   const rows = state.fin.bonus.map(toRow);
   const now = new Date();
   const rowAmount = (r) => (r.use_current_salary && (r.dirty || !r.id) ? currentSalary(r.employee_id) || 0 : num(r.amount));
+  const loanRoom = (r) => (r.employee_id ? empLoanLeft(r.employee_id) + r.savedLoan : 0);
+  const rowDeduction = (r) => (r.full ? Math.min(rowAmount(r), loanRoom(r)) : num(r.loan));
   const live = () => rows.filter((r) => !r.removed);
   const lineHTML = (r) => {
     const sal = currentSalary(r.employee_id);
     const ineligible = r.employee_id && !empIds.has(r.employee_id);
+    const room = loanRoom(r);
     return `<tr data-key="${r.key}">
-      <td style="min-width:200px"><select class="input" data-k="employee_id" style="height:36px"><option value="">Select employee</option>
+      <td style="min-width:190px"><select class="input" data-k="employee_id" style="height:36px"><option value="">Select employee</option>
         ${emps.map((e) => `<option value="${e.id}" ${e.id === r.employee_id ? 'selected' : ''}>${esc(e.full_name)}${e.employee_code ? ` · ${esc(e.employee_code)}` : ''}</option>`).join('')}
-        ${ineligible ? `<option value="${r.employee_id}" selected>${esc(byId(r.employee_id)?.full_name || 'Former employee')} (not eligible)</option>` : ''}</select></td>
-      <td style="min-width:200px"><input class="input" data-k="description" placeholder="e.g. Diwali bonus / Leave encashment" value="${esc(r.description)}" style="height:36px"></td>
-      <td style="min-width:170px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${monthYearSelects(`b${r.key}`, r.y, r.m).replace(/class="input"/g, 'class="input" style="height:36px"')}</div></td>
-      <td style="min-width:130px"><div class="rs-in"><span>₹</span><input class="input mono" data-k="amount" inputmode="decimal" style="height:36px" value="${esc(r.use_current_salary ? String(rowAmount(r) || '') : r.amount)}" ${r.use_current_salary ? 'disabled' : ''}></div></td>
-      <td class="nowrap"><label class="check-inline" title="Use the employee’s current salary as the amount"><input type="checkbox" data-k="use_current_salary" ${r.use_current_salary ? 'checked' : ''}> Current salary</label>
+        ${ineligible ? `<option value="${r.employee_id}" selected>${esc(byId(r.employee_id)?.full_name || 'Former employee')} (not eligible)</option>` : ''}</select>
+        ${room > 0 ? `<div class="faint" style="font-size:11.5px;margin-top:3px">Loan remaining ${fmtINR(empLoanLeft(r.employee_id))}</div>` : ''}</td>
+      <td style="min-width:180px"><input class="input" data-k="description" placeholder="e.g. Diwali bonus / Leave encashment" value="${esc(r.description)}" style="height:36px"></td>
+      <td style="min-width:190px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${monthYearSelects(`b${r.key}`, r.y, r.m).replace(/class="input"/g, 'class="input" style="height:36px"')}</div></td>
+      <td style="min-width:120px"><div class="rs-in"><span>₹</span><input class="input mono" data-k="amount" inputmode="decimal" style="height:36px" value="${esc(r.use_current_salary ? String(rowAmount(r) || '') : r.amount)}" ${r.use_current_salary ? 'disabled' : ''}></div>
+        <label class="check-inline" style="margin-top:4px;font-size:12px" title="Use the employee’s current salary as the amount"><input type="checkbox" data-k="use_current_salary" ${r.use_current_salary ? 'checked' : ''}> Current salary</label>
         ${r.use_current_salary && sal == null && r.employee_id ? '<div class="error-text">No salary in EMD</div>' : ''}</td>
-      <td class="actions"><button type="button" class="icon-btn" data-del="${r.key}" title="Remove line">${icon('trash')}</button></td></tr>`;
+      <td style="min-width:120px">${room > 0 ? `<div class="rs-in"><span>₹</span><input class="input mono" data-k="loan" inputmode="decimal" style="height:36px" value="${esc(r.full ? String(rowDeduction(r)) : r.loan)}" ${r.full ? 'disabled' : ''}></div>
+        <label class="check-inline" style="margin-top:4px;font-size:12px"><input type="checkbox" data-k="full" ${r.full ? 'checked' : ''}> Deduct full</label>` : '<span class="faint">No loan</span>'}</td>
+      <td class="num nowrap" data-net><b>${fmtINR(rowAmount(r) - (room > 0 ? rowDeduction(r) : 0))}</b></td>
+      <td class="actions nowrap">${r.employee_id && r.id ? `<a class="btn btn-sm" href="#/bonus/${r.employee_id}">Details</a>` : ''}<button type="button" class="icon-btn" data-del="${r.key}" title="Remove line">${icon('trash')}</button></td></tr>`;
   };
   const totalsHTML = () => {
     const byMonth = new Map();
@@ -3245,23 +3483,31 @@ async function pageBonus() {
     html: `
       ${emps.length ? '' : `<div class="alert alert-warn">${icon('alert')}<span>No one is eligible yet. Click <b>Manage eligibility</b> to pick the employees who can receive bonus or leave encashment.</span></div>`}
       <div class="card">
-        <div class="card-head"><div><h3>Payments</h3><p>Employee | Description | Month | Amount. Tick “Current salary” to use the employee’s current salary as the amount.</p></div>
+        <div class="card-head"><div><h3>Payments</h3><p>Employee | Description | Month | Amount. Tick “Current salary” to use the employee’s current salary. If the employee has a loan, enter a loan deduction or tick “Deduct full”.</p></div>
           <div class="right"><button class="btn btn-sm" id="add-line" ${emps.length ? '' : 'disabled'}>${icon('plus', 'sm')}Add line</button></div></div>
         <div class="card-body" id="bonus-totals" style="display:flex;gap:8px;flex-wrap:wrap;padding-bottom:0">${totalsHTML()}</div>
-        <div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th>Description</th><th>Month</th><th>Amount</th><th></th><th></th></tr></thead>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th>Description</th><th>Month</th><th>Amount</th><th>Loan deduct (₹)</th><th class="num">Net</th><th></th></tr></thead>
           <tbody id="bonus-body">${live().map(lineHTML).join('') || ''}</tbody></table></div>
         ${rows.length ? '' : `<div id="bonus-empty">${emptyState('wallet', 'No payments yet', 'Click <b>Add line</b> to enter a bonus or leave encashment.')}</div>`}
       </div>
-      <div class="savebar hidden" id="savebar"><div class="grow"><b>Unsaved changes</b> <span>— save to store the payments</span></div>
+      ${monthLogCard('bonus', 'bonus')}
+      <div class="savebar hidden" id="savebar"><div class="grow"><b>Unsaved changes</b> <span>— save to store the payments and loan deductions</span></div>
         <button class="btn btn-sm" id="discard-btn">Discard</button><button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save</button></div>`,
     mount() {
+      mountLogMonth();
       const body = $('#bonus-body');
       const markDirty = (r) => { if (r) r.dirty = true; state.dirty = true; $('#savebar').classList.remove('hidden'); $('#bonus-totals').innerHTML = totalsHTML(); };
       const rowOf = (el) => rows.find((r) => r.key === Number(el.closest('tr').dataset.key));
       const redrawRow = (r) => { body.querySelector(`tr[data-key="${r.key}"]`).outerHTML = lineHTML(r); };
+      const updateNet = (r) => {
+        const tr = body.querySelector(`tr[data-key="${r.key}"]`);
+        const loanIn = tr.querySelector('[data-k="loan"]');
+        if (loanIn && r.full) loanIn.value = String(rowDeduction(r));
+        tr.querySelector('[data-net]').innerHTML = `<b>${fmtINR(rowAmount(r) - (loanIn ? rowDeduction(r) : 0))}</b>`;
+      };
       $('#elig-btn').addEventListener('click', () => openEligibilityDialog('bonus', 'Bonus & Leave Encash'));
       $('#add-line')?.addEventListener('click', () => {
-        const r = { key: ++uid, id: null, employee_id: '', description: '', y: now.getFullYear(), m: now.getMonth() + 1, amount: '', use_current_salary: false, removed: false, dirty: true };
+        const r = { key: ++uid, id: null, employee_id: '', description: '', y: now.getFullYear(), m: now.getMonth() + 1, amount: '', use_current_salary: false, loan: '', full: false, savedLoan: 0, removed: false, dirty: true };
         rows.unshift(r);
         $('#bonus-empty')?.remove();
         body.insertAdjacentHTML('afterbegin', lineHTML(r));
@@ -3269,7 +3515,7 @@ async function pageBonus() {
       });
       body.addEventListener('input', (ev) => {
         const k = ev.target.dataset.k;
-        if (k === 'description' || k === 'amount') { const r = rowOf(ev.target); r[k] = k === 'amount' ? ev.target.value.replace(/[^\d.]/g, '') : ev.target.value; markDirty(r); }
+        if (k === 'description' || k === 'amount' || k === 'loan') { const r = rowOf(ev.target); r[k] = k === 'description' ? ev.target.value : ev.target.value.replace(/[^\d.]/g, ''); markDirty(r); if (k !== 'description') updateNet(r); }
       });
       body.addEventListener('change', (ev) => {
         const t = ev.target;
@@ -3277,6 +3523,7 @@ async function pageBonus() {
         const r = rowOf(t);
         if (t.dataset.k === 'employee_id') { r.employee_id = t.value; markDirty(r); redrawRow(r); }
         else if (t.dataset.k === 'use_current_salary') { r.use_current_salary = t.checked; markDirty(r); redrawRow(r); }
+        else if (t.dataset.k === 'full') { r.full = t.checked; markDirty(r); redrawRow(r); }
         else if (t.dataset.m) { r.m = Number(t.value); markDirty(r); }
         else if (t.dataset.y) { r.y = Number(t.value); markDirty(r); }
       });
@@ -3297,10 +3544,11 @@ async function pageBonus() {
           if (!r.description.trim()) return toast('Enter a description on every line.', 'error');
           if (r.use_current_salary && currentSalary(r.employee_id) == null) return toast(`${byId(r.employee_id)?.full_name} has no salary in Employee Master Data — untick “Current salary” or add one.`, 'error');
           if (!r.use_current_salary && !(num(r.amount) > 0)) return toast('Enter an amount on every line.', 'error');
+          if (!r.full && num(r.loan) > rowAmount(r)) return toast('A loan deduction is more than the line amount.', 'error');
         }
         const items = changed.map((r) => (r.removed ? { id: r.id, removed: true } : {
           id: r.id, employee_id: r.employee_id, description: r.description.trim(), pay_month: monthStart(r.y, r.m),
-          amount: rowAmount(r), use_current_salary: r.use_current_salary }));
+          amount: rowAmount(r), use_current_salary: r.use_current_salary, loan_deduction: r.full ? 0 : num(r.loan), deduct_full: r.full }));
         try {
           await withBusy(btn, 'Saving…', () => api.rpc('admin_save_bonus_lines', { p_items: items }));
           state.dirty = false;
@@ -3308,6 +3556,123 @@ async function pageBonus() {
           await ensureFinance(true);
           render();
         } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+async function pageBonusEmployee(id) {
+  const e = byId(id);
+  const back = `<a class="btn btn-sm" href="#/bonus">${icon('arrowLeft', 'sm')}Back to Bonus & Leave Encash</a>`;
+  if (!e) return { title: 'Bonus & Leave Encash', crumbs: '<a href="#/bonus">Bonus & Leave Encash</a>', actions: back, html: `<div class="card">${emptyState('user', 'Employee not found', '')}</div>` };
+  const lines = state.fin.bonus.filter((b) => b.employee_id === id).sort((a, b) => b.pay_month.localeCompare(a.pay_month));
+  return {
+    title: e.full_name, crumbs: '<a href="#/bonus">Bonus & Leave Encash</a> &nbsp;/&nbsp; Details', actions: back,
+    html: `
+      <div class="card emp-head">${avatar(e, 'lg')}
+        <div style="min-width:0"><h2>${esc(e.full_name)}</h2><div class="meta">${empChip(e)}<span>${esc(e.employee_code || 'No Employee ID')}</span></div></div>
+        <div class="facts"><div><div class="k">Total paid</div><div class="v">${fmtINR(lines.reduce((s, b) => s + Number(b.amount), 0))}</div></div>
+          <div><div class="k">Loan deducted</div><div class="v">${fmtINR(lines.reduce((s, b) => s + Number(b.loan_deduction), 0))}</div></div>
+          <div><div class="k">Loan remaining</div><div class="v">${fmtINR(empLoanLeft(id))}</div></div></div>
+      </div>
+      <div class="card"><div class="card-head"><div><h3>Payments</h3></div></div>
+        ${lines.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th>Description</th><th class="num">Amount</th><th class="num">Loan deducted</th><th class="num">Net</th></tr></thead><tbody>
+          ${lines.map((b) => `<tr><td>${fmtMonth(b.pay_month)}</td><td>${esc(b.description)}${b.use_current_salary ? ' <span class="chip plain gray">current salary</span>' : ''}</td><td class="num">${fmtINR(b.amount)}</td>
+            <td class="num">${Number(b.loan_deduction) ? `− ${fmtINR(b.loan_deduction)}${b.deduct_full ? ' <span class="chip plain gray">full</span>' : ''}` : '—'}</td><td class="num"><b style="color:var(--text)">${fmtINR(Number(b.amount) - Number(b.loan_deduction))}</b></td></tr>`).join('')}</tbody></table></div>`
+        : emptyState('wallet', 'No payments', '')}</div>
+      ${logCardHTML(state.fin.log.filter((x) => x.section === 'bonus' && x.employee_id === id), { title: 'Bonus log', sub: 'Lines added, changed, removed and loan deductions for this employee' })}`,
+  };
+}
+
+/* ---------- Loans ---------- */
+async function pageLoans(r) {
+  await ensureFinance();
+  if (r.id) return pageLoanDetail(r.id);
+  const emps = activeEmployees();
+  const loans = [...state.fin.loans].sort((a, b) => b.taken_on.localeCompare(a.taken_on));
+  const outstanding = loans.reduce((s, l) => s + loanLeft(l), 0);
+  return {
+    title: 'Loans', crumbs: 'Loans taken by employees — repaid through Variable and Bonus deductions',
+    html: `
+      <form class="card" id="loan-form" novalidate>
+        <div class="card-head"><div><h3>Add a loan</h3><p>Pick the employee; the Emp ID is filled in from Employee Master Data</p></div></div>
+        <div class="card-body grid g4" style="align-items:end">
+          <div class="field"><label>Name<span class="req">*</span></label><select class="input" name="employee"><option value="">Select employee</option>${emps.map((e) => `<option value="${e.id}">${esc(e.full_name)}</option>`).join('')}</select></div>
+          <div class="field"><label>Emp ID</label><div class="locked" id="loan-eid"><span>—</span>${icon('lock')}</div></div>
+          <div class="field"><label>Amount taken<span class="req">*</span></label><div class="rs-in"><span>₹</span><input class="input mono" name="amount" inputmode="decimal" placeholder="e.g. 200000"></div></div>
+          <div class="field"><label>Date (day · month · year)<span class="req">*</span></label><input class="input" type="date" name="taken_on" value="${todayISO()}" max="${todayISO()}"></div>
+          <div class="field span-2"><label>Note <span class="faint">(optional)</span></label><input class="input" name="note" placeholder="e.g. Personal loan, repay from variable"></div>
+          <div style="display:flex;justify-content:flex-end" class="span-2"><button class="btn btn-primary" type="submit">${icon('plus', 'sm')}Add</button></div>
+        </div>
+      </form>
+      <div class="card">
+        <div class="card-head"><div><h3>Loans</h3><p>${loans.length} loan(s) · ${fmtINR(outstanding)} outstanding</p></div></div>
+        ${loans.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Emp ID</th><th>Name</th><th class="num">Amount</th><th>Date</th><th class="num">Loan remaining</th><th></th></tr></thead><tbody id="loan-body">
+          ${loans.map((l) => { const e = byId(l.employee_id); const left = loanLeft(l); return `<tr data-href="#/loans/${l.id}">
+            <td class="mono">${esc(e?.employee_code || '—')}</td><td>${e ? person(e, empState(e) !== 'active' ? empChip(e) : undefined) : '—'}</td>
+            <td class="num">${fmtINR(l.amount)}</td><td class="nowrap">${fmtDMY(l.taken_on)}</td>
+            <td class="num"><b style="color:${left > 0 ? 'var(--text)' : 'var(--green)'}">${left > 0 ? fmtINR(left) : 'Repaid'}</b></td>
+            <td class="actions"><a class="btn btn-sm" href="#/loans/${l.id}">Details</a></td></tr>`; }).join('')}
+        </tbody></table></div>` : emptyState('bank', 'No loans', 'Add a loan above. It is repaid when a loan deduction is set on a Variable or Bonus line.')}
+      </div>
+      ${monthLogCard('loan', 'loan')}`,
+    mount() {
+      mountLogMonth();
+      const f = $('#loan-form');
+      f.elements.employee.addEventListener('change', () => {
+        const e = byId(f.elements.employee.value);
+        $('#loan-eid').innerHTML = `<span>${esc(e ? e.employee_code || 'No Employee ID in EMD' : '—')}</span>${icon('lock')}`;
+      });
+      $('#loan-body')?.addEventListener('click', (ev) => { const tr = ev.target.closest('tr[data-href]'); if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href; });
+      f.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const emp = f.elements.employee.value, amount = num(f.elements.amount.value), on = f.elements.taken_on.value;
+        if (!emp) return toast('Pick the employee.', 'error');
+        if (!(amount > 0)) return toast('Enter the loan amount.', 'error');
+        if (!on) return toast('Enter the date the loan was taken.', 'error');
+        try {
+          await withBusy($('button[type=submit]', f), 'Adding…', () => api.rpc('admin_add_loan', { p_employee: emp, p_amount: amount, p_taken_on: on, p_note: f.elements.note.value }));
+          toast(`Loan of ${fmtINR(amount)} added for ${byId(emp).full_name}.`);
+          await ensureFinance(true);
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+async function pageLoanDetail(loanId) {
+  const back = `<a class="btn btn-sm" href="#/loans">${icon('arrowLeft', 'sm')}Back to Loans</a>`;
+  const l = state.fin.loans.find((x) => x.id === loanId);
+  if (!l) return { title: 'Loans', crumbs: '<a href="#/loans">Loans</a>', actions: back, html: `<div class="card">${emptyState('bank', 'Loan not found', 'It may have been removed.')}</div>` };
+  const e = byId(l.employee_id);
+  const deds = state.fin.loanDeductions.filter((d) => d.loan_id === l.id).sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  let running = Number(l.amount);
+  const rows = deds.map((d) => { running -= Number(d.amount); return { d, after: running }; });
+  const lineLabel = (d) => {
+    if (d.source === 'variable') { const v = state.fin.variablePayouts.find((x) => x.id === d.source_id); return `Variable${v ? ` · ${fmtMonth(v.pay_month)}` : ''}`; }
+    const b = state.fin.bonus.find((x) => x.id === d.source_id); return `Bonus${b ? ` · ${esc(b.description)}` : ''}`;
+  };
+  return {
+    title: e?.full_name || 'Loan', crumbs: '<a href="#/loans">Loans</a> &nbsp;/&nbsp; Details', actions: back,
+    html: `
+      <div class="card emp-head">${e ? avatar(e, 'lg') : ''}
+        <div style="min-width:0"><h2>${esc(e?.full_name || '—')}</h2><div class="meta">${e ? empChip(e) : ''}<span>Emp ID ${esc(e?.employee_code || '—')}</span><span>·</span><span>Taken ${fmtDMY(l.taken_on)}</span>${l.note ? `<span>·</span><span>${esc(l.note)}</span>` : ''}</div></div>
+        <div class="facts"><div><div class="k">Amount</div><div class="v">${fmtINR(l.amount)}</div></div><div><div class="k">Repaid</div><div class="v">${fmtINR(loanDeducted(l.id))}</div></div>
+          <div><div class="k">Loan remaining</div><div class="v">${fmtINR(loanLeft(l))}</div></div></div>
+      </div>
+      <div class="card"><div class="card-head"><div><h3>Repayments</h3><p>Deductions taken from Variable and Bonus lines, oldest first</p></div>
+          <div class="right">${deds.length ? '' : `<button class="btn btn-sm btn-danger" id="loan-remove">${icon('trash', 'sm')}Remove loan</button>`}</div></div>
+        ${rows.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>From</th><th>Month</th><th class="num">Deducted</th><th class="num">Remaining after</th></tr></thead><tbody>
+          ${rows.map(({ d, after }) => `<tr><td class="nowrap">${fmtDMY(String(d.created_at).slice(0, 10))}</td><td>${lineLabel(d)}</td><td>${d.pay_month ? fmtMonth(d.pay_month) : '—'}</td>
+            <td class="num">− ${fmtINR(d.amount)}</td><td class="num"><b style="color:var(--text)">${fmtINR(after)}</b></td></tr>`).join('')}</tbody></table></div>`
+        : emptyState('wallet', 'No repayments yet', 'Set a loan deduction on this employee’s Variable or Bonus line to repay this loan.')}</div>
+      ${logCardHTML(state.fin.log.filter((x) => x.section === 'loan' && x.employee_id === l.employee_id), { title: 'Loan log', sub: 'All loan activity for this employee' })}`,
+    mount() {
+      $('#loan-remove')?.addEventListener('click', async () => {
+        if (!(await confirmDialog({ title: 'Remove this loan?', message: 'Use this only for a loan added by mistake. It stays in the log.', confirmText: 'Remove', danger: true }))) return;
+        try { await api.rpc('admin_remove_loan', { p_loan: l.id }); toast('Loan removed.'); await ensureFinance(true); location.hash = '#/loans'; }
+        catch (err) { toast(friendlyError(err), 'error'); }
       });
     },
   };

@@ -9,11 +9,12 @@ A single-file HRMS (`index.html`) for Altius Investech, with Supabase as the dat
 | 1. Sign in / Access control | Sign-up (Name, Email, Phone, Password) → admin gives access or rejects → employee uploads KYC → admin approves (or sends it back) → HRMS access |
 | 2. Employee Master Data (EMD) | Team list (Name, Mail ID, Number, Designation, Reporting Manager, Salary, Last Increment) → detailed info per employee with locked personal fields, editable EID / designation / manager, a month-wise salary history, and the KYC documents |
 | 3. Payroll | Upload the month's punch-in/punch-out sheet → map sheet EmpCodes to employees → day-wise F / HD / L marking from HR's working-hours rules → admin adjustments → monthly payable per employee, minus Professional Tax, saved as the month's payroll |
-| 4. Finance | Variable pay, Bonus & Leave Encashment, Monthly Expenses (from the Google Form), ESOPs (placeholder) |
+| 4. Finance | Variable (uploaded sheet), Bonus & Leave Encashment, Loans (repaid from Variable / Bonus), Monthly Expenses (from the Google Form), ESOPs (placeholder) |
+| 5. Exits & logs | Employment status (Active → Resigned / Terminated → F&F), Active and R&T sections in payroll, and an activity log for each section, by employee and by month |
 
 **Two separate access levels**
 
-* **Admin** (`sayan.mullick@altiusinvestech.com` is the base admin): Dashboard, Access Control, Employee Master Data, Finance (Payroll, Variable, Bonus & Leave Encash, Monthly Expense, ESOPs), and Team Access settings.
+* **Admin** (`sayan.mullick@altiusinvestech.com` is the base admin): Dashboard, Access Control, Employee Master Data, Finance (Payroll, Variable, Bonus & Leave Encash, Loans, Monthly Expense, ESOPs), and Team Access settings.
 * **Team**: a separate employee portal (Home, My Profile). A team member only ever sees their own records.
 
 The database enforces this split, not just the screens. Row Level Security and `SECURITY DEFINER` functions in the migration under `supabase/migrations/` do the enforcing. Team accounts have no write access to any table. They can't change their own role or status, and they can't read anyone else's rows or files. Admin decides what employees can see about themselves (job details, salary history, KYC documents) on the **Team Access** page.
@@ -116,6 +117,8 @@ Files upload as soon as they're picked, and the form keeps a local draft, so a p
 
 The entry with the latest month is the current salary. That entry's month and % change are shown as **Last Increment** in the EMD list. Click **Save** to store all edits (EID, designation, reporting manager, salary rows) in one go. A removed salary row is hidden but kept in the database as an audit trail.
 
+**Employment status (EMD → Show detailed info → Status).** Everyone starts as **Active**. Click **Resigned** or **Terminated**, then enter the last working day and an optional note. The EMD list has three tabs: **Active**, **Resigned & Terminated**, and **F&F completed**. Click **Mark active again** to undo a resignation. When the full and final settlement is done, click **Complete F&F** (here, or the **F&F** button in Payroll's R&T section). That ends the employee's journey: they drop out of every sheet (payroll, variable, bonus, loans), can no longer sign in, and stay read-only under **F&F completed**. F&F can't be undone.
+
 **Signing out.** **Sign out** is in the top bar on every page (and at the bottom of the sidebar). It ends the session on this device, even if the network call to Supabase fails. If a session expires, the app returns to the sign-in screen with a message.
 
 ## Payroll (Module 3)
@@ -149,15 +152,32 @@ The entry with the latest month is the current salary. That entry's month and % 
 daily salary = monthly salary (the salary in effect for that month, from EMD; if the first salary entry starts later, that entry is used and flagged) ÷ 30
 payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest rupee. Paid Sundays count as full days.
 
+**Active and R&T sections.** The salary table is split into **Active** and **Resigned & Terminated**, each with its own totals. Each R&T row has an **F&F** button. Employees whose F&F is complete are left out, and a note lists them.
+
+**Summary button.** Click **Summary** to open a count table for the month: **Name | FD | HD | HD-PM | Leave**, both pre-adjustment (system) and post-adjustment (final). HD is a half day for short hours; HD-PM is a half day from missed punches (every 3rd miss). Click a name to open that employee's day-wise table.
+
 **Save payroll** stores each employee's counts and payable for the month (`payroll_results`). **Export CSV** downloads the same table. If anything changes after saving, the status shows "Changed since save".
 
 ## Finance sections
 
-**Variable.** Use **Manage eligibility** to tick the eligible employees. Each eligible employee has a **Detailed info** page where you add calculations:
-Variable = (Buy × Buy commission % + Sell × Sell commission %) − (Current salary × Duration in months × Sales time allocated %).
-The current salary comes from EMD (the latest salary entry). The result is calculated in the database, shown with its working, and kept in a payout history that you can edit or remove. A negative result is shown in red as "nothing payable".
+**Variable.** No calculation is done in the HRMS. Calculate the variable outside the HRMS and upload the sheet:
+1. Click **Template** to download a CSV (`Emp ID, Name, Variable Amount, Remarks`) prefilled with your employees. Your own sheet also works, as long as it has an **Emp ID** column and a **Variable Amount** (or **Amount**) column; title rows above the header are skipped.
+2. Click **Upload sheet**, pick the payout month, review the preview (matched / not matched), then click **Import**. Rows are matched to employees **by Emp ID**, using the same rule as Payroll mapping. Rows that don't match are kept and flagged "Emp ID not in EMD". Uploading the same month again replaces the earlier rows (tick or untick **Replace**) and reverses any loan deductions on them.
+3. The table shows **Emp ID | Name | Variable | Loan remaining | Loan deduct (₹) | Deduct full | Net payout | Remarks | Details**.
 
-**Bonus & Leave Encash.** Use **Manage eligibility**, then **Add line** for each payment: Employee | Description | Month | Amount. Tick **Current salary** to use the employee's current salary as the amount; the amount is fixed when you save. Totals are shown per month. Removed lines are kept for audit.
+**Bonus & Leave Encash.** Use **Manage eligibility**, then **Add line** for each payment: Employee | Description | Month | Amount | Loan deduct (₹) | Net. Tick **Current salary** to use the employee's current salary as the amount; the amount is fixed when you save. Totals are shown per month. Removed lines are kept for audit. **Details** opens the employee's lines and log.
+
+**Loans.** **Add a loan** form: pick the **Name**, and the **Emp ID** is filled in from EMD; then enter the **Amount taken** and the **Date**, and click **Add**. The list shows **Emp ID | Name | Amount | DD-MM-YYYY | Loan remaining | Details**. A loan is repaid through the **Loan deduct** column on Variable and Bonus lines:
+* Type an amount to deduct part of the line, or tick **Deduct full** to deduct the whole line (capped at what is still owed).
+* Example: a variable of ₹50,000 with *Deduct full*, against a ₹2,00,000 loan, leaves **₹1,50,000** remaining, and the variable's net payout is ₹0.
+* If an employee has several loans, the oldest is repaid first.
+* Changing or removing the line, or re-uploading the variable month, reverses the deduction automatically.
+* **Details** on a loan lists each repayment (source, month, amount, remaining after). A loan can be removed only while it has no repayments (for loans added by mistake).
+
+**Logs.** Every change is logged with who made it and when: uploads, line changes, loan deductions, loans, status changes, F&F and payroll saves.
+* Each section's employee **Details** page shows that employee's log for the section.
+* EMD → Show detailed info shows the employee's **Activity log** across all sections.
+* The Variable, Bonus and Loans pages each have a **Month log** with a month picker.
 
 **Monthly Expense.** The team submits expenses through a Google Form. In the form, go to **Responses → Link to Sheets**, then share that responses sheet as **Anyone with the link: Viewer**. Paste the sheet's link on the Monthly Expense page and click **Sync**. The columns (Employee ID, Amount, Timestamp, Name, Expense date, Category, Description, Bill) are detected automatically and can be changed. Each response is matched to an employee by **Employee ID**, using the same rule as Payroll mapping. Responses that don't match are listed and flagged. **Detailed info** shows an employee's claims month by month, with bill links. Syncing again adds new responses and never duplicates old ones.
 
@@ -168,6 +188,8 @@ The current salary comes from EMD (the latest salary entry). The result is calcu
 * **Reject** keeps the record (under Rejected) instead of deleting it, so HR has a history and can restore a request made by mistake.
 * **Reporting manager** is picked from active employees.
 * The base admin also appears in EMD, so their own salary and designation can be recorded.
+* **Exits:** an R&T employee stays in payroll, variable and bonus until F&F, because their last month's salary and dues are still paid. Variable rows for an F&F'd employee's Emp ID are not matched.
+* **Variable eligibility** is no longer used: the uploaded sheet decides who gets variable. Bonus still uses eligibility.
 * **Payroll:** Sunday is a weekly off and, by default, paid, so a full month of attendance gives the full salary with the ÷30 rule. A 31-day month can therefore pay slightly more than the monthly salary; HR can turn paid Sundays off. A day missing from the sheet counts as leave. The same time punched twice counts as one punch, and 00:00 counts as no punch.
 
 ---
@@ -181,6 +203,7 @@ The current salary comes from EMD (the latest salary entry). The result is calcu
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261008000000_exits_variable_upload_loans.sql` | Employment status and F&F, the finance activity log, variable sheet uploads, loans and loan deductions from Variable / Bonus. Admin-only. Re-runnable. |
 
 ### Data model
 * `profiles`: one row per user (name, email, phone, role, status, EID, designation, reporting manager, DOJ, DOB, rejection details, audit timestamps)
@@ -194,6 +217,9 @@ The current salary comes from EMD (the latest salary entry). The result is calcu
 * `attendance_adjustments`: the admin's day-wise F / HD / L changes
 * `payroll_results`: saved monthly counts and payable per employee
 * `comp_eligibility`: who is eligible for Variable / Bonus
-* `variable_entries`: variable-pay calculations (inputs, salary used, result)
-* `bonus_payments`: bonus and leave-encashment lines
+* `variable_entries`: the earlier calculated variable entries (kept, no longer used by the UI)
+* `variable_uploads` / `variable_payouts`: uploaded variable sheets and their rows (Emp ID, name, amount, remarks, matched employee, loan deduction)
+* `loans` / `loan_deductions`: loans taken, and the repayments taken from Variable / Bonus lines (voided, not deleted, when reversed)
+* `finance_log`: who did what, per section, employee and month
+* `bonus_payments`: bonus and leave-encashment lines (with loan deduction)
 * `expense_claims`: expenses synced from the Google Form responses sheet, matched to employees by Employee ID
