@@ -464,8 +464,22 @@
   .rules-list > div { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-2); }
   .rules-list .st { flex: none; margin-top: 1px; }
   .pay-table th.grp { text-align: center; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+  a.plain-link, a.plain-link:hover { color: inherit; text-decoration: none; }
+  a.plain-link:hover .name { color: var(--accent); }
   .pay-table td.diff { color: var(--accent); font-weight: 600; }
   .pay-table tfoot td { background: var(--surface-2); border-top: 1px solid var(--border); padding: 12px; }
+
+  /* ---------- Finance ---------- */
+  .rs-in { position: relative; }
+  .rs-in > span { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 13px; pointer-events: none; }
+  .rs-in .input { padding-left: 24px; }
+  .elig-list { display: grid; gap: 2px; max-height: 380px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; padding: 4px; }
+  .elig-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+  .elig-row:hover { background: var(--surface-2); }
+  .elig-row input { width: 16px; height: 16px; accent-color: var(--primary); flex: none; }
+  .check-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+  .check-inline input { width: 15px; height: 15px; accent-color: var(--primary); }
+  .rules-list > div > svg.i { flex: none; margin-top: 1px; color: var(--muted); }
 
   /* ---------- Responsive ---------- */
   @media (max-width: 1100px) {
@@ -584,6 +598,9 @@ const ICONS = {
   phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
   mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
   wallet: '<path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  receipt: '<path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
+  pie: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   sparkle: '<path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>',
 };
@@ -1380,6 +1397,10 @@ const NAV = {
       { key: 'emd', label: 'Employee Master Data', icon: 'users' },
       { label: 'Finance' },
       { key: 'payroll', label: 'Payroll', icon: 'wallet' },
+      { key: 'variable', label: 'Variable', icon: 'trending' },
+      { key: 'bonus', label: 'Bonus & Leave Encash', icon: 'gift' },
+      { key: 'expenses', label: 'Monthly Expense', icon: 'receipt' },
+      { key: 'esops', label: 'ESOPs', icon: 'pie' },
       { label: 'Settings' },
       { key: 'team-access', label: 'Team Access', icon: 'sliders' },
     ];
@@ -1391,7 +1412,8 @@ const NAV = {
   ],
 };
 const PAGES = {
-  admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, payroll: pagePayroll },
+  admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, payroll: pagePayroll,
+    variable: pageVariable, bonus: pageBonus, expenses: pageExpenses, esops: pageEsops },
   team: { home: pageTeamHome, profile: pageMyProfile },
 };
 const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
@@ -2095,6 +2117,13 @@ const payrollApi = {
     const row = await q(db.from('app_settings').select('value').eq('key', 'attendance_rules').maybeSingle());
     return { ...DEFAULT_RULES, ...(row?.value || {}) };
   },
+  pt: async () => {
+    const row = await q(db.from('app_settings').select('value').eq('key', 'professional_tax').maybeSingle());
+    return row?.value?.slabs ? row.value : DEFAULT_PT;
+  },
+  savePt: (value) => q(db.from('app_settings')
+    .update({ value, updated_by: state.user.id, updated_at: new Date().toISOString() })
+    .eq('key', 'professional_tax').select()),
   saveRules: (value) => q(db.from('app_settings')
     .update({ value, updated_by: state.user.id, updated_at: new Date().toISOString() })
     .eq('key', 'attendance_rules').select()),
@@ -2104,7 +2133,7 @@ async function ensurePayroll({ reload = false } = {}) {
   await ensureAdmin();
   const P = state.payroll;
   if (!P.runs || reload) {
-    [P.runs, P.codeMap, P.rules] = await Promise.all([payrollApi.runs(), payrollApi.codeMap(), payrollApi.rules()]);
+    [P.runs, P.codeMap, P.rules, P.pt] = await Promise.all([payrollApi.runs(), payrollApi.codeMap(), payrollApi.rules(), payrollApi.pt()]);
   }
   if (!P.runs.some((r) => r.id === P.runId)) P.runId = P.runs[0]?.id || null;
   if (!P.runId) { P.data = null; return; }
@@ -2198,6 +2227,21 @@ function groupPunches(punches) {
   }
   return [...groups.values()].sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code));
 }
+// Employee codes match ignoring case and leading zeros ("0003" = "003"), same as norm_emp_code() in SQL.
+const normCode = (v) => String(v ?? '').toLowerCase().trim().replace(/(^|[^0-9])0+(?=[0-9])/g, '$1') || null;
+const DEFAULT_PT = { slabs: [
+  { min: 0, max: 10000, amount: 0 }, { min: 10001, max: 15000, amount: 110 }, { min: 15001, max: 25000, amount: 130 },
+  { min: 25001, max: 40000, amount: 150 }, { min: 40001, max: null, amount: 200 }] };
+function ptFor(salary) {
+  if (!salary) return 0;
+  const slab = (state.payroll.pt?.slabs || []).find((x) => salary >= Number(x.min) && (x.max == null || x.max === '' || salary <= Number(x.max)));
+  return slab ? Number(slab.amount) : 0;
+}
+function idCheck(code, emp) {
+  if (!emp) return null;
+  if (!emp.employee_code) return { ok: false, text: 'No Employee ID in EMD' };
+  return normCode(emp.employee_code) === normCode(code) ? { ok: true, text: 'ID matches' } : { ok: false, text: `ID mismatch — EMD has ${emp.employee_code}` };
+}
 const codeMapIndex = () => new Map(state.payroll.codeMap.filter((m) => m.employee_id).map((m) => [m.emp_code, m.employee_id]));
 
 function payrollSheet() {
@@ -2224,7 +2268,11 @@ function payrollSheet() {
     const notes = [];
     if (days.dojIgnored) notes.push(`Date of joining in Employee Master Data is ${fmtDate(emp.date_of_joining)}, but the sheet has punches before it — it is ignored for ${fmtMonth(run.month)}. Correct the date of joining if it is wrong.`);
     if (sal?.fallback) notes.push(`No salary entry covers ${fmtMonth(run.month)} — using ${fmtINR(sal.amount)} from ${fmtMonth(sal.from)}. Add the right salary month in Employee Master Data if needed.`);
-    mapped.push({ g, emp, days, pre, post, salary, notes, prePay: payFor(pre, salary, P.rules), ...payFor(post, salary, P.rules) });
+    const check = idCheck(g.code, emp);
+    if (check && !check.ok) notes.unshift(`EmpCode in the sheet is ${g.code}, but ${check.text.replace('ID mismatch — EMD has', 'the Employee ID in EMD is')}. Check the mapping.`);
+    const pay = payFor(post, salary, P.rules);
+    const pt = salary ? ptFor(salary) : 0;
+    mapped.push({ g, emp, days, pre, post, salary, notes, idOk: !check || check.ok, prePay: payFor(pre, salary, P.rules), ...pay, pt, net: Math.max(0, pay.payable - pt) });
   }
   mapped.sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
   return { run, groups, mapped, unmapped };
@@ -2472,7 +2520,7 @@ function showImportPreview(file, parsed) {
 
 /* ---------- Payroll page ---------- */
 function payrollTabs(active) {
-  const tabs = [['calc', '#/payroll', 'Salary Calculation'], ['mapping', '#/payroll/mapping', 'Mapping'], ['rules', '#/payroll/rules', 'Working Hours']];
+  const tabs = [['calc', '#/payroll', 'Salary Calculation'], ['mapping', '#/payroll/mapping', 'Mapping'], ['rules', '#/payroll/rules', 'Working Hours'], ['pt', '#/payroll/pt', 'Professional Tax']];
   return `<div><nav class="tabs">${tabs.map(([k, href, l]) => `<a href="${href}" class="${k === active ? 'active' : ''}">${l}</a>`).join('')}</nav></div>`;
 }
 function payrollActions() {
@@ -2497,6 +2545,7 @@ async function pagePayroll(r) {
   if (r.id === 'emp') return pagePayrollEmployee(r.sub);
   if (r.id === 'mapping') return pagePayrollMapping();
   if (r.id === 'rules') return pagePayrollRules();
+  if (r.id === 'pt') return pagePayrollPt();
   return pagePayrollCalc();
 }
 
@@ -2514,8 +2563,10 @@ async function pagePayrollCalc() {
     return { ...base, html: payrollTabs('calc') + noRunState(), mount() { mountPayrollActions(); $('#upload-att-empty')?.addEventListener('click', pickAttendanceFile); } };
   }
   const saved = new Map(P.data.results.map((x) => [x.employee_id, x]));
-  const changed = run.processed_at && mapped.some((m) => !saved.has(m.emp.id) || Number(saved.get(m.emp.id).payable) !== m.payable);
+  const changed = run.processed_at && mapped.some((m) => !saved.has(m.emp.id) || Number(saved.get(m.emp.id).payable) !== m.payable || Number(saved.get(m.emp.id).pt) !== m.pt);
   const total = mapped.reduce((s, m) => s + m.payable, 0);
+  const totalPt = mapped.reduce((s, m) => s + m.pt, 0);
+  const totalNet = mapped.reduce((s, m) => s + m.net, 0);
   const noSalary = mapped.filter((m) => m.salary == null);
   const cell = (c, k) => `<td class="num">${c[k]}</td>`;
   return {
@@ -2526,8 +2577,8 @@ async function pagePayrollCalc() {
           <div class="value" style="font-size:22px">${fmtMonth(run.month)}</div><div class="foot" title="${esc(fmtDateTime(run.uploaded_at))}">${esc(run.source_file_name || 'Uploaded sheet')} · ${fmtRelative(run.uploaded_at)}</div></div>
         <div class="card stat"><div class="top"><span>Employees in sheet</span><span class="ico" style="background:var(--blue-soft);color:var(--blue)">${icon('users')}</span></div>
           <div class="value">${groups.length}</div><div class="foot">${mapped.length} mapped · ${unmapped.length} not mapped</div></div>
-        <div class="card stat"><div class="top"><span>Total payable</span><span class="ico" style="background:var(--green-soft);color:var(--green)">${icon('wallet')}</span></div>
-          <div class="value" style="font-size:24px">${fmtINR(total)}</div><div class="foot">After admin adjustments</div></div>
+        <div class="card stat"><div class="top"><span>Total net payable</span><span class="ico" style="background:var(--green-soft);color:var(--green)">${icon('wallet')}</span></div>
+          <div class="value" style="font-size:24px">${fmtINR(totalNet)}</div><div class="foot">${fmtINR(total)} earned − ${fmtINR(totalPt)} PT</div></div>
         <div class="card stat"><div class="top"><span>Payroll status</span><span class="ico" style="background:var(--violet-soft);color:var(--violet)">${icon('fileCheck')}</span></div>
           <div class="value" style="font-size:18px">${run.processed_at ? (changed ? '<span class="chip amber">Changed since save</span>' : '<span class="chip green">Saved</span>') : '<span class="chip gray">Not saved</span>'}</div>
           <div class="foot">${run.processed_at ? `Saved ${fmtRelative(run.processed_at)}` : 'Review, then save the payroll'}</div></div>
@@ -2535,27 +2586,27 @@ async function pagePayrollCalc() {
       ${unmapped.length ? `<div class="alert alert-warn">${icon('alert')}<span><b>${unmapped.length} employee(s) in the sheet are not mapped</b> to Employee Master Data, so they are not in the calculation. <a href="#/payroll/mapping">Map them</a>.</span></div>` : ''}
       ${noSalary.length ? `<div class="alert alert-warn">${icon('alert')}<span>No salary in Employee Master Data for: ${noSalary.map((m) => esc(m.emp.full_name)).join(', ')}. Their payable shows ₹0 and they are left out when saving.</span></div>` : ''}
       <div class="card">
-        <div class="card-head"><div><h3>Salary calculation — ${fmtMonth(run.month)}</h3><p>${rulesSummary(P.rules)} · Daily salary = monthly ÷ 30 · Payable = (Full day${P.rules.sunday_paid_off ? ' + WO' : ''}) × daily + Half day × daily × 0.5</p></div>
+        <div class="card-head"><div><h3>Salary calculation — ${fmtMonth(run.month)}</h3><p>${rulesSummary(P.rules)} · Daily salary = monthly ÷ 30 · Earned = (Full day${P.rules.sunday_paid_off ? ' + WO' : ''}) × daily + Half day × daily × 0.5 · Net = Earned − Professional Tax</p></div>
           <div class="right"><button class="btn btn-sm" id="export-payroll" ${mapped.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>
           <button class="btn btn-sm btn-primary" id="save-payroll" ${mapped.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payroll</button></div></div>
         ${mapped.length ? `<div class="table-wrap"><table class="table compact pay-table">
           <thead>
-            <tr><th rowspan="2">Employee</th><th rowspan="2">EmpCode</th><th rowspan="2" class="num">Monthly salary</th><th rowspan="2" class="num">Daily</th>
+            <tr><th rowspan="2">Employee</th><th rowspan="2">EmpCode</th><th rowspan="2" class="num">Monthly salary</th>
               <th colspan="3" class="grp">Pre-adjustment (system)</th><th colspan="3" class="grp">Post-adjustment (final)</th>
-              <th rowspan="2" class="num">WO</th><th rowspan="2" class="num">Payable</th><th rowspan="2"></th></tr>
+              <th rowspan="2" class="num">WO</th><th rowspan="2" class="num">Earned</th><th rowspan="2" class="num">PT</th><th rowspan="2" class="num">Net payable</th></tr>
             <tr><th class="num">F</th><th class="num">HD</th><th class="num">L</th><th class="num">F</th><th class="num">HD</th><th class="num">L</th></tr>
           </thead>
           <tbody>${mapped.map((m) => `<tr data-href="#/payroll/emp/${encodeURIComponent(m.g.code)}">
-            <td>${person(m.emp, esc(m.emp.employee_code || 'No EID'))}${m.notes.length ? `<div title="${esc(m.notes.join(' '))}" style="margin-top:4px"><span class="chip amber plain">${icon('alert', 'sm')} Check</span></div>` : ''}</td><td class="mono">${esc(m.g.code)}</td>
+            <td><a href="#/payroll/emp/${encodeURIComponent(m.g.code)}" class="plain-link" title="Day-wise attendance">${person(m.emp, esc(m.emp.employee_code || 'No EID'))}</a>${m.notes.length ? `<div title="${esc(m.notes.join(' '))}" style="margin-top:4px"><span class="chip ${m.idOk ? 'amber' : 'red'} plain">${icon('alert', 'sm')} ${m.idOk ? 'Check' : 'ID mismatch'}</span></div>` : ''}</td><td class="mono">${esc(m.g.code)}</td>
             <td class="num">${m.salary == null ? '<span class="chip amber plain">Not set</span>' : fmtINR(m.salary)}</td>
-            <td class="num">${m.salary == null ? '—' : fmtINR2(m.daily)}</td>
             ${cell(m.pre, 'F')}${cell(m.pre, 'HD')}${cell(m.pre, 'L')}
             <td class="num ${m.post.F !== m.pre.F ? 'diff' : ''}">${m.post.F}</td><td class="num ${m.post.HD !== m.pre.HD ? 'diff' : ''}">${m.post.HD}</td><td class="num ${m.post.L !== m.pre.L ? 'diff' : ''}">${m.post.L}</td>
             <td class="num">${m.post.WO}</td>
-            <td class="num"><b style="color:var(--text)">${fmtINR(m.payable)}</b>${m.payable !== m.prePay.payable ? `<div class="faint" style="font-size:11.5px">system ${fmtINR(m.prePay.payable)}</div>` : ''}</td>
-            <td class="actions"><a class="icon-btn" href="#/payroll/emp/${encodeURIComponent(m.g.code)}" title="Day-wise attendance" aria-label="Day-wise attendance">${icon('arrowRight')}</a></td></tr>`).join('')}
+            <td class="num nowrap">${fmtINR(m.payable)}${m.payable !== m.prePay.payable ? `<div class="faint" style="font-size:11.5px">system ${fmtINR(m.prePay.payable)}</div>` : ''}</td>
+            <td class="num nowrap">${m.pt ? `− ${fmtINR(m.pt)}` : '—'}</td>
+            <td class="num nowrap"><b style="color:var(--text)">${fmtINR(m.net)}</b></td></tr>`).join('')}
           </tbody>
-          <tfoot><tr><td colspan="11" style="text-align:right;font-weight:600">Total payable</td><td class="num"><b style="color:var(--text)">${fmtINR(total)}</b></td><td></td></tr></tfoot>
+          <tfoot><tr><td colspan="10" style="text-align:right;font-weight:600">Total</td><td class="num nowrap">${fmtINR(total)}</td><td class="num nowrap">− ${fmtINR(totalPt)}</td><td class="num nowrap"><b style="color:var(--text)">${fmtINR(totalNet)}</b></td></tr></tfoot>
         </table></div>` : emptyState('users', 'No mapped employees yet', 'Map the sheet’s EmpCodes to employees in the <a href="#/payroll/mapping">Mapping</a> tab.')}
       </div>`,
     mount() {
@@ -2570,10 +2621,11 @@ async function pagePayrollCalc() {
           employee_id: m.emp.id, emp_code: m.g.code, monthly_salary: m.salary, daily_salary: Number(m.daily.toFixed(4)),
           pre_full: m.pre.F, pre_half: m.pre.HD, pre_leave: m.pre.L, pre_weekly_off: m.pre.WO,
           post_full: m.post.F, post_half: m.post.HD, post_leave: m.post.L, post_weekly_off: m.post.WO, payable: m.payable,
+          pt: m.pt, net_payable: m.net,
         }));
         try {
           await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_save_payroll', { p_run: run.id, p_results: results, p_rules: P.rules }));
-          toast(`Payroll for ${fmtMonth(run.month)} saved — ${results.length} employee(s), ${fmtINR(results.reduce((s, x) => s + x.payable, 0))}.`);
+          toast(`Payroll for ${fmtMonth(run.month)} saved — ${results.length} employee(s), net ${fmtINR(results.reduce((s, x) => s + x.net_payable, 0))}.`);
           await ensurePayroll({ reload: true });
           render();
         } catch (err) { toast(friendlyError(err), 'error'); }
@@ -2585,9 +2637,9 @@ async function pagePayrollCalc() {
 function exportPayrollCsv(run, mapped) {
   const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const header = ['Employee', 'Employee ID', 'EmpCode', 'Monthly Salary', 'Daily Salary', 'Pre Full', 'Pre Half', 'Pre Leave',
-    'Post Full', 'Post Half', 'Post Leave', 'Weekly Off', 'Payable'];
+    'Post Full', 'Post Half', 'Post Leave', 'Weekly Off', 'Earned', 'Professional Tax', 'Net Payable'];
   const lines = mapped.map((m) => [m.emp.full_name, m.emp.employee_code, m.g.code, m.salary ?? '', m.salary == null ? '' : m.daily.toFixed(2),
-    m.pre.F, m.pre.HD, m.pre.L, m.post.F, m.post.HD, m.post.L, m.post.WO, m.payable].map(cell).join(','));
+    m.pre.F, m.pre.HD, m.pre.L, m.post.F, m.post.HD, m.post.L, m.post.WO, m.payable, m.pt, m.net].map(cell).join(','));
   const blob = new Blob(['﻿' + [header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -2622,7 +2674,7 @@ async function pagePayrollEmployee(code) {
         <div><span class="st st-WO">WO</span><b>${c.WO}</b><span>Weekly off</span></div>
       </div>
       <div class="pay-line ${emphasize ? 'strong' : ''}">${m.salary == null ? 'No salary in Employee Master Data'
-        : `(${c.F}${P.rules.sunday_paid_off ? ` + ${c.WO}` : ''}) × ${fmtINR2(pay.daily)} + ${c.HD} × ${fmtINR2(pay.daily)} × 0.5 = <b>${fmtINR(pay.payable)}</b>`}</div>
+        : `(${c.F}${P.rules.sunday_paid_off ? ` + ${c.WO}` : ''}) × ${fmtINR2(pay.daily)} + ${c.HD} × ${fmtINR2(pay.daily)} × 0.5 = <b>${fmtINR(pay.payable)}</b>${emphasize ? `<div style="margin-top:4px">${fmtINR(pay.payable)} − Professional Tax ${fmtINR(m.pt)} = <b>${fmtINR(Math.max(0, pay.payable - m.pt))}</b> net payable</div>` : ''}`}</div>
       </div></div>`;
   const summaryHTML = () => {
     const days = daysNow();
@@ -2739,30 +2791,10 @@ async function pagePayrollMapping() {
   const emps = activeEmployees();
   const savedMap = new Map(P.codeMap.map((x) => [x.emp_code, x.employee_id || '']));
   const takenBySaved = new Set([...savedMap.values()].filter(Boolean));
-  const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
-  const digits = (s) => (String(s || '').match(/\d+/g) || []).join('');
-  const similarity = (a, b) => { // 1 = identical, based on edit distance
-    if (!a || !b) return 0;
-    const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
-    for (let j = 1; j <= b.length; j++) d[0][j] = j;
-    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
-      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    }
-    return 1 - d[a.length][b.length] / Math.max(a.length, b.length);
-  };
-  // Suggest: same Employee ID → same number ignoring prefixes / leading zeros → same name → close spelling.
+  // The sheet's EmpCode must be the Employee ID in EMD (names are not used).
   const suggest = (g) => {
-    const code = g.code.trim().toLowerCase();
-    const byCode = emps.find((e) => e.employee_code && e.employee_code.trim().toLowerCase() === code);
-    if (byCode) return byCode.id;
-    const num = digits(g.code);
-    const byNum = num ? emps.filter((e) => digits(e.employee_code) && Number(digits(e.employee_code)) === Number(num)) : [];
-    if (byNum.length === 1) return byNum[0].id;
-    const target = normName(g.name);
-    const byName = emps.filter((e) => normName(e.full_name) && normName(e.full_name) === target);
-    if (byName.length === 1) return byName[0].id;
-    const scored = emps.map((e) => ({ id: e.id, score: similarity(normName(e.full_name), target) })).sort((a, b) => b.score - a.score);
-    return scored[0] && scored[0].score >= 0.8 && (!scored[1] || scored[0].score - scored[1].score >= 0.08) ? scored[0].id : '';
+    const hits = emps.filter((e) => normCode(e.employee_code) && normCode(e.employee_code) === normCode(g.code));
+    return hits.length === 1 ? hits[0].id : '';
   };
   const model = new Map(groups.map((g) => {
     const saved = savedMap.get(g.code);
@@ -2773,10 +2805,11 @@ async function pagePayrollMapping() {
   const statusOf = (g) => {
     const pick = model.get(g.code) || '';
     const saved = savedMap.get(g.code) || '';
-    if (pick && pick === saved) return '<span class="chip green">Mapped</span>';
-    if (!savedMap.has(g.code) && pick) return '<span class="chip blue">Suggested</span>';
-    if (pick !== saved) return '<span class="chip amber">Changed</span>';
-    return '<span class="chip gray">Not mapped</span>';
+    if (!pick) return '<span class="chip gray">Not mapped</span>';
+    const check = idCheck(g.code, byId(pick));
+    const idChip = `<span class="chip ${check.ok ? 'green' : 'red'}">${esc(check.text)}</span>`;
+    const saveChip = pick === saved ? '' : ` <span class="chip ${savedMap.has(g.code) ? 'amber' : 'blue'} plain">${savedMap.has(g.code) ? 'Changed' : 'Suggested'} · not saved</span>`;
+    return idChip + saveChip;
   };
   const rowsHTML = () => groups.map((g) => {
     const pick = model.get(g.code) || '';
@@ -2794,7 +2827,7 @@ async function pagePayrollMapping() {
   return {
     ...base,
     html: `${payrollTabs('mapping')}
-      <div class="alert alert-info">${icon('info')}<span>Only mapped employees are included in the salary calculation. Suggestions match the sheet’s EmpCode to the Employee ID in Employee Master Data, then the name. A mapping is remembered for future months.</span></div>
+      <div class="alert alert-info">${icon('info')}<span>Only mapped employees are included in the salary calculation. The sheet’s <b>EmpCode must be the same as the Employee ID</b> in Employee Master Data (leading zeros are ignored, so 0003 = 003) — names are not used. A mapping where they differ is flagged in red. Mappings are remembered for future months.</span></div>
       <div class="card">
         <div class="card-head"><div><h3>${fmtMonth(run.month)} sheet — ${groups.length} employee(s)</h3><p id="map-count">${mappedCount()} of ${groups.length} mapped</p></div>
           <div class="right"><button class="btn btn-sm btn-primary" id="save-map">${icon('check', 'sm')}Save mapping</button></div></div>
@@ -2813,11 +2846,18 @@ async function pagePayrollMapping() {
         state.dirty = groups.some((g) => (model.get(g.code) || '') !== (savedMap.get(g.code) || ''));
       });
       $('#save-map').addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget; // currentTarget is cleared once the handler awaits
         const picks = [...model.values()].filter(Boolean);
         if (new Set(picks).size !== picks.length) return toast('An employee is picked for two EmpCodes. Fix the highlighted rows.', 'error');
+        const mismatched = groups.filter((g) => model.get(g.code) && !idCheck(g.code, byId(model.get(g.code))).ok);
+        if (mismatched.length && !(await confirmDialog({
+          title: 'Employee ID does not match',
+          message: `For ${mismatched.map((g) => `<b>${esc(g.code)}</b>`).join(', ')}, the sheet’s EmpCode is not the same as the Employee ID in Employee Master Data. Save anyway? These rows stay flagged in red.`,
+          confirmText: 'Save anyway', danger: true,
+        }))) return;
         const items = groups.map((g) => ({ emp_code: g.code, employee_id: model.get(g.code) || null, sheet_name: g.name || null }));
         try {
-          await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_save_code_map', { p_items: items }));
+          await withBusy(btn, 'Saving…', () => api.rpc('admin_save_code_map', { p_items: items }));
           state.dirty = false;
           P.codeMap = await payrollApi.codeMap();
           toast(`Mapping saved — ${picks.length} of ${groups.length} employee(s) mapped.`);
@@ -2880,6 +2920,568 @@ async function pagePayrollRules() {
         } catch (err) { toast(friendlyError(err), 'error'); }
       });
     },
+  };
+}
+
+/* ---------- Professional Tax slabs (Payroll tab) ---------- */
+async function pagePayrollPt() {
+  const P = state.payroll;
+  let slabs = (P.pt?.slabs || DEFAULT_PT.slabs).map((x) => ({ ...x }));
+  const rowsHTML = () => slabs.map((x, i) => `<tr>
+      <td><div class="rs-in"><span>₹</span><input class="input mono" data-i="${i}" data-k="min" inputmode="numeric" value="${esc(x.min ?? '')}"></div></td>
+      <td><div class="rs-in"><span>₹</span><input class="input mono" data-i="${i}" data-k="max" inputmode="numeric" placeholder="and above" value="${esc(x.max ?? '')}"></div></td>
+      <td><div class="rs-in"><span>₹</span><input class="input mono" data-i="${i}" data-k="amount" inputmode="numeric" value="${esc(x.amount ?? '')}"></div></td>
+      <td class="actions"><button type="button" class="icon-btn" data-del="${i}" title="Remove slab">${icon('trash')}</button></td></tr>`).join('');
+  return {
+    title: 'Payroll', crumbs: 'Professional Tax deducted from the monthly salary', actions: payrollActions(),
+    html: `${payrollTabs('pt')}
+      <div class="split" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr)">
+        <div class="card">
+          <div class="card-head"><div><h3>Professional Tax slabs</h3><p>Monthly salary band → PT deducted each month</p></div>
+            <div class="right"><button class="btn btn-sm" id="pt-add">${icon('plus', 'sm')}Add slab</button></div></div>
+          <div class="table-wrap"><table class="table compact">
+            <thead><tr><th>Salary from</th><th>Salary to</th><th>PT amount</th><th></th></tr></thead>
+            <tbody id="pt-body">${rowsHTML()}</tbody></table></div>
+          <div class="card-body" style="border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+            <button class="btn btn-primary" id="pt-save">${icon('check', 'sm')}Save slabs</button></div>
+        </div>
+        <div class="card"><div class="card-head"><div><h3>How it is applied</h3></div></div>
+          <div class="card-body rules-list">
+            <div>${icon('info')}<span>Each employee’s <b>monthly salary</b> (the salary used for that payroll month, from Employee Master Data) is checked against these bands, and the matching PT amount is deducted from the earned amount.</span></div>
+            <div>${icon('info')}<span>Net payable = Earned − PT. It shows in the Salary Calculation table, on each employee’s day-wise page and in the saved payroll.</span></div>
+            <div>${icon('alert')}<span>The slabs are prefilled with West Bengal rates as a starting point — check them against the current notification and edit if needed. Leave “Salary to” empty for the top slab.</span></div>
+          </div></div>
+      </div>`,
+    mount() {
+      mountPayrollActions();
+      const body = $('#pt-body');
+      body.addEventListener('input', (e) => {
+        const t = e.target.closest('[data-k]');
+        if (t) slabs[Number(t.dataset.i)][t.dataset.k] = t.value.replace(/[^\d]/g, '');
+      });
+      body.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-del]');
+        if (!b) return;
+        slabs.splice(Number(b.dataset.del), 1);
+        body.innerHTML = rowsHTML();
+      });
+      $('#pt-add').addEventListener('click', () => {
+        const last = slabs[slabs.length - 1];
+        slabs.push({ min: last && last.max !== '' && last.max != null ? Number(last.max) + 1 : '', max: '', amount: '' });
+        body.innerHTML = rowsHTML();
+      });
+      $('#pt-save').addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        const clean = slabs.map((x) => ({ min: Number(x.min || 0), max: x.max === '' || x.max == null ? null : Number(x.max), amount: Number(x.amount || 0) }))
+          .sort((a, b) => a.min - b.min);
+        for (let i = 0; i < clean.length; i++) {
+          const x = clean[i];
+          if (x.max != null && x.max < x.min) return toast(`A slab ends (₹${x.max}) before it starts (₹${x.min}).`, 'error');
+          const next = clean[i + 1];
+          if (next && (x.max == null || next.min <= x.max)) return toast('Slabs overlap — each slab must start after the previous one ends.', 'error');
+        }
+        try {
+          await withBusy(btn, 'Saving…', () => payrollApi.savePt({ slabs: clean }));
+          P.pt = { slabs: clean };
+          toast('Professional Tax slabs saved.');
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+/* =====================================================================
+   FINANCE — Variable, Bonus & Leave Encash, Monthly Expense, ESOPs
+   ===================================================================== */
+state.fin = { loaded: false, eligibility: [], variable: [], bonus: [], expenses: [], expenseSource: null };
+
+const finApi = {
+  eligibility: () => fetchAll(() => db.from('comp_eligibility').select('employee_id, program, eligible').order('employee_id')),
+  variable: () => fetchAll(() => db.from('variable_entries').select('*').is('removed_at', null).order('period_month', { ascending: false })),
+  bonus: () => fetchAll(() => db.from('bonus_payments').select('*').is('removed_at', null).order('pay_month', { ascending: false })),
+  expenses: () => fetchAll(() => db.from('expense_claims').select('*').order('submitted_at', { ascending: false })),
+  expenseSource: async () => {
+    const row = await q(db.from('app_settings').select('value').eq('key', 'expense_source').maybeSingle());
+    return { url: '', columns: {}, ...(row?.value || {}) };
+  },
+  saveExpenseSource: (value) => q(db.from('app_settings')
+    .update({ value, updated_by: state.user.id, updated_at: new Date().toISOString() })
+    .eq('key', 'expense_source').select()),
+};
+async function ensureFinance(force = false) {
+  await ensureAdmin();
+  if (state.fin.loaded && !force) return;
+  const [eligibility, variable, bonus, expenses, expenseSource] = await Promise.all([
+    finApi.eligibility(), finApi.variable(), finApi.bonus(), finApi.expenses(), finApi.expenseSource()]);
+  state.fin = { loaded: true, eligibility, variable, bonus, expenses, expenseSource };
+}
+const currentSalary = (empId) => { const rows = salariesOf(empId); return rows.length ? Number(rows[rows.length - 1].amount) : null; };
+const eligibleIds = (program) => new Set(state.fin.eligibility.filter((x) => x.program === program && x.eligible).map((x) => x.employee_id));
+const eligibleEmployees = (program) => { const ids = eligibleIds(program); return activeEmployees().filter((e) => ids.has(e.id)); };
+const fmtPct = (n) => `${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 4 })}%`;
+const num = (v) => { const n = Number(String(v ?? '').replace(/[^\d.\-]/g, '')); return Number.isFinite(n) ? n : 0; };
+
+function openEligibilityDialog(program, label) {
+  const emps = activeEmployees();
+  const picked = eligibleIds(program);
+  const { el, close } = openModal({
+    title: `${label} — eligible employees`, size: 'md',
+    subtitle: 'Tick everyone who is eligible. Only eligible employees appear in this section.',
+    body: `<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <div class="search" style="flex:1;min-width:200px">${icon('search')}<input class="input" id="elig-search" placeholder="Search employees…" style="width:100%"></div>
+        <button class="btn btn-sm" id="elig-all">Select all</button><button class="btn btn-sm" id="elig-none">Clear</button></div>
+      <div class="elig-list" id="elig-list">${emps.map((e) => `<label class="elig-row" data-name="${esc((e.full_name + ' ' + (e.employee_code || '')).toLowerCase())}">
+          <input type="checkbox" value="${e.id}" ${picked.has(e.id) ? 'checked' : ''}>
+          ${person(e, esc(e.employee_code || 'No Employee ID'))}<span class="muted" style="margin-left:auto;font-size:12.5px">${fmtINR(currentSalary(e.id))}</span></label>`).join('')
+        || '<p class="muted">No active employees yet.</p>'}</div>`,
+    footer: `<span class="muted left" id="elig-count" style="font-size:12.5px"></span><button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-save>${icon('check', 'sm')}Save</button>`,
+  });
+  const boxes = () => $$('#elig-list input[type=checkbox]', el);
+  const count = () => { $('#elig-count', el).textContent = `${boxes().filter((b) => b.checked).length} of ${emps.length} selected`; };
+  count();
+  $('#elig-list', el).addEventListener('change', count);
+  $('#elig-search', el).addEventListener('input', (e) => {
+    const t = e.target.value.trim().toLowerCase();
+    $$('.elig-row', el).forEach((r) => r.classList.toggle('hidden', !!t && !r.dataset.name.includes(t)));
+  });
+  $('#elig-all', el).addEventListener('click', () => { boxes().forEach((b) => { if (!b.closest('.hidden')) b.checked = true; }); count(); });
+  $('#elig-none', el).addEventListener('click', () => { boxes().forEach((b) => { b.checked = false; }); count(); });
+  $('[data-save]', el).addEventListener('click', async (ev) => {
+    const items = boxes().map((b) => ({ employee_id: b.value, eligible: b.checked }));
+    try {
+      await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_set_eligibility', { p_program: program, p_items: items }));
+      close();
+      toast(`${label}: ${items.filter((x) => x.eligible).length} eligible employee(s) saved.`);
+      await ensureFinance(true);
+      render();
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
+}
+
+/* ---------- Variable ---------- */
+const variableResult = (x) => num(x.buy) * num(x.buy_commission_pct) / 100 + num(x.sell) * num(x.sell_commission_pct) / 100
+  - num(x.current_salary) * num(x.duration_months) * num(x.sales_time_pct) / 100;
+
+async function pageVariable(r) {
+  await ensureFinance();
+  if (r.id) return pageVariableEmployee(r.id);
+  const emps = eligibleEmployees('variable');
+  const entriesOf = (id) => state.fin.variable.filter((v) => v.employee_id === id);
+  return {
+    title: 'Variable',
+    crumbs: 'Variable pay for eligible employees',
+    actions: `<button class="btn btn-sm btn-primary" id="elig-btn">${icon('users', 'sm')}Manage eligibility</button>`,
+    html: `
+      <div class="alert alert-info">${icon('info')}<span>Variable = (Buy × Buy commission + Sell × Sell commission) − (Current salary × Duration × Sales time allocated %). Commissions and sales time are entered in %, duration in months.</span></div>
+      <div class="card">
+        <div class="card-head"><div><h3>Eligible employees</h3><p>${emps.length} of ${activeEmployees().length} employees are eligible for variable pay</p></div></div>
+        ${emps.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th class="num">Current salary</th><th class="num">Calculations</th><th>Latest</th><th class="num">Latest variable</th><th></th></tr></thead><tbody>
+          ${emps.map((e) => {
+            const list = entriesOf(e.id);
+            const last = list[0];
+            return `<tr data-href="#/variable/${e.id}"><td>${person(e, esc(e.employee_code || 'No Employee ID'))}</td>
+              <td class="num">${fmtINR(currentSalary(e.id))}</td><td class="num">${list.length}</td>
+              <td>${last ? fmtMonth(last.period_month) : '<span class="faint">—</span>'}</td>
+              <td class="num">${last ? `<b class="${Number(last.result) < 0 ? 'delta-down' : ''}" style="${Number(last.result) < 0 ? '' : 'color:var(--text)'}">${fmtINR(last.result)}</b>` : '<span class="faint">—</span>'}</td>
+              <td class="actions"><a class="btn btn-sm" href="#/variable/${e.id}">Detailed info</a></td></tr>`;
+          }).join('')}</tbody></table></div>`
+        : emptyState('users', 'No one is eligible yet', 'Click <b>Manage eligibility</b> to pick the employees who get variable pay.')}
+      </div>`,
+    mount() {
+      $('#elig-btn').addEventListener('click', () => openEligibilityDialog('variable', 'Variable'));
+      $('.table tbody')?.addEventListener('click', (ev) => { const tr = ev.target.closest('tr[data-href]'); if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href; });
+    },
+  };
+}
+
+async function pageVariableEmployee(id) {
+  const e = byId(id);
+  const back = `<a class="btn btn-sm" href="#/variable">${icon('arrowLeft', 'sm')}Back to Variable</a>`;
+  if (!e || !eligibleIds('variable').has(id)) {
+    return { title: 'Variable', crumbs: '<a href="#/variable">Variable</a>', actions: back,
+      html: `<div class="card">${emptyState('user', 'Not eligible for variable pay', 'Mark this employee eligible from <a href="#/variable">Manage eligibility</a> first.')}</div>` };
+  }
+  const salary = currentSalary(id);
+  const entries = state.fin.variable.filter((v) => v.employee_id === id);
+  const now = new Date();
+  const blank = () => ({ id: null, y: now.getFullYear(), m: now.getMonth() + 1, duration_months: '', buy: '', sell: '', buy_commission_pct: '', sell_commission_pct: '', sales_time_pct: '', note: '' });
+  let form = blank();
+  const fields = [
+    ['duration_months', 'Duration', 'months', 'e.g. 3'], ['buy', 'Buy', '₹', 'Buy value'], ['sell', 'Sell', '₹', 'Sell value'],
+    ['buy_commission_pct', 'Buy commission', '%', 'e.g. 0.5'], ['sell_commission_pct', 'Sell commission', '%', 'e.g. 0.5'],
+    ['sales_time_pct', 'Sales | time allocated', '%', 'e.g. 60'],
+  ];
+  const formHTML = () => `
+    <div class="grid g3">
+      <div class="field"><label>Month</label><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${monthYearSelects('var', form.y, form.m)}</div></div>
+      ${fields.map(([k, label, unit, ph]) => `<div class="field"><label>${label} <span class="faint">(${unit})</span></label>
+        <input class="input mono" data-f="${k}" inputmode="decimal" placeholder="${ph}" value="${esc(form[k])}"></div>`).join('')}
+      <div class="field"><label>Current salary <span class="faint">(from EMD)</span></label><div class="locked"><span>${fmtINR(salary)}</span>${icon('lock')}</div></div>
+      <div class="field span-2"><label>Note <span class="faint">(optional)</span></label><input class="input" data-f="note" placeholder="e.g. Q2 deals" value="${esc(form.note)}"></div>
+    </div>`;
+  const previewHTML = () => {
+    const x = { ...form, current_salary: salary || 0 };
+    const earn = num(x.buy) * num(x.buy_commission_pct) / 100 + num(x.sell) * num(x.sell_commission_pct) / 100;
+    const cost = num(x.current_salary) * num(x.duration_months) * num(x.sales_time_pct) / 100;
+    const res = earn - cost;
+    return `<div class="pay-line ${res >= 0 ? 'strong' : ''}" style="${res < 0 ? 'background:var(--red-soft);color:#7F1D1D' : ''}">
+      (${fmtINR(num(x.buy))} × ${fmtPct(x.buy_commission_pct)} + ${fmtINR(num(x.sell))} × ${fmtPct(x.sell_commission_pct)})
+      − (${fmtINR(x.current_salary)} × ${num(x.duration_months)} × ${fmtPct(x.sales_time_pct)})
+      = ${fmtINR(earn)} − ${fmtINR(cost)} = <b>${fmtINR(res)}</b>${res < 0 ? ' · negative — nothing payable' : ''}</div>`;
+  };
+  const historyHTML = () => entries.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th class="num">Duration</th><th class="num">Buy</th><th class="num">Sell</th>
+      <th class="num">Buy comm.</th><th class="num">Sell comm.</th><th class="num">Sales time</th><th class="num">Salary</th><th class="num">Variable</th><th></th></tr></thead><tbody>
+      ${entries.map((v) => `<tr><td>${fmtMonth(v.period_month)}${v.note ? `<div class="faint" style="font-size:12px">${esc(v.note)}</div>` : ''}</td>
+        <td class="num">${num(v.duration_months)} mo</td><td class="num">${fmtINR(v.buy)}</td><td class="num">${fmtINR(v.sell)}</td>
+        <td class="num">${fmtPct(v.buy_commission_pct)}</td><td class="num">${fmtPct(v.sell_commission_pct)}</td><td class="num">${fmtPct(v.sales_time_pct)}</td>
+        <td class="num">${fmtINR(v.current_salary)}</td>
+        <td class="num"><b class="${Number(v.result) < 0 ? 'delta-down' : ''}" style="${Number(v.result) < 0 ? '' : 'color:var(--text)'}">${fmtINR(v.result)}</b></td>
+        <td class="actions"><button class="icon-btn" data-edit="${v.id}" title="Edit">${icon('file')}</button><button class="icon-btn" data-remove="${v.id}" title="Remove">${icon('trash')}</button></td></tr>`).join('')}
+      </tbody></table></div>` : emptyState('wallet', 'No calculations yet', 'Fill in the form above and save the first calculation.');
+
+  return {
+    title: e.full_name, crumbs: '<a href="#/variable">Variable</a> &nbsp;/&nbsp; Detailed info', actions: back,
+    html: `
+      <div class="card emp-head">${avatar(e, 'lg')}
+        <div style="min-width:0"><h2>${esc(e.full_name)}</h2><div class="meta"><span>${esc(e.employee_code || 'No Employee ID')}</span><span>·</span><span>${esc(e.designation || 'No designation')}</span></div></div>
+        <div class="facts"><div><div class="k">Current salary</div><div class="v">${fmtINR(salary)}</div></div>
+          <div><div class="k">Calculations</div><div class="v">${entries.length}</div></div>
+          <div><div class="k">Total variable</div><div class="v">${fmtINR(entries.reduce((s, v) => s + Math.max(0, Number(v.result)), 0))}</div></div></div>
+      </div>
+      ${salary == null ? `<div class="alert alert-warn">${icon('alert')}<span>No salary in Employee Master Data — the salary part of the formula is taken as ₹0.</span></div>` : ''}
+      <form class="card" id="var-form" novalidate>
+        <div class="card-head"><div><h3 id="var-title">New calculation</h3><p>Variable = (Buy × Buy commission + Sell × Sell commission) − (Current salary × Duration × Sales time allocated %)</p></div></div>
+        <div class="card-body"><div id="var-fields">${formHTML()}</div><div id="var-preview">${previewHTML()}</div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button type="button" class="btn hidden" id="var-cancel">Cancel edit</button>
+          <button class="btn btn-primary" type="submit">${icon('check', 'sm')}Save calculation</button></div></div>
+      </form>
+      <div class="card"><div class="card-head"><div><h3>Payout history</h3><p>Saved calculations, latest first</p></div></div>${historyHTML()}</div>`,
+    mount() {
+      const f = $('#var-form');
+      f.addEventListener('input', (ev) => {
+        const k = ev.target.dataset.f;
+        if (k) { form[k] = k === 'note' ? ev.target.value : ev.target.value.replace(/[^\d.]/g, ''); $('#var-preview').innerHTML = previewHTML(); }
+      });
+      f.addEventListener('change', (ev) => {
+        if (ev.target.dataset.m === 'var') form.m = Number(ev.target.value);
+        if (ev.target.dataset.y === 'var') form.y = Number(ev.target.value);
+      });
+      const setForm = (v) => {
+        form = v; $('#var-fields').innerHTML = formHTML(); $('#var-preview').innerHTML = previewHTML();
+        $('#var-title').textContent = v.id ? 'Edit calculation' : 'New calculation';
+        $('#var-cancel').classList.toggle('hidden', !v.id);
+      };
+      $('#var-cancel').addEventListener('click', () => setForm(blank()));
+      f.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        if (!(num(form.duration_months) > 0)) return toast('Enter the duration in months.', 'error');
+        if (num(form.sales_time_pct) > 100) return toast('Sales time allocated cannot be more than 100%.', 'error');
+        try {
+          await withBusy($('button[type=submit]', f), 'Saving…', () => api.rpc('admin_save_variable_entry', { p: {
+            id: form.id, employee_id: id, period_month: monthStart(form.y, form.m), duration_months: num(form.duration_months),
+            buy: num(form.buy), sell: num(form.sell), buy_commission_pct: num(form.buy_commission_pct), sell_commission_pct: num(form.sell_commission_pct),
+            sales_time_pct: num(form.sales_time_pct), current_salary: salary || 0, note: form.note } }));
+          toast('Variable calculation saved.');
+          await ensureFinance(true);
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+      $$('[data-edit]').forEach((b) => b.addEventListener('click', () => {
+        const v = entries.find((x) => x.id === b.dataset.edit);
+        const d = parseISODate(v.period_month);
+        setForm({ id: v.id, y: d.getFullYear(), m: d.getMonth() + 1, note: v.note || '',
+          ...Object.fromEntries(fields.map(([k]) => [k, String(Number(v[k]))])) });
+        f.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }));
+      $$('[data-remove]').forEach((b) => b.addEventListener('click', async () => {
+        if (!(await confirmDialog({ title: 'Remove this calculation?', message: 'It will no longer count. The record is kept for audit.', confirmText: 'Remove', danger: true }))) return;
+        try {
+          await api.rpc('admin_remove_variable_entry', { p_id: b.dataset.remove });
+          toast('Calculation removed.');
+          await ensureFinance(true);
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      }));
+    },
+  };
+}
+
+/* ---------- Bonus & Leave Encash ---------- */
+async function pageBonus() {
+  await ensureFinance();
+  const emps = eligibleEmployees('bonus');
+  const empIds = new Set(emps.map((e) => e.id));
+  let uid = 0;
+  const toRow = (b) => { const d = parseISODate(b.pay_month); return { key: ++uid, id: b.id, employee_id: b.employee_id, description: b.description, y: d.getFullYear(), m: d.getMonth() + 1, amount: String(Number(b.amount)), use_current_salary: b.use_current_salary, removed: false, dirty: false }; };
+  const rows = state.fin.bonus.map(toRow);
+  const now = new Date();
+  const rowAmount = (r) => (r.use_current_salary && (r.dirty || !r.id) ? currentSalary(r.employee_id) || 0 : num(r.amount));
+  const live = () => rows.filter((r) => !r.removed);
+  const lineHTML = (r) => {
+    const sal = currentSalary(r.employee_id);
+    const ineligible = r.employee_id && !empIds.has(r.employee_id);
+    return `<tr data-key="${r.key}">
+      <td style="min-width:200px"><select class="input" data-k="employee_id" style="height:36px"><option value="">Select employee</option>
+        ${emps.map((e) => `<option value="${e.id}" ${e.id === r.employee_id ? 'selected' : ''}>${esc(e.full_name)}${e.employee_code ? ` · ${esc(e.employee_code)}` : ''}</option>`).join('')}
+        ${ineligible ? `<option value="${r.employee_id}" selected>${esc(byId(r.employee_id)?.full_name || 'Former employee')} (not eligible)</option>` : ''}</select></td>
+      <td style="min-width:200px"><input class="input" data-k="description" placeholder="e.g. Diwali bonus / Leave encashment" value="${esc(r.description)}" style="height:36px"></td>
+      <td style="min-width:170px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${monthYearSelects(`b${r.key}`, r.y, r.m).replace(/class="input"/g, 'class="input" style="height:36px"')}</div></td>
+      <td style="min-width:130px"><div class="rs-in"><span>₹</span><input class="input mono" data-k="amount" inputmode="decimal" style="height:36px" value="${esc(r.use_current_salary ? String(rowAmount(r) || '') : r.amount)}" ${r.use_current_salary ? 'disabled' : ''}></div></td>
+      <td class="nowrap"><label class="check-inline" title="Use the employee’s current salary as the amount"><input type="checkbox" data-k="use_current_salary" ${r.use_current_salary ? 'checked' : ''}> Current salary</label>
+        ${r.use_current_salary && sal == null && r.employee_id ? '<div class="error-text">No salary in EMD</div>' : ''}</td>
+      <td class="actions"><button type="button" class="icon-btn" data-del="${r.key}" title="Remove line">${icon('trash')}</button></td></tr>`;
+  };
+  const totalsHTML = () => {
+    const byMonth = new Map();
+    for (const r of live()) { const k = monthStart(r.y, r.m); byMonth.set(k, (byMonth.get(k) || 0) + rowAmount(r)); }
+    const list = [...byMonth.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+    return list.length ? list.map(([k, v]) => `<span class="chip plain gray" style="height:28px;padding:0 12px">${fmtMonth(k)} · <b style="margin-left:4px;color:var(--text)">${fmtINR(v)}</b></span>`).join(' ') : '<span class="muted">No lines yet.</span>';
+  };
+  return {
+    title: 'Bonus & Leave Encash',
+    crumbs: 'One-off payments to eligible employees',
+    actions: `<button class="btn btn-sm" id="elig-btn">${icon('users', 'sm')}Manage eligibility</button>`,
+    html: `
+      ${emps.length ? '' : `<div class="alert alert-warn">${icon('alert')}<span>No one is eligible yet. Click <b>Manage eligibility</b> to pick the employees who can receive bonus or leave encashment.</span></div>`}
+      <div class="card">
+        <div class="card-head"><div><h3>Payments</h3><p>Employee | Description | Month | Amount. Tick “Current salary” to use the employee’s current salary as the amount.</p></div>
+          <div class="right"><button class="btn btn-sm" id="add-line" ${emps.length ? '' : 'disabled'}>${icon('plus', 'sm')}Add line</button></div></div>
+        <div class="card-body" id="bonus-totals" style="display:flex;gap:8px;flex-wrap:wrap;padding-bottom:0">${totalsHTML()}</div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th>Description</th><th>Month</th><th>Amount</th><th></th><th></th></tr></thead>
+          <tbody id="bonus-body">${live().map(lineHTML).join('') || ''}</tbody></table></div>
+        ${rows.length ? '' : `<div id="bonus-empty">${emptyState('wallet', 'No payments yet', 'Click <b>Add line</b> to enter a bonus or leave encashment.')}</div>`}
+      </div>
+      <div class="savebar hidden" id="savebar"><div class="grow"><b>Unsaved changes</b> <span>— save to store the payments</span></div>
+        <button class="btn btn-sm" id="discard-btn">Discard</button><button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save</button></div>`,
+    mount() {
+      const body = $('#bonus-body');
+      const markDirty = (r) => { if (r) r.dirty = true; state.dirty = true; $('#savebar').classList.remove('hidden'); $('#bonus-totals').innerHTML = totalsHTML(); };
+      const rowOf = (el) => rows.find((r) => r.key === Number(el.closest('tr').dataset.key));
+      const redrawRow = (r) => { body.querySelector(`tr[data-key="${r.key}"]`).outerHTML = lineHTML(r); };
+      $('#elig-btn').addEventListener('click', () => openEligibilityDialog('bonus', 'Bonus & Leave Encash'));
+      $('#add-line')?.addEventListener('click', () => {
+        const r = { key: ++uid, id: null, employee_id: '', description: '', y: now.getFullYear(), m: now.getMonth() + 1, amount: '', use_current_salary: false, removed: false, dirty: true };
+        rows.unshift(r);
+        $('#bonus-empty')?.remove();
+        body.insertAdjacentHTML('afterbegin', lineHTML(r));
+        markDirty(r);
+      });
+      body.addEventListener('input', (ev) => {
+        const k = ev.target.dataset.k;
+        if (k === 'description' || k === 'amount') { const r = rowOf(ev.target); r[k] = k === 'amount' ? ev.target.value.replace(/[^\d.]/g, '') : ev.target.value; markDirty(r); }
+      });
+      body.addEventListener('change', (ev) => {
+        const t = ev.target;
+        if (!t.closest('tr')) return;
+        const r = rowOf(t);
+        if (t.dataset.k === 'employee_id') { r.employee_id = t.value; markDirty(r); redrawRow(r); }
+        else if (t.dataset.k === 'use_current_salary') { r.use_current_salary = t.checked; markDirty(r); redrawRow(r); }
+        else if (t.dataset.m) { r.m = Number(t.value); markDirty(r); }
+        else if (t.dataset.y) { r.y = Number(t.value); markDirty(r); }
+      });
+      body.addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-del]');
+        if (!b) return;
+        const r = rowOf(b);
+        r.removed = true;
+        b.closest('tr').remove();
+        markDirty(r);
+      });
+      $('#discard-btn').addEventListener('click', () => { state.dirty = false; render(); });
+      $('#save-btn').addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        const changed = rows.filter((r) => r.dirty && !(r.removed && !r.id));
+        for (const r of changed.filter((x) => !x.removed)) {
+          if (!r.employee_id) return toast('Pick the employee on every line.', 'error');
+          if (!r.description.trim()) return toast('Enter a description on every line.', 'error');
+          if (r.use_current_salary && currentSalary(r.employee_id) == null) return toast(`${byId(r.employee_id)?.full_name} has no salary in Employee Master Data — untick “Current salary” or add one.`, 'error');
+          if (!r.use_current_salary && !(num(r.amount) > 0)) return toast('Enter an amount on every line.', 'error');
+        }
+        const items = changed.map((r) => (r.removed ? { id: r.id, removed: true } : {
+          id: r.id, employee_id: r.employee_id, description: r.description.trim(), pay_month: monthStart(r.y, r.m),
+          amount: rowAmount(r), use_current_salary: r.use_current_salary }));
+        try {
+          await withBusy(btn, 'Saving…', () => api.rpc('admin_save_bonus_lines', { p_items: items }));
+          state.dirty = false;
+          toast('Payments saved.');
+          await ensureFinance(true);
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+/* ---------- Monthly Expense (Google Form responses) ---------- */
+const EXPENSE_FIELDS = [
+  ['emp_code', 'Employee ID', true, /emp.*(id|code)|employee\s*(id|code)|^e\.?code$|^id$/i],
+  ['amount', 'Amount', true, /amount|amt|total|^rs|inr|value/i],
+  ['submitted_at', 'Timestamp', false, /timestamp|submitted/i],
+  ['emp_name', 'Name', false, /name/i],
+  ['expense_date', 'Expense date', false, /date/i],
+  ['category', 'Category', false, /category|type|head|nature/i],
+  ['description', 'Description', false, /desc|purpose|detail|remark|particular|reason/i],
+  ['receipt_url', 'Bill / receipt', false, /bill|receipt|upload|attach|proof|invoice/i],
+];
+function sheetCsvUrl(url) {
+  const u = String(url || '').trim();
+  if (!u) throw new Error('Paste the link of the Google Form responses sheet first.');
+  if (/forms\.gle|docs\.google\.com\/forms/.test(u)) throw new Error('That is the Form link. Open the form → Responses → “Link to Sheets”, then paste the link of that responses sheet.');
+  if (/output=csv|format=csv|tqx=out:csv/.test(u)) return u;
+  const pub = u.match(/docs\.google\.com\/spreadsheets\/d\/e\/([\w-]+)/);
+  if (pub) return `https://docs.google.com/spreadsheets/d/e/${pub[1]}/pub?output=csv`;
+  const id = u.match(/docs\.google\.com\/spreadsheets\/d\/([\w-]+)/);
+  if (id) { const gid = (u.match(/[#&?]gid=(\d+)/) || [])[1]; return `https://docs.google.com/spreadsheets/d/${id[1]}/gviz/tq?tqx=out:csv${gid ? `&gid=${gid}` : ''}`; }
+  return u;
+}
+async function fetchExpenseSheet(url) {
+  const res = await fetch(sheetCsvUrl(url), { cache: 'no-store' }).catch(() => { throw new Error('Could not read the sheet. Share it as “Anyone with the link – Viewer” (or File → Share → Publish to web → CSV) and try again.'); });
+  if (!res.ok) throw new Error(`Google returned ${res.status}. Share the sheet as “Anyone with the link – Viewer” and try again.`);
+  const text = await res.text();
+  if (/^\s*<(!doctype|html)/i.test(text)) throw new Error('Google returned a sign-in page instead of data. Share the sheet as “Anyone with the link – Viewer”.');
+  await loadXLSX();
+  const wb = XLSX.read(text, { type: 'string', raw: true });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+  const headers = (rows[0] || []).map((h) => String(h).trim());
+  return { headers, rows: rows.slice(1).filter((r) => r.some((c) => String(c).trim() !== '')) };
+}
+function guessExpenseColumns(headers, saved = {}) {
+  const used = new Set();
+  const out = {};
+  for (const [key, , , re] of EXPENSE_FIELDS) {
+    if (saved[key] && headers.includes(saved[key])) { out[key] = saved[key]; used.add(saved[key]); continue; }
+    const h = headers.find((x) => !used.has(x) && re.test(x) && !(key === 'expense_date' && /timestamp/i.test(x)) && !(key === 'emp_name' && /emp.*(id|code)/i.test(x)));
+    if (h) { out[key] = h; used.add(h); }
+  }
+  return out;
+}
+function buildExpenseRows(headers, rows, cols) {
+  const idx = Object.fromEntries(Object.entries(cols).filter(([, h]) => h).map(([k, h]) => [k, headers.indexOf(h)]));
+  const cell = (r, k) => (idx[k] >= 0 && idx[k] != null ? String(r[idx[k]] ?? '').trim() : '');
+  return rows.map((r) => {
+    const ts = cell(r, 'submitted_at');
+    const tsDate = parseSheetDate(ts);
+    const tsTime = (ts.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/) || []);
+    return {
+      source_key: r.map((c) => String(c ?? '').trim()).join('␟'),
+      submitted_at: tsDate ? `${tsDate}T${pad(tsTime[1] || 0)}:${tsTime[2] || '00'}:${tsTime[3] || '00'}+05:30` : null,
+      emp_code: cell(r, 'emp_code'), emp_name: cell(r, 'emp_name'),
+      expense_date: parseSheetDate(cell(r, 'expense_date')) || null,
+      category: cell(r, 'category'), description: cell(r, 'description'),
+      amount: cell(r, 'amount') ? num(cell(r, 'amount')) : null, receipt_url: cell(r, 'receipt_url'),
+      raw: Object.fromEntries(headers.map((h, i) => [h || `Column ${i + 1}`, String(r[i] ?? '')])),
+    };
+  }).filter((x) => x.emp_code || x.amount != null);
+}
+
+async function pageExpenses(r) {
+  await ensureFinance();
+  if (r.id) return pageExpenseEmployee(r.id);
+  const F = state.fin;
+  const src = F.expenseSource;
+  const months = [...new Set(F.expenses.map((x) => x.month).filter(Boolean))].sort().reverse();
+  const month = state.expenseMonth && (state.expenseMonth === 'all' || months.includes(state.expenseMonth)) ? state.expenseMonth : (months[0] || 'all');
+  const inMonth = F.expenses.filter((x) => month === 'all' || x.month === month);
+  const byEmp = new Map();
+  for (const x of inMonth.filter((x) => x.employee_id)) {
+    const k = x.employee_id;
+    if (!byEmp.has(k)) byEmp.set(k, { count: 0, total: 0 });
+    const v = byEmp.get(k); v.count += 1; v.total += Number(x.amount || 0);
+  }
+  const unmatched = inMonth.filter((x) => !x.employee_id);
+  const empRows = [...byEmp.entries()].map(([id, v]) => ({ e: byId(id), ...v })).filter((x) => x.e).sort((a, b) => a.e.full_name.localeCompare(b.e.full_name));
+  const lastSync = F.expenses.reduce((m, x) => (x.synced_at > m ? x.synced_at : m), '');
+  const mapHTML = (headers, cols) => `<div class="grid g4" style="gap:12px">${EXPENSE_FIELDS.map(([k, label, req]) => `<div class="field"><label>${label}${req ? '<span class="req">*</span>' : ''}</label>
+      <select class="input" data-col="${k}" style="height:36px"><option value="">— none —</option>${headers.map((h) => `<option ${cols[k] === h ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select></div>`).join('')}</div>`;
+  return {
+    title: 'Monthly Expense',
+    crumbs: 'Expenses submitted by the team through the Google Form',
+    actions: months.length ? `<select class="input" id="exp-month" style="height:34px;width:auto;min-width:150px"><option value="all" ${month === 'all' ? 'selected' : ''}>All months</option>${months.map((m) => `<option value="${m}" ${m === month ? 'selected' : ''}>${fmtMonth(m)}</option>`).join('')}</select>` : '',
+    html: `
+      <div class="card">
+        <div class="card-head"><div><h3>Google Form responses sheet</h3><p>${src.url ? `Last synced ${lastSync ? fmtRelative(lastSync) : 'never'} · ${F.expenses.length} row(s) stored` : 'Connect the sheet the form saves responses to'}</p></div></div>
+        <div class="card-body grid" style="gap:14px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <input class="input" id="exp-url" placeholder="https://docs.google.com/spreadsheets/d/…" value="${esc(src.url)}" style="flex:1;min-width:260px">
+            <button class="btn btn-primary" id="exp-sync">${icon('refresh', 'sm')}${src.url ? 'Sync now' : 'Connect & sync'}</button></div>
+          <p class="hint">In the Google Form: <b>Responses → Link to Sheets</b>. In that sheet: <b>Share → General access → Anyone with the link (Viewer)</b>, then paste its link here. Each response must include the employee’s <b>Employee ID</b> — rows are matched to employees by it (leading zeros ignored).</p>
+          <div id="exp-map"></div>
+        </div>
+      </div>
+      ${unmatched.length ? `<div class="card"><div class="card-head"><div><h3>Not matched to an employee</h3><p>The Employee ID in these responses is not in Employee Master Data</p></div><div class="right"><span class="chip red plain">${unmatched.length}</span></div></div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Employee ID (form)</th><th>Name (form)</th><th>Date</th><th>Category</th><th class="num">Amount</th></tr></thead><tbody>
+        ${unmatched.map((x) => `<tr><td class="mono"><span class="chip red plain">${esc(x.emp_code || 'blank')}</span></td><td>${esc(x.emp_name || '—')}</td><td>${fmtDate(x.expense_date || (x.submitted_at || '').slice(0, 10))}</td><td>${esc(x.category || '—')}</td><td class="num">${fmtINR(x.amount)}</td></tr>`).join('')}
+        </tbody></table></div></div>` : ''}
+      <div class="card">
+        <div class="card-head"><div><h3>Expenses by employee${month === 'all' ? '' : ` — ${fmtMonth(month)}`}</h3><p>${empRows.length} employee(s) · total ${fmtINR(empRows.reduce((s, x) => s + x.total, 0))}</p></div></div>
+        ${empRows.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th class="num">Claims</th><th class="num">Total</th><th></th></tr></thead><tbody id="exp-body">
+          ${empRows.map((x) => `<tr data-href="#/expenses/${x.e.id}"><td>${person(x.e, esc(x.e.employee_code || ''))}</td><td class="num">${x.count}</td><td class="num"><b style="color:var(--text)">${fmtINR(x.total)}</b></td>
+            <td class="actions"><a class="btn btn-sm" href="#/expenses/${x.e.id}">Detailed info</a></td></tr>`).join('')}</tbody></table></div>`
+        : emptyState('inbox', src.url ? 'No matched expenses for this period' : 'No expenses yet', src.url ? 'Sync again after the team submits the form.' : 'Connect the responses sheet above to bring in the team’s expenses.')}
+      </div>`,
+    mount() {
+      $('#exp-month')?.addEventListener('change', (e) => { state.expenseMonth = e.target.value; render(); });
+      $('#exp-body')?.addEventListener('click', (ev) => { const tr = ev.target.closest('tr[data-href]'); if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href; });
+      $('#exp-sync').addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        const url = $('#exp-url').value.trim();
+        try {
+          const sheet = await withBusy(btn, 'Reading sheet…', () => fetchExpenseSheet(url));
+          const cols = guessExpenseColumns(sheet.headers, src.url === url ? src.columns : {});
+          $('#exp-map').innerHTML = `<div class="section-title" style="margin:6px 0 10px">Columns — ${sheet.rows.length} response(s) found</div>${mapHTML(sheet.headers, cols)}
+            <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn btn-primary" id="exp-import">${icon('check', 'sm')}Import ${sheet.rows.length} response(s)</button></div>`;
+          $('#exp-import').addEventListener('click', async (e2) => {
+            const chosen = Object.fromEntries($$('[data-col]').map((s) => [s.dataset.col, s.value]));
+            if (!chosen.emp_code || !chosen.amount) return toast('Pick the Employee ID and Amount columns.', 'error');
+            const rows = buildExpenseRows(sheet.headers, sheet.rows, chosen);
+            try {
+              const res = await withBusy(e2.currentTarget, 'Importing…', async () => {
+                await finApi.saveExpenseSource({ url, columns: chosen });
+                return api.rpc('admin_sync_expenses', { p_rows: rows });
+              });
+              toast(`Expenses synced — ${rows.length} response(s) read${res?.unmatched ? `, ${res.unmatched} not matched to an employee` : ''}.`);
+              await ensureFinance(true);
+              render();
+            } catch (err) { toast(friendlyError(err), 'error'); }
+          });
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+async function pageExpenseEmployee(id) {
+  const e = byId(id);
+  const back = `<a class="btn btn-sm" href="#/expenses">${icon('arrowLeft', 'sm')}Back to Monthly Expense</a>`;
+  const list = state.fin.expenses.filter((x) => x.employee_id === id);
+  if (!e) return { title: 'Monthly Expense', crumbs: '<a href="#/expenses">Monthly Expense</a>', actions: back, html: `<div class="card">${emptyState('user', 'Employee not found', '')}</div>` };
+  const months = [...new Set(list.map((x) => x.month))].sort().reverse();
+  return {
+    title: e.full_name, crumbs: '<a href="#/expenses">Monthly Expense</a> &nbsp;/&nbsp; Detailed info', actions: back,
+    html: `
+      <div class="card emp-head">${avatar(e, 'lg')}
+        <div style="min-width:0"><h2>${esc(e.full_name)}</h2><div class="meta"><span>${esc(e.employee_code || 'No Employee ID')}</span><span>·</span><span>${esc(e.designation || 'No designation')}</span></div></div>
+        <div class="facts"><div><div class="k">Claims</div><div class="v">${list.length}</div></div><div><div class="k">Total</div><div class="v">${fmtINR(list.reduce((s, x) => s + Number(x.amount || 0), 0))}</div></div></div>
+      </div>
+      ${months.length ? months.map((m) => {
+        const rows = list.filter((x) => x.month === m);
+        return `<div class="card"><div class="card-head"><div><h3>${fmtMonth(m)}</h3><p>${rows.length} claim(s)</p></div><div class="right"><b>${fmtINR(rows.reduce((s, x) => s + Number(x.amount || 0), 0))}</b></div></div>
+          <div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>Category</th><th>Description</th><th class="num">Amount</th><th>Bill</th><th>Submitted</th></tr></thead><tbody>
+          ${rows.map((x) => `<tr><td class="nowrap">${fmtDate(x.expense_date || (x.submitted_at || '').slice(0, 10))}</td><td>${esc(x.category || '—')}</td><td class="wrap" style="max-width:320px">${esc(x.description || '—')}</td>
+            <td class="num"><b style="color:var(--text)">${fmtINR(x.amount)}</b></td>
+            <td>${/^https?:\/\//.test(x.receipt_url || '') ? `<a href="${esc(x.receipt_url.split(/[,\s]+/)[0])}" target="_blank" rel="noopener">${icon('external', 'sm')} View</a>` : '<span class="faint">—</span>'}</td>
+            <td class="nowrap muted">${x.submitted_at ? fmtDateTime(x.submitted_at) : '—'}</td></tr>`).join('')}
+          </tbody></table></div></div>`;
+      }).join('') : `<div class="card">${emptyState('inbox', 'No expenses', 'Nothing submitted with this Employee ID yet.')}</div>`}`,
+  };
+}
+
+/* ---------- ESOPs ---------- */
+async function pageEsops() {
+  return {
+    title: 'ESOPs', crumbs: 'Employee stock options',
+    html: `<div class="card">${emptyState('sparkle', 'ESOPs — coming next', 'Share how ESOP grants, vesting and exercise should work, and this section will be built to match.')}</div>`,
   };
 }
 

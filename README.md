@@ -8,11 +8,12 @@ A single-file HRMS (`index.html`) for Altius Investech, with Supabase as the dat
 | --- | --- |
 | 1. Sign in / Access control | Sign-up (Name, Email, Phone, Password) → admin gives access or rejects → employee uploads KYC → admin approves (or sends it back) → HRMS access |
 | 2. Employee Master Data (EMD) | Team list (Name, Mail ID, Number, Designation, Reporting Manager, Salary, Last Increment) → detailed info per employee with locked personal fields, editable EID / designation / manager, a month-wise salary history, and the KYC documents |
-| 3. Payroll | Upload the month's punch-in/punch-out sheet → map sheet EmpCodes to employees → day-wise F / HD / L marking from HR's working-hours rules → admin adjustments → monthly payable per employee, saved as the month's payroll |
+| 3. Payroll | Upload the month's punch-in/punch-out sheet → map sheet EmpCodes to employees → day-wise F / HD / L marking from HR's working-hours rules → admin adjustments → monthly payable per employee, minus Professional Tax, saved as the month's payroll |
+| 4. Finance | Variable pay, Bonus & Leave Encashment, Monthly Expenses (from the Google Form), ESOPs (placeholder) |
 
 **Two separate access levels**
 
-* **Admin** (`sayan.mullick@altiusinvestech.com` is the base admin): Dashboard, Access Control, Employee Master Data, Payroll, and Team Access settings.
+* **Admin** (`sayan.mullick@altiusinvestech.com` is the base admin): Dashboard, Access Control, Employee Master Data, Finance (Payroll, Variable, Bonus & Leave Encash, Monthly Expense, ESOPs), and Team Access settings.
 * **Team**: a separate employee portal (Home, My Profile). A team member only ever sees their own records.
 
 The database enforces this split, not just the screens. Row Level Security and `SECURITY DEFINER` functions in the migration under `supabase/migrations/` do the enforcing. Team accounts have no write access to any table. They can't change their own role or status, and they can't read anyone else's rows or files. Admin decides what employees can see about themselves (job details, salary history, KYC documents) on the **Team Access** page.
@@ -125,7 +126,9 @@ The entry with the latest month is the current salary. That entry's month and % 
 * **The biometric system's export** (e.g. `SalarySheetSept26.xlsx`, sheet "Raw Sheet"): one block per employee, with an `Empcode 0003 … Name …` row, then `Date | Day | Shift | IN | Out1 | In2 | … | In8 | Out`, then one row per date. **IN** is the first punch of the day and the last **Out** column is the final punch; `--:--` means no punch. The "Total Present / Total Working HRS" rows and the other sheets in the workbook are ignored.
 * **A simple table** with the columns **EmpCode · Name · Date · Day · IN · OUT**, one row per employee per day. Header names are matched loosely (for example `Emp Code`, `In Time`, `Punch Out`), and title rows above the header are skipped. The file is read in the browser: only the rows are saved to Supabase (`attendance_punches`), never the Excel file. Uploading the same month again replaces it, keeps the old upload as history, and carries your day-wise changes over.
 
-**2. Mapping.** Each EmpCode and name in the sheet is mapped to an employee in Employee Master Data. Suggestions match the EmpCode to the Employee ID (also ignoring prefixes and leading zeros, so `0047` ↔ `AI-0047`), then the name (ignoring capitals and small spelling differences, so `Sayan Mallick` ↔ `Sayan Mullick`), and you confirm with **Save mapping**. Only mapped employees appear in the salary calculation. Mappings are remembered for later months.
+**2. Mapping.** Each EmpCode in the sheet is mapped to an employee in Employee Master Data. **The EmpCode must be the same as the Employee ID in EMD**: case and leading zeros are ignored (`0003` = `003`), but prefixes are not (`0047` ≠ `AI-0047`). Names are never used. Matching IDs are suggested, and you confirm with **Save mapping**. A mapping where the IDs differ (or the employee has no Employee ID) is flagged in red here and in the salary table, and saving it asks for confirmation. Only mapped employees appear in the salary calculation. Mappings are remembered for later months.
+
+**4. Professional Tax.** HR keeps the PT slabs (monthly salary from → to → PT amount). Each employee's monthly salary is matched to a slab, and that PT is deducted: **Net payable = Earned − PT**. The slabs are prefilled with West Bengal rates (up to ₹10,000: ₹0; ₹10,001–15,000: ₹110; ₹15,001–25,000: ₹130; ₹25,001–40,000: ₹150; above ₹40,000: ₹200). Check these against the current notification.
 
 **3. Working Hours.** HR sets how long a full day is for **Monday–Friday** and for **Saturday**, and whether Sunday is a paid weekly off. Defaults are 9h 00m, 5h 00m and paid.
 
@@ -148,6 +151,18 @@ payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest
 
 **Save payroll** stores each employee's counts and payable for the month (`payroll_results`). **Export CSV** downloads the same table. If anything changes after saving, the status shows "Changed since save".
 
+## Finance sections
+
+**Variable.** Use **Manage eligibility** to tick the eligible employees. Each eligible employee has a **Detailed info** page where you add calculations:
+Variable = (Buy × Buy commission % + Sell × Sell commission %) − (Current salary × Duration in months × Sales time allocated %).
+The current salary comes from EMD (the latest salary entry). The result is calculated in the database, shown with its working, and kept in a payout history that you can edit or remove. A negative result is shown in red as "nothing payable".
+
+**Bonus & Leave Encash.** Use **Manage eligibility**, then **Add line** for each payment: Employee | Description | Month | Amount. Tick **Current salary** to use the employee's current salary as the amount; the amount is fixed when you save. Totals are shown per month. Removed lines are kept for audit.
+
+**Monthly Expense.** The team submits expenses through a Google Form. In the form, go to **Responses → Link to Sheets**, then share that responses sheet as **Anyone with the link: Viewer**. Paste the sheet's link on the Monthly Expense page and click **Sync**. The columns (Employee ID, Amount, Timestamp, Name, Expense date, Category, Description, Bill) are detected automatically and can be changed. Each response is matched to an employee by **Employee ID**, using the same rule as Payroll mapping. Responses that don't match are listed and flagged. **Detailed info** shows an employee's claims month by month, with bill links. Syncing again adds new responses and never duplicates old ones.
+
+**ESOPs.** Placeholder. Share how grants, vesting and exercise should work and it will be built to match.
+
 ### Choices I made where the brief left a gap
 * **Date of birth** is collected in the KYC form. **Date of joining** is set by the admin at approval. Both are locked afterwards, along with name, email and phone.
 * **Reject** keeps the record (under Rejected) instead of deleting it, so HR has a history and can restore a request made by mistake.
@@ -165,6 +180,7 @@ payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest
 | `supabase/migrations/20261006000000_hrms_modules_1_2.sql` | Tables, RLS policies, storage bucket and policies, sign-up trigger, and the access/KYC functions. Re-runnable. |
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
+| `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
 
 ### Data model
 * `profiles`: one row per user (name, email, phone, role, status, EID, designation, reporting manager, DOJ, DOB, rejection details, audit timestamps)
@@ -177,3 +193,7 @@ payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest
 * `attendance_code_map`: sheet EmpCode → employee
 * `attendance_adjustments`: the admin's day-wise F / HD / L changes
 * `payroll_results`: saved monthly counts and payable per employee
+* `comp_eligibility`: who is eligible for Variable / Bonus
+* `variable_entries`: variable-pay calculations (inputs, salary used, result)
+* `bonus_payments`: bonus and leave-encashment lines
+* `expense_claims`: expenses synced from the Google Form responses sheet, matched to employees by Employee ID
