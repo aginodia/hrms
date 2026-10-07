@@ -38,7 +38,7 @@ as $$ select 'sayan.mullick@altiusinvestech.com'::text $$;
 --   kyc_submitted  KYC submitted, waiting for admin approval
 --   active         approved — can use the HRMS
 --   inactive       (reserved for exits / offboarding)
--- A rejected sign-up is deleted outright (the sign-up is cancelled).
+-- A rejected request becomes 'inactive' with rejected_at set (next migration).
 create table if not exists public.profiles (
   id                    uuid primary key references auth.users (id) on delete cascade,
   full_name             text not null,
@@ -322,22 +322,6 @@ begin
 end;
 $$;
 
--- Admin → Access Control → Reject: cancels the sign-up entirely
-create or replace function public.admin_reject_signup(p_user uuid)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if not public.is_admin() then raise exception 'Only admin can do this'; end if;
-  if not exists (select 1 from public.profiles where id = p_user and status = 'pending') then
-    raise exception 'This request is no longer pending';
-  end if;
-  delete from auth.users where id = p_user;   -- cascades to profiles
-end;
-$$;
-
 -- Employee → KYC form → Submit
 -- Files are uploaded to storage first; this stores the paths + details and
 -- moves the employee to 'kyc_submitted'.
@@ -477,56 +461,6 @@ begin
 end;
 $$;
 
--- Admin → EMD → Detailed info → Save
--- Saves the editable fields and replaces the salary history in one
--- transaction. p_salaries: [{"month": "2026-05-01", "amount": 20000}, ...]
-create or replace function public.admin_save_employee(
-  p_user          uuid,
-  p_employee_code text,
-  p_designation   text,
-  p_manager       uuid,
-  p_salaries      jsonb
-)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_months date[];
-begin
-  if not public.is_admin() then raise exception 'Only admin can do this'; end if;
-  if p_manager = p_user then raise exception 'An employee cannot report to themselves'; end if;
-  if jsonb_typeof(coalesce(p_salaries, '[]'::jsonb)) <> 'array' then
-    raise exception 'Salaries must be a list';
-  end if;
-
-  update public.profiles
-     set employee_code        = nullif(trim(p_employee_code), ''),
-         designation          = nullif(trim(p_designation), ''),
-         reporting_manager_id = p_manager
-   where id = p_user and status in ('active', 'inactive');
-  if not found then raise exception 'Employee not found in master data'; end if;
-
-  select array_agg(date_trunc('month', (s ->> 'month')::date)::date)
-    into v_months
-    from jsonb_array_elements(coalesce(p_salaries, '[]'::jsonb)) s;
-
-  if v_months is not null and cardinality(v_months) <> (select count(distinct m) from unnest(v_months) m) then
-    raise exception 'Each month can only have one salary entry';
-  end if;
-
-  delete from public.salary_history
-   where employee_id = p_user
-     and (v_months is null or effective_month <> all (v_months));
-
-  insert into public.salary_history (employee_id, effective_month, amount, created_by)
-  select p_user, date_trunc('month', (s ->> 'month')::date)::date, (s ->> 'amount')::numeric, auth.uid()
-    from jsonb_array_elements(coalesce(p_salaries, '[]'::jsonb)) s
-  on conflict (employee_id, effective_month) do update set amount = excluded.amount;
-end;
-$$;
-
 -- Team → My profile: own profile plus reporting manager's name
 -- (a team member cannot read other profiles directly).
 create or replace function public.my_profile()
@@ -544,19 +478,15 @@ $$;
 
 -- Only signed-in users may call the functions; each one checks the caller.
 revoke execute on function public.admin_grant_access(uuid) from public, anon;
-revoke execute on function public.admin_reject_signup(uuid) from public, anon;
 revoke execute on function public.submit_kyc(jsonb) from public, anon;
 revoke execute on function public.admin_approve_kyc(uuid, date, text, text, uuid, date, numeric) from public, anon;
 revoke execute on function public.admin_send_back_kyc(uuid, text) from public, anon;
-revoke execute on function public.admin_save_employee(uuid, text, text, uuid, jsonb) from public, anon;
 revoke execute on function public.my_profile() from public, anon;
 
 grant execute on function public.admin_grant_access(uuid) to authenticated;
-grant execute on function public.admin_reject_signup(uuid) to authenticated;
 grant execute on function public.submit_kyc(jsonb) to authenticated;
 grant execute on function public.admin_approve_kyc(uuid, date, text, text, uuid, date, numeric) to authenticated;
 grant execute on function public.admin_send_back_kyc(uuid, text) to authenticated;
-grant execute on function public.admin_save_employee(uuid, text, text, uuid, jsonb) to authenticated;
 grant execute on function public.my_profile() to authenticated;
 
 -- Internal helpers: signed-in users only (RLS policies need them); the

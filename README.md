@@ -24,14 +24,14 @@ The Supabase project **Altius HRMS** (`bejhmbvwaexpafhkseod`) is set up through 
 
 * Tables, row-level security, the `kyc-documents` storage bucket and its policies, and the sign-up trigger are applied.
 * The base admin account `sayan.mullick@altiusinvestech.com` exists, with its email confirmed and role admin / active.
-* **Still to do:** run [`supabase/finish-setup.sql`](supabase/finish-setup.sql) once in **SQL Editor**. It adds the two functions that contain `DELETE` (rejecting a sign-up, and saving an employee's salary history), which the connector holds back for manual confirmation.
+* Both migrations in `supabase/migrations/` are applied. Nothing is left to run by hand.
 
 The steps below are for setting up a fresh project from scratch.
 
 ## Setup (about 10 minutes)
 
 ### 1. Create the database schema
-The project is `bejhmbvwaexpafhkseod`, and `index.html` already points at it. Apply the migration in [`supabase/migrations/`](supabase/migrations) **one** of these two ways:
+The project is `bejhmbvwaexpafhkseod`, and `index.html` already points at it. Apply the migrations in [`supabase/migrations/`](supabase/migrations), in filename order, **one** of these two ways:
 
 **A. Supabase CLI** (from the repo root on your machine):
 ```bash
@@ -41,9 +41,9 @@ supabase link --project-ref bejhmbvwaexpafhkseod   # asks for the database passw
 supabase db push
 ```
 
-**B. Dashboard:** open **SQL Editor → New query**, paste the whole migration file and click **Run**.
+**B. Dashboard:** open **SQL Editor → New query**, paste each migration file in turn (oldest first) and click **Run**.
 
-Either way you get the tables, security policies, functions and the private `kyc-documents` storage bucket. The file is safe to run again. Future modules will be added as new files in `supabase/migrations/`.
+Either way you get the tables, security policies, functions and the private `kyc-documents` storage bucket. The files are safe to run again. Future modules will be added as new files in `supabase/migrations/`.
 
 ### 2. Configure auth
 In **Authentication → URL Configuration**:
@@ -85,7 +85,8 @@ Then update the Site URL in step 2 if your Netlify URL changed.
 ```
 Sign up ──► [pending] ──Admin: Give access──► [kyc_pending] ──Employee submits KYC──► [kyc_submitted]
    │                                               ▲                                     │
-   └──Admin: Reject → sign-up deleted              └────────Admin: Send back (note)──────┤
+   │                                               └────────Admin: Send back (note)──────┤
+   └──── Admin: Reject (at any of these stages) ──► [Rejected] ──Admin: Restore──► back to [pending]
                                                                                           │
                                          Admin: Approve (DOJ, EID, designation, manager, starting salary)
                                                                                           ▼
@@ -100,6 +101,9 @@ Files upload as soon as they're picked, and the form keeps a local draft, so a p
 **Approval (admin).** In Access Control → KYC Review, open the submission, view each document, then either:
 * **Approve**: sets the date of joining and, optionally, EID, designation, reporting manager and starting salary.
 * **Send back**: returns the KYC to the employee with a note on what to fix.
+* **Reject KYC**: cancels their access. A reason is required, and the employee sees it when they sign in.
+
+**Rejecting.** A sign-up, someone awaiting KYC, or a submitted KYC can be rejected. Nothing is deleted: the person moves to **Access Control → Rejected**, with the stage and reason, and can't use the HRMS. **Restore** sends them back to Signup Requests.
 
 **Salary history (EMD → Show detailed info).** Each row is *Month · Year · Salary*, meaning "from this month onwards the salary is X". For example:
 
@@ -108,11 +112,13 @@ Files upload as soon as they're picked, and the form keeps a local draft, so a p
 | May 2026 | ₹20,000 |
 | Dec 2026 | ₹25,000 ← current |
 
-The entry with the latest month is the current salary. That entry's month and % change are shown as **Last Increment** in the EMD list. Click **Save** to store all edits in one go.
+The entry with the latest month is the current salary. That entry's month and % change are shown as **Last Increment** in the EMD list. Click **Save** to store all edits (EID, designation, reporting manager, salary rows) in one go. A removed salary row is hidden but kept in the database as an audit trail.
+
+**Signing out.** **Sign out** is in the top bar on every page (and at the bottom of the sidebar). It ends the session on this device, even if the network call to Supabase fails. If a session expires, the app returns to the sign-in screen with a message.
 
 ### Choices I made where the brief left a gap
 * **Date of birth** is collected in the KYC form. **Date of joining** is set by the admin at approval. Both are locked afterwards, along with name, email and phone.
-* **Reject** deletes the sign-up entirely, so that person can sign up again later if needed.
+* **Reject** keeps the record (under Rejected) instead of deleting it, so HR has a history and can restore a request made by mistake.
 * **Reporting manager** is picked from active employees.
 * The base admin also appears in EMD, so their own salary and designation can be recorded.
 
@@ -123,12 +129,12 @@ The entry with the latest month is the current salary. That entry's month and % 
 | File | Purpose |
 | --- | --- |
 | `index.html` | The whole app: HTML, CSS and JS. Loads `supabase-js` and the Inter font from CDNs. |
-| `supabase/finish-setup.sql` | The two functions to run by hand on the live project (see above). Already included in the full migration. |
-| `supabase/migrations/20261006000000_hrms_modules_1_2.sql` | Tables, RLS policies, storage bucket and policies, and RPC functions. Re-runnable. |
+| `supabase/migrations/20261006000000_hrms_modules_1_2.sql` | Tables, RLS policies, storage bucket and policies, sign-up trigger, and the access/KYC functions. Re-runnable. |
+| `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 
 ### Data model
-* `profiles`: one row per user (name, email, phone, role, status, EID, designation, reporting manager, DOJ, DOB, audit timestamps)
+* `profiles`: one row per user (name, email, phone, role, status, EID, designation, reporting manager, DOJ, DOB, rejection details, audit timestamps)
 * `kyc_submissions`: document paths, bank details and emergency contact (one row per employee)
-* `salary_history`: `(employee_id, effective_month, amount)`, one row per revision
+* `salary_history`: `(employee_id, effective_month, amount)`, one row per revision; removed rows keep `removed_at` / `removed_by`
 * `app_settings`: `team_visibility` toggles, controlled by admin
 * Storage bucket `kyc-documents` (private): `<user_id>/<document>-<timestamp>.pdf|jpg`. Files open through 10-minute signed links.

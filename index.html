@@ -232,6 +232,8 @@
   .topbar .crumbs { color: var(--muted); font-size: 13px; margin-top: 3px; }
   .topbar .actions { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
   .menu-btn { display: none; }
+  .top-user { display: flex; align-items: center; gap: 10px; padding-left: 12px; margin-left: 4px; border-left: 1px solid var(--border); }
+  .top-user .avatar { width: 30px; height: 30px; font-size: 11.5px; }
   .content { padding: 22px 32px 48px; display: grid; gap: 20px; align-content: start; max-width: 1360px; width: 100%; }
   .scrim { display: none; }
 
@@ -602,7 +604,7 @@ function friendlyError(err) {
   if (/JWT expired|invalid JWT/i.test(msg)) return 'Your session has expired. Please sign in again.';
   if (/row-level security|permission denied/i.test(msg)) return 'You do not have permission to do that.';
   if (/rate limit/i.test(msg)) return 'Too many attempts. Please wait a minute and try again.';
-  if (/Could not find the function/i.test(msg)) return 'This action is not set up in the database yet — run supabase/finish-setup.sql in the Supabase SQL editor.';
+  if (/Could not find the function/i.test(msg)) return 'This action is not set up in the database yet — apply the latest file in supabase/migrations.';
   if (/timed out/i.test(msg)) return 'The server took too long to respond. Check your connection and try again.';
   if (/Invalid API key|No API key/i.test(msg)) return 'The Supabase key in index.html is not valid for this project.';
   if (/schema cache|relation .* does not exist/i.test(msg)) return 'The database is not set up yet — apply the schema in supabase/migrations first.';
@@ -699,7 +701,7 @@ const api = {
   myProfile: () => q(db.from('profiles').select('*').eq('id', state.user.id).maybeSingle()),
   myProfileFull: () => q(db.rpc('my_profile')),
   myKyc: () => q(db.from('kyc_submissions').select('*').eq('employee_id', state.user.id).maybeSingle()),
-  mySalaries: () => q(db.from('salary_history').select('effective_month, amount').eq('employee_id', state.user.id).order('effective_month')),
+  mySalaries: () => q(db.from('salary_history').select('effective_month, amount').eq('employee_id', state.user.id).is('removed_at', null).order('effective_month')),
   visibility: async () => {
     const row = await q(db.from('app_settings').select('value').eq('key', 'team_visibility').maybeSingle());
     return Object.assign({ job_details: true, salary: false, kyc_documents: true }, row?.value || {});
@@ -708,7 +710,7 @@ const api = {
     .update({ value, updated_by: state.user.id, updated_at: new Date().toISOString() })
     .eq('key', 'team_visibility').select()),
   allProfiles: () => q(db.from('profiles').select('*').order('created_at', { ascending: false })),
-  allSalaries: () => q(db.from('salary_history').select('employee_id, effective_month, amount').order('effective_month')),
+  allSalaries: () => q(db.from('salary_history').select('employee_id, effective_month, amount').is('removed_at', null).order('effective_month')),
   kycFor: (id) => q(db.from('kyc_submissions').select('*').eq('employee_id', id).maybeSingle()),
   upload: (path, file) => q(db.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })),
   removeFiles: (paths) => db.storage.from(BUCKET).remove(paths),
@@ -780,7 +782,7 @@ function render() {
     case 'kyc_pending':   return renderKycForm();
     case 'kyc_submitted': return renderWaiting('submitted');
     case 'active':        return renderShell('team');
-    default:              return renderWaiting('inactive');
+    default:              return renderWaiting(p.rejected_at ? 'rejected' : 'inactive');
   }
 }
 
@@ -808,13 +810,42 @@ async function loadSelfAndRouteInner() {
   render();
 }
 
+function resetSessionState() {
+  state.session = null;
+  state.user = null;
+  state.profile = null;
+  state.recovery = false;
+  state.loadingUser = null;
+  state.dirty = false;
+  state.emdSearch = '';
+  state.admin = { loaded: false, profiles: [], salaries: [] };
+}
+
+// Signs out of this device. The local session is always cleared, even if
+// the network call to Supabase fails, so the user is never left half-signed-in.
 async function signOut() {
+  if (state.signingOut) return;
   if (state.dirty && !window.confirm('You have unsaved changes. Sign out anyway?')) return;
+  state.signingOut = true;
   state.dirty = false;
   closeAllModals();
-  await db.auth.signOut().catch(() => {});
+  $('#app').innerHTML = `<div class="loading full">${spinnerHTML}<span>Signing out…</span></div>`;
+  try {
+    const { error } = await db.auth.signOut({ scope: 'local' });
+    if (error) throw error;
+  } catch {
+    try {
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'))
+        .forEach((k) => localStorage.removeItem(k));
+    } catch { /* storage unavailable */ }
+  }
+  resetSessionState();
   history.replaceState(null, '', location.pathname);
   lastHash = '';
+  renderAuth('login');
+  toast('You have been signed out.');
+  state.signingOut = false;
 }
 
 /* Global click actions */
@@ -1040,13 +1071,19 @@ function renderWaiting(kind) {
       title: 'Your account is inactive',
       text: 'Please contact HR if you think this is a mistake.',
     },
+    rejected: {
+      ico: 'x', bg: 'var(--red-soft)', fg: 'var(--red)',
+      title: 'Your request was not approved',
+      text: `${p.rejection_reason ? `Reason: ${esc(p.rejection_reason)}<br>` : ''}Please contact HR if you think this is a mistake.`,
+    },
   }[kind];
   $('#app').innerHTML = `${soloTop()}<div class="center-wrap"><div class="card status-card">
     <div class="big-ico" style="background:${content.bg};color:${content.fg}">${icon(content.ico)}</div>
     <h2>${content.title}</h2><p>${content.text}</p>
-    ${kind !== 'inactive' ? `<div class="timeline">${steps.map((s) => `
+    ${kind === 'pending' || kind === 'submitted' ? `<div class="timeline">${steps.map((s) => `
       <div class="t ${s.done ? 'done' : s.now ? 'now' : ''}"><i>${s.done ? check : ''}</i><div><b>${s.t}</b><span>${esc(s.s)}</span></div></div>`).join('')}</div>` : ''}
-    <div class="btns"><button class="btn" data-action="reload">${icon('refresh')}Check status</button></div>
+    <div class="btns">${kind === 'pending' || kind === 'submitted' ? `<button class="btn" data-action="reload">${icon('refresh')}Check status</button>` : ''}
+      <button class="btn" data-action="signout">${icon('logout')}Sign out</button></div>
   </div></div>`;
 }
 
@@ -1079,7 +1116,10 @@ async function renderKycForm() {
     for (const d of DOCS) if (draft.files?.[d.key]) k.files[d.key] = draft.files[d.key];
   }
   const savedPaths = new Set(DOCS.map((d) => existing?.[d.col]).filter(Boolean));
-  const persist = () => saveKycDraft(k);
+  const persist = () => {
+    const { bank_account_number, bank_account_confirm, ...safe } = k;
+    saveKycDraft(safe);
+  };
 
   const uploadTile = (d) => {
     const f = k.files[d.key];
@@ -1329,6 +1369,8 @@ function paintShell(kind, active, view) {
         <button class="icon-btn menu-btn" data-action="toggle-nav" aria-label="Menu">${icon('menu')}</button>
         <div style="min-width:0"><h1>${esc(view?.title || '')}</h1>${view?.crumbs ? `<div class="crumbs">${view.crumbs}</div>` : ''}</div>
         <div class="actions">${view?.actions || ''}</div>
+        <div class="top-user" title="${esc(p.full_name)} · ${esc(p.email)}">${avatar(p)}
+          <button class="btn btn-sm" data-action="signout">${icon('logout', 'sm')}<span>Sign out</span></button></div>
       </header>
       <section class="content">${body}</section>
     </main>
@@ -1437,14 +1479,15 @@ async function pageDashboard() {
 /* ---------- Access Control ---------- */
 async function pageAccess(r) {
   await ensureAdmin();
-  const tab = ['requests', 'kyc', 'awaiting'].includes(r.id) ? r.id : 'requests';
+  const tab = ['requests', 'kyc', 'awaiting', 'rejected'].includes(r.id) ? r.id : 'requests';
   const P = state.admin.profiles;
   const lists = {
     requests: P.filter((p) => p.status === 'pending').sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
     kyc: P.filter((p) => p.status === 'kyc_submitted').sort((a, b) => new Date(a.kyc_submitted_at) - new Date(b.kyc_submitted_at)),
     awaiting: P.filter((p) => p.status === 'kyc_pending').sort((a, b) => new Date(b.access_granted_at) - new Date(a.access_granted_at)),
+    rejected: P.filter((p) => p.rejected_at).sort((a, b) => new Date(b.rejected_at) - new Date(a.rejected_at)),
   };
-  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['awaiting', 'Awaiting KYC']];
+  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['awaiting', 'Awaiting KYC'], ['rejected', 'Rejected']];
   const rows = lists[tab];
 
   let table;
@@ -1453,6 +1496,7 @@ async function pageAccess(r) {
       requests: emptyState('inbox', 'No signup requests', 'New sign-ups will appear here for you to give access or reject.'),
       kyc: emptyState('fileCheck', 'Nothing to review', 'When employees submit their KYC, it will appear here.'),
       awaiting: emptyState('clock', 'No one is pending KYC', 'People you give access to appear here until they submit KYC.'),
+      rejected: emptyState('x', 'No rejected requests', 'Sign-ups and KYC submissions you reject are kept here, and can be restored.'),
     }[tab];
   } else if (tab === 'requests') {
     table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Requested</th><th></th></tr></thead><tbody>
@@ -1467,14 +1511,26 @@ async function pageAccess(r) {
       ${rows.map((p) => `<tr>
         <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
         <td class="nowrap muted" title="${esc(fmtDateTime(p.kyc_submitted_at))}">${fmtRelative(p.kyc_submitted_at)}</td>
-        <td class="actions"><button class="btn btn-sm btn-primary" data-review="${p.id}">${icon('eye', 'sm')}Review KYC</button></td></tr>`).join('')}
+        <td class="actions"><button class="btn btn-sm btn-danger" data-reject="${p.id}">${icon('x', 'sm')}Reject</button>
+        <button class="btn btn-sm btn-primary" data-review="${p.id}">${icon('eye', 'sm')}Review KYC</button></td></tr>`).join('')}
       </tbody></table></div>`;
-  } else {
-    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Access given</th><th>Status</th></tr></thead><tbody>
+  } else if (tab === 'awaiting') {
+    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Access given</th><th>Status</th><th></th></tr></thead><tbody>
       ${rows.map((p) => `<tr>
         <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
         <td class="nowrap muted">${fmtDateTime(p.access_granted_at)}</td>
-        <td>${p.kyc_remarks ? `<span class="chip amber" title="${esc(p.kyc_remarks)}">Sent back</span>` : statusChip(p.status)}</td></tr>`).join('')}
+        <td>${p.kyc_remarks ? `<span class="chip amber" title="${esc(p.kyc_remarks)}">Sent back</span>` : statusChip(p.status)}</td>
+        <td class="actions"><button class="btn btn-sm btn-danger" data-reject="${p.id}">${icon('x', 'sm')}Reject</button></td></tr>`).join('')}
+      </tbody></table></div>`;
+  } else {
+    const stage = (p) => p.kyc_submitted_at ? 'At KYC review' : p.access_granted_at ? 'Awaiting KYC' : 'Sign-up request';
+    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Rejected at</th><th>Reason</th><th>Rejected</th><th></th></tr></thead><tbody>
+      ${rows.map((p) => `<tr>
+        <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
+        <td class="nowrap">${stage(p)}</td>
+        <td class="wrap">${p.rejection_reason ? esc(p.rejection_reason) : '<span class="faint">—</span>'}</td>
+        <td class="nowrap muted" title="${esc(fmtDateTime(p.rejected_at))}">${fmtRelative(p.rejected_at)}</td>
+        <td class="actions"><button class="btn btn-sm" data-restore="${p.id}">${icon('refresh', 'sm')}Restore</button></td></tr>`).join('')}
       </tbody></table></div>`;
   }
 
@@ -1495,23 +1551,54 @@ async function pageAccess(r) {
           await refreshAdmin();
         } catch (e) { toast(friendlyError(e), 'error'); }
       }));
-      $$('[data-reject]').forEach((b) => b.addEventListener('click', async () => {
-        const p = byId(b.dataset.reject);
+      $$('[data-reject]').forEach((b) => b.addEventListener('click', () => rejectDialog(byId(b.dataset.reject))));
+      $$('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
+        const p = byId(b.dataset.restore);
         const ok = await confirmDialog({
-          title: 'Reject this sign-up?',
-          message: `<b>${esc(p.full_name)}</b> (${esc(p.email)}) will be removed and their sign-up cancelled. They will need to sign up again to request access.`,
-          confirmText: 'Reject sign-up', danger: true,
+          title: 'Restore this request?',
+          message: `<b>${esc(p.full_name)}</b> will move back to Signup Requests, where you can give access again.`,
+          confirmText: 'Restore',
         });
         if (!ok) return;
         try {
-          await withBusy(b, '', () => api.rpc('admin_reject_signup', { p_user: p.id }));
-          toast('Sign-up rejected and cancelled.');
+          await withBusy(b, '', () => api.rpc('admin_restore_request', { p_user: p.id }));
+          toast(`${p.full_name} is back in Signup Requests.`);
           await refreshAdmin();
         } catch (e) { toast(friendlyError(e), 'error'); }
       }));
       $$('[data-review]').forEach((b) => b.addEventListener('click', () => openKycReview(b.dataset.review, b)));
     },
   };
+}
+
+// Reject a sign-up, an awaiting-KYC person or a submitted KYC. Access is
+// cancelled; the record is kept under Access Control → Rejected.
+function rejectDialog(p, onDone) {
+  const stage = p.status === 'kyc_submitted' ? 'KYC' : p.status === 'kyc_pending' ? 'access' : 'sign-up';
+  const reasonRequired = p.status === 'kyc_submitted';
+  const dlg = openModal({
+    title: p.status === 'kyc_submitted' ? 'Reject KYC' : p.status === 'kyc_pending' ? 'Cancel access' : 'Reject sign-up',
+    size: 'sm',
+    subtitle: `${esc(p.full_name)} · ${esc(p.email)}`,
+    body: `<p class="muted" style="margin-bottom:14px">Their ${stage} will be rejected and they will not be able to use the HRMS.
+             The request moves to <b>Rejected</b>, where you can restore it later.</p>
+           <div class="field"><label>Reason${reasonRequired ? '<span class="req">*</span>' : ' <span class="faint">(optional, shown to them)</span>'}</label>
+           <textarea class="input" id="reject-reason" placeholder="e.g. Documents could not be verified."></textarea></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-danger-solid" data-confirm>${icon('x', 'sm')}Reject</button>`,
+  });
+  const box = $('#reject-reason', dlg.el);
+  box.focus();
+  $('[data-confirm]', dlg.el).addEventListener('click', async (e) => {
+    const reason = box.value.trim();
+    if (reasonRequired && !reason) { box.classList.add('invalid'); return; }
+    try {
+      await withBusy(e.currentTarget, 'Rejecting…', () => api.rpc('admin_reject', { p_user: p.id, p_reason: reason || null }));
+      dlg.close();
+      onDone?.();
+      toast(`${p.full_name}'s ${stage} was rejected.`);
+      await refreshAdmin();
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
 }
 
 function managerOptions(selected, excludeId) {
@@ -1580,7 +1667,8 @@ async function openKycReview(id, btn) {
           </div>
         </form>
       </div>`,
-    footer: `<button class="btn btn-danger left" data-sendback>${icon('arrowLeft', 'sm')}Send back to employee</button>
+    footer: `<button class="btn btn-danger left" data-reject-kyc>${icon('x', 'sm')}Reject KYC</button>
+             <button class="btn" data-sendback>${icon('arrowLeft', 'sm')}Send back to employee</button>
              <button class="btn" data-close>Cancel</button>
              <button class="btn btn-success" data-approve>${icon('check', 'sm')}Approve KYC</button>`,
   });
@@ -1612,6 +1700,8 @@ async function openKycReview(id, btn) {
       msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(friendlyError(err))}</span></div>`;
     }
   });
+
+  $('[data-reject-kyc]', el).addEventListener('click', () => rejectDialog(p, close));
 
   $('[data-sendback]', el).addEventListener('click', () => {
     const dlg = openModal({
@@ -1709,7 +1799,7 @@ function exportEmdCsv(list) {
 async function pageEmployee(r) {
   await ensureAdmin();
   const e = byId(r.id);
-  if (!e || !['active', 'inactive'].includes(e.status)) {
+  if (!e || e.status !== 'active') {
     return {
       title: 'Employee not found', crumbs: `<a href="#/emd">Employee Master Data</a>`,
       html: `<div class="card">${emptyState('user', 'Employee not found', 'This person is not in the master data yet. They appear after KYC approval.')}</div>`,
@@ -2014,10 +2104,17 @@ async function handleAuthEvent(event, session) {
   state.session = session;
   state.user = session?.user || null;
   if (!session) {
-    state.profile = null;
-    state.admin = { loaded: false, profiles: [], salaries: [] };
-    state.recovery = false;
-    return renderAuth('login');
+    const wasSignedIn = !!state.profile;
+    resetSessionState();
+    if (state.signingOut) return; // signOut() renders the login screen itself
+    if (wasSignedIn) {
+      closeAllModals();
+      history.replaceState(null, '', location.pathname);
+      lastHash = '';
+      toast('Your session has ended. Please sign in again.', 'error');
+    }
+    if (wasSignedIn || !$('#auth-form')) renderAuth('login');
+    return;
   }
   if (state.recovery) return;
   if (sameUser && state.profile) return; // e.g. SIGNED_IN re-emitted on tab focus
