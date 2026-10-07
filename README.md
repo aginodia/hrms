@@ -184,6 +184,12 @@ payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest
 
 It can be filtered by month. Clicking an employee's name shows only their payments.
 
+**Bulk populate** fills the add section for many people at once. Enter a **Description** (what the payment is for); the **Date** defaults to today (dd-mm-yyyy). Then choose who gets a line:
+* **Give all**: every eligible employee.
+* **Select from the list**: everyone starts ticked; untick the people who shouldn't get it.
+
+Each line is filled in automatically, with the employee's **current salary** as the amount. For anyone with a loan, the **Loan deduct** cell is left **blank** and highlighted, to be filled in by hand (or tick *Deduct full*). Review the lines, adjust any of them, then click **Save payments** as usual. The single **Add line** flow works exactly as before.
+
 **Loans.** **Add a loan** form: pick the **Name**, and the **Emp ID** is filled in from EMD; then enter the **Amount taken** and the **Date**, and click **Add**. The list shows **Emp ID | Name | Amount | DD-MM-YYYY | Loan remaining | Details**. A loan is repaid through the **Loan deduct** column on Variable and Bonus lines:
 * Type an amount to deduct part of the line, or tick **Deduct full** to deduct the whole line (capped at what is still owed).
 * Example: a variable of ₹50,000 with *Deduct full*, against a ₹2,00,000 loan, leaves **₹1,50,000** remaining, and the variable's net payout is ₹0.

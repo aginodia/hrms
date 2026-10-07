@@ -154,6 +154,10 @@
   .bn-head .num { text-align: right; }
   .bn-cell .input { height: 38px; width: 100%; }
   .bn-sub { display: flex; align-items: center; gap: 6px; min-height: 20px; margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .bn-cell .input.need { border-color: var(--amber); background: var(--amber-soft); }
+  .bk-top { display: grid; grid-template-columns: 1fr 180px; gap: 12px; }
+  .bk-mode { display: grid; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; }
+  @media (max-width: 560px) { .bk-top { grid-template-columns: 1fr; } }
   .bn-static { display: flex; align-items: center; background: var(--gray-soft); border-style: dashed; }
   .bn-net { height: 38px; display: flex; align-items: center; justify-content: flex-end; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
   .bn-cell .icon-btn { margin-top: 3px; }
@@ -3612,7 +3616,7 @@ async function pageBonus(r) {
       <div class="bn-cell"><input class="input" type="date" data-k="pay_date" value="${r.pay_date}"><div class="bn-sub">${r.pay_date ? fmtSlash(r.pay_date) : ''}</div></div>
       <div class="bn-cell"><div class="rs-in"><span>₹</span><input class="input mono" data-k="amount" inputmode="decimal" value="${esc(r.use_current_salary ? String(rowAmount(r) || '') : r.amount)}" ${r.use_current_salary ? 'disabled' : ''}></div>
         <label class="bn-sub check-inline"><input type="checkbox" data-k="use_current_salary" ${r.use_current_salary ? 'checked' : ''}> Current salary${r.use_current_salary && r.employee_id && sal == null ? ' <span class="error-text">· none in EMD</span>' : ''}</label></div>
-      <div class="bn-cell">${loanLeft > 0 ? `<div class="rs-in"><span>₹</span><input class="input mono" data-k="loan" inputmode="decimal" value="${esc(r.full ? String(rowDeduction(r)) : r.loan)}" ${r.full ? 'disabled' : ''}></div>
+      <div class="bn-cell">${loanLeft > 0 ? `<div class="rs-in"><span>₹</span><input class="input mono ${!r.full && !r.loan ? 'need' : ''}" data-k="loan" inputmode="decimal" placeholder="Fill manually" value="${esc(r.full ? String(rowDeduction(r)) : r.loan)}" ${r.full ? 'disabled' : ''}></div>
           <label class="bn-sub check-inline"><input type="checkbox" data-k="full" ${r.full ? 'checked' : ''}> Deduct full</label>`
         : `<div class="input bn-static faint">${r.employee_id ? 'No loan' : '—'}</div><div class="bn-sub"></div>`}</div>
       <div class="bn-cell bn-net" data-net>${fmtINR(rowAmount(r) - rowDeduction(r))}</div>
@@ -3630,7 +3634,7 @@ async function pageBonus(r) {
       ${emps.length ? '' : `<div class="alert alert-warn">${icon('alert')}<span>No one is eligible yet. Click <b>Manage eligibility</b> to pick the employees who can receive bonus or leave encashment.</span></div>`}
       <div class="card">
         <div class="card-head"><div><h3>Add payments</h3><p>Fill a line per payment and click Save. Saved payments move to the log below and cannot be edited or removed.</p></div>
-          <div class="right"><button class="btn btn-sm" id="add-line" ${emps.length ? '' : 'disabled'}>${icon('plus', 'sm')}Add line</button></div></div>
+          <div class="right"><button class="btn btn-sm" id="bulk-btn" ${emps.length ? '' : 'disabled'}>${icon('users', 'sm')}Bulk populate</button><button class="btn btn-sm" id="add-line" ${emps.length ? '' : 'disabled'}>${icon('plus', 'sm')}Add line</button></div></div>
         <div class="bn-wrap"><div class="bn-row bn-head"><div>Employee</div><div>Description</div><div>Date</div><div>Amount</div><div>Loan deduct (₹)</div><div class="num">Net</div><div></div></div>
           <div id="bonus-body">${emps.length ? rows.map(lineHTML).join('') : ''}</div></div>
         <div class="card-foot"><span class="muted" id="bonus-total" style="font-size:13px"></span><button class="btn btn-primary" id="save-btn" ${emps.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payments</button></div>
@@ -3656,11 +3660,59 @@ async function pageBonus(r) {
         const el = elOf(r);
         const loanIn = el.querySelector('[data-k="loan"]');
         if (loanIn && r.full) loanIn.value = String(rowDeduction(r));
+        if (loanIn) loanIn.classList.toggle('need', !r.full && !r.loan);
         el.querySelector('[data-net]').textContent = fmtINR(rowAmount(r) - rowDeduction(r));
         total();
       };
       const redraw = (r) => { elOf(r).outerHTML = lineHTML(r); total(); };
       $('#add-line').addEventListener('click', () => { const r = blank(); rows.push(r); body.insertAdjacentHTML('beforeend', lineHTML(r)); });
+      // Bulk populate: one line per eligible employee (all, or the ticked ones), current salary as the amount.
+      // Loan deductions are left blank — they are filled in by hand.
+      $('#bulk-btn').addEventListener('click', () => {
+        const dlg = openModal({
+          title: 'Bulk populate', size: 'md', subtitle: 'Adds a line for each employee with their current salary as the amount. Loan deductions are left blank to fill in by hand.',
+          body: `<div class="grid" style="gap:14px">
+              <div class="bk-top">
+                <div class="field"><label>Description<span class="req">*</span></label><input class="input" id="bk-desc" placeholder="e.g. Diwali bonus 2026"></div>
+                <div class="field"><label>Date</label><input class="input" type="date" id="bk-date" value="${todayISO()}"><div class="hint" id="bk-dmy">${fmtDMY(todayISO())}</div></div>
+              </div>
+              <div class="bk-mode">
+                <label class="check-inline"><input type="radio" name="bk-mode" value="all" checked> <b>Give all</b> <span class="muted">— everyone eligible (${emps.length})</span></label>
+                <label class="check-inline"><input type="radio" name="bk-mode" value="pick"> <b>Select from the list</b> <span class="muted">— all ticked; untick who should not get it</span></label>
+              </div>
+              <div id="bk-list" class="elig-list hidden">${emps.map((e) => { const sal = currentSalary(e.id); const loan = empLoanLeft(e.id); return `<label class="elig-row">
+                  <input type="checkbox" value="${e.id}" checked>${person(e, esc(e.employee_code || 'No Employee ID'))}
+                  <span style="margin-left:auto;text-align:right;font-size:12.5px">${sal == null ? '<span class="error-text">No salary in EMD</span>' : `<b style="color:var(--text)">${fmtINR(sal)}</b>`}${loan > 0 ? `<div class="faint">Loan ${fmtINR(loan)}</div>` : ''}</span></label>`; }).join('')}</div>
+              <div class="muted" id="bk-count" style="font-size:12.5px"></div></div>`,
+          footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Populate</button>`,
+        });
+        const el = dlg.el;
+        const mode = () => $('input[name="bk-mode"]:checked', el).value;
+        const chosen = () => (mode() === 'all' ? emps : emps.filter((e) => $(`#bk-list input[value="${e.id}"]`, el).checked));
+        const count = () => {
+          const list = chosen();
+          const withLoan = list.filter((e) => empLoanLeft(e.id) > 0).length;
+          $('#bk-count', el).innerHTML = `${list.length} employee(s) · ${fmtINR(list.reduce((t, e) => t + (currentSalary(e.id) || 0), 0))} total at current salary${withLoan ? ` · ${withLoan} with a loan — fill their loan deduction by hand` : ''}`;
+        };
+        $$('input[name="bk-mode"]', el).forEach((x) => x.addEventListener('change', () => { $('#bk-list', el).classList.toggle('hidden', mode() !== 'pick'); count(); }));
+        $('#bk-list', el).addEventListener('change', count);
+        $('#bk-date', el).addEventListener('change', (ev) => { $('#bk-dmy', el).textContent = ev.target.value ? fmtDMY(ev.target.value) : ''; });
+        count();
+        $('[data-ok]', el).addEventListener('click', () => {
+          const desc = $('#bk-desc', el).value.trim(), date = $('#bk-date', el).value;
+          const list = chosen();
+          if (!desc) return toast('Write what this is for in the description.', 'error');
+          if (!date) return toast('Pick the date.', 'error');
+          if (!list.length) return toast('Tick at least one employee.', 'error');
+          for (let i = rows.length - 1; i >= 0; i--) if (!touched(rows[i])) rows.splice(i, 1); // drop empty lines
+          for (const e of list) rows.push({ ...blank(), employee_id: e.id, description: desc, pay_date: date, use_current_salary: currentSalary(e.id) != null });
+          body.innerHTML = rows.map(lineHTML).join('');
+          total();
+          dlg.close();
+          const noSal = list.filter((e) => currentSalary(e.id) == null).length;
+          toast(`${list.length} line(s) populated.${noSal ? ` ${noSal} have no salary in EMD — enter their amount.` : ''} Fill the loan deductions, then Save payments.`);
+        });
+      });
       body.addEventListener('input', (ev) => {
         const k = ev.target.dataset.k;
         if (!['description', 'amount', 'loan'].includes(k)) return;
