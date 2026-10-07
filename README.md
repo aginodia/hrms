@@ -121,9 +121,11 @@ The entry with the latest month is the current salary. That entry's month and % 
 
 **Admin → Payroll** has three tabs.
 
-**1. Upload attendance.** Click **Upload attendance** and pick the month's `.xlsx` (`.xls` and `.csv` also work). The sheet needs these columns: **EmpCode · Name · Date · Day · IN · OUT**, one row per employee per day. Header names are matched loosely (for example `Emp Code`, `In Time`, `Punch Out`), and title rows above the header are skipped. The file is read in the browser: only the rows are saved to Supabase (`attendance_punches`), never the Excel file. Uploading the same month again replaces it, keeps the old upload as history, and carries your day-wise changes over.
+**1. Upload attendance.** Click **Upload attendance** and pick the month's `.xlsx` (`.xls` and `.csv` also work). Two layouts are understood:
+* **The biometric system's export** (e.g. `SalarySheetSept26.xlsx`, sheet "Raw Sheet"): one block per employee, with an `Empcode 0003 … Name …` row, then `Date | Day | Shift | IN | Out1 | In2 | … | In8 | Out`, then one row per date. **IN** is the first punch of the day and the last **Out** column is the final punch; `--:--` means no punch. The "Total Present / Total Working HRS" rows and the other sheets in the workbook are ignored.
+* **A simple table** with the columns **EmpCode · Name · Date · Day · IN · OUT**, one row per employee per day. Header names are matched loosely (for example `Emp Code`, `In Time`, `Punch Out`), and title rows above the header are skipped. The file is read in the browser: only the rows are saved to Supabase (`attendance_punches`), never the Excel file. Uploading the same month again replaces it, keeps the old upload as history, and carries your day-wise changes over.
 
-**2. Mapping.** Each EmpCode and name in the sheet is mapped to an employee in Employee Master Data. Suggestions match the EmpCode to the Employee ID, then the name, and you confirm with **Save mapping**. Only mapped employees appear in the salary calculation. Mappings are remembered for later months.
+**2. Mapping.** Each EmpCode and name in the sheet is mapped to an employee in Employee Master Data. Suggestions match the EmpCode to the Employee ID (also ignoring prefixes and leading zeros, so `0047` ↔ `AI-0047`), then the name (ignoring capitals and small spelling differences, so `Sayan Mallick` ↔ `Sayan Mullick`), and you confirm with **Save mapping**. Only mapped employees appear in the salary calculation. Mappings are remembered for later months.
 
 **3. Working Hours.** HR sets how long a full day is for **Monday–Friday** and for **Saturday**, and whether Sunday is a paid weekly off. Defaults are 9h 00m, 5h 00m and paid.
 

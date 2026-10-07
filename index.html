@@ -2292,47 +2292,89 @@ function parseSheetTime(v) {
   }
   return mins ? `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}` : null;
 }
+/* Reads attendance rows from a sheet. Two layouts are understood:
+   1. Blocks per employee (the biometric "Raw Sheet" export): an
+      "Empcode <code> … Name <name>" row, then a header row
+      "Date | Day | Shift | IN | Out1 | In2 | … | In8 | Out", then one row per date.
+      IN is the first punch of the day and the last "Out" column the final one.
+   2. One table with an EmpCode column on every row:
+      EmpCode | Name | Date | Day | IN | OUT. */
 function extractAttendance(rows) {
   const norm = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  for (let h = 0; h < Math.min(rows.length, 40); h++) {
-    const cells = (rows[h] || []).map(norm);
-    const col = {};
-    for (const [key, names] of Object.entries(COL_ALIASES)) {
-      for (const n of names) { const i = cells.indexOf(n); if (i >= 0 && !Object.values(col).includes(i)) { col[key] = i; break; } }
+  const blank = (v) => String(v ?? '').trim() === '';
+  const cellText = (v) => (typeof v === 'number' ? String(v) : String(v ?? '').trim());
+  const nextValue = (row, idx) => { for (let j = idx + 1; j < row.length; j++) if (!blank(row[j])) return cellText(row[j]); return ''; };
+  const findCol = (cells, names) => { for (const n of names) { const i = cells.indexOf(n); if (i >= 0) return i; } return -1; };
+  const detectHeader = (cells) => {
+    const date = findCol(cells, COL_ALIASES.date);
+    const inC = findCol(cells, COL_ALIASES.in);
+    const outC = findCol(cells, COL_ALIASES.out);
+    if (date < 0 || (inC < 0 && outC < 0)) return null;
+    const code = findCol(cells, COL_ALIASES.code);
+    const name = findCol(cells, COL_ALIASES.name);
+    const day = findCol(cells, COL_ALIASES.day);
+    // every punch column in order (IN, Out1, In2, …, Out) for multi-punch exports
+    const punches = cells.map((c, i) => (/^(in|out)\d*$/.test(c) || i === inC || i === outC ? i : -1)).filter((i) => i >= 0);
+    return { date, in: inC, out: outC, code: code >= 0 ? code : null, name: name >= 0 ? name : null, day: day >= 0 ? day : null, punches };
+  };
+
+  const out = [];
+  let col = null, skipped = 0, blockCode = '', blockName = '', lastCode = '', lastName = '';
+  for (const row of rows) {
+    if (!row || row.every(blank)) continue;
+    const cells = row.map(norm);
+    const header = detectHeader(cells);
+    if (header) { col = header; continue; }
+    // "Empcode 0003 … Name Sayan" block label row
+    const codeLabel = findCol(cells, COL_ALIASES.code);
+    if (codeLabel >= 0 && !parseSheetDate(row[0])) {
+      blockCode = nextValue(row, codeLabel);
+      const nameLabel = cells.findIndex((c, j) => j > codeLabel && COL_ALIASES.name.includes(c));
+      blockName = nameLabel >= 0 ? nextValue(row, nameLabel) : '';
+      col = null; // wait for this block's header row
+      continue;
     }
-    if (col.code == null || col.date == null || (col.in == null && col.out == null)) continue;
-    const out = [];
-    let skipped = 0, lastCode = '', lastName = '';
-    for (let i = h + 1; i < rows.length; i++) {
-      const row = rows[i] || [];
-      if (row.every((c) => String(c ?? '').trim() === '')) continue;
-      const rawCode = row[col.code];
-      let code = typeof rawCode === 'number' ? String(rawCode) : String(rawCode ?? '').trim();
-      let name = col.name != null ? String(row[col.name] ?? '').trim() : '';
+    if (!col) continue;
+    const date = parseSheetDate(row[col.date]);
+    if (!date) {
+      // totals / notes rows between blocks ("Total Present", …) are ignored;
+      // only rows with an unreadable date are reported as skipped
+      if (/\d/.test(cellText(row[col.date])) && col.punches.some((i) => parseSheetTime(row[i]))) skipped += 1;
+      continue;
+    }
+    let code, name;
+    if (col.code != null) {
+      code = cellText(row[col.code]);
+      name = col.name != null ? cellText(row[col.name]) : '';
       if (code) { if (code !== lastCode) lastName = ''; lastCode = code; if (name) lastName = name; } else code = lastCode;
       name = name || lastName;
-      const date = parseSheetDate(row[col.date]);
-      if (!code || !date) { skipped += 1; continue; }
-      out.push({
-        emp_code: code, emp_name: name, work_date: date,
-        day_label: col.day != null ? String(row[col.day] ?? '').trim().slice(0, 12) : '',
-        punch_in: col.in != null ? parseSheetTime(row[col.in]) : null,
-        punch_out: col.out != null ? parseSheetTime(row[col.out]) : null,
-      });
-    }
-    if (out.length) return { rows: out, skipped };
+    } else { code = blockCode; name = blockName; }
+    if (!code) { skipped += 1; continue; }
+    const times = col.punches.map((i) => parseSheetTime(row[i]));
+    const valid = times.filter(Boolean);
+    let punchIn = col.in >= 0 ? parseSheetTime(row[col.in]) : null;
+    let punchOut = col.out >= 0 ? parseSheetTime(row[col.out]) : null;
+    if (!punchIn && valid.length && col.punches.length > 2) punchIn = valid[0];
+    if (!punchOut && valid.length > 1 && col.punches.length > 2) punchOut = valid[valid.length - 1];
+    out.push({
+      emp_code: code, emp_name: name, work_date: date,
+      day_label: col.day != null ? cellText(row[col.day]).slice(0, 12) : '',
+      punch_in: punchIn, punch_out: punchOut,
+    });
   }
-  return null;
+  return out.length ? { rows: out, skipped } : null;
 }
 async function parseAttendanceFile(file) {
   await loadXLSX();
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  let best = null;
   for (const sheetName of wb.SheetNames) {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: '' });
     const res = extractAttendance(rows);
-    if (res) return { ...res, sheetName };
+    if (res && (!best || res.rows.length > best.rows.length)) best = { ...res, sheetName };
   }
-  throw new Error('Could not find the columns EmpCode, Name, Date, Day, IN and OUT in this file.');
+  if (best) return best;
+  throw new Error('Could not find attendance in this file. Expected an "Empcode … Name" row with a "Date | Day | IN | … | Out" table under it, or the columns EmpCode, Name, Date, Day, IN and OUT.');
 }
 
 /* ---------- Upload flow ---------- */
@@ -2448,7 +2490,7 @@ async function pagePayroll(r) {
 
 function noRunState() {
   return `<div class="card">${emptyState('upload', 'No attendance uploaded yet',
-    'Upload the month’s punch-in/punch-out sheet (.xlsx). Expected columns: <b>EmpCode · Name · Date · Day · IN · OUT</b>.')}
+    'Upload the month’s attendance export from the biometric system (.xlsx) — the “Raw Sheet” with an <b>Empcode · Name</b> block per employee and <b>Date · Day · IN … Out</b> rows — or any sheet with the columns <b>EmpCode · Name · Date · Day · IN · OUT</b>.')}
     <div style="display:flex;justify-content:center;padding-bottom:28px"><button class="btn btn-primary" id="upload-att-empty">${icon('upload', 'sm')}Upload attendance</button></div></div>`;
 }
 
@@ -2685,11 +2727,29 @@ async function pagePayrollMapping() {
   const savedMap = new Map(P.codeMap.map((x) => [x.emp_code, x.employee_id || '']));
   const takenBySaved = new Set([...savedMap.values()].filter(Boolean));
   const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+  const digits = (s) => (String(s || '').match(/\d+/g) || []).join('');
+  const similarity = (a, b) => { // 1 = identical, based on edit distance
+    if (!a || !b) return 0;
+    const d = Array.from({ length: a.length + 1 }, (_, i) => [i]);
+    for (let j = 1; j <= b.length; j++) d[0][j] = j;
+    for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    return 1 - d[a.length][b.length] / Math.max(a.length, b.length);
+  };
+  // Suggest: same Employee ID → same number ignoring prefixes / leading zeros → same name → close spelling.
   const suggest = (g) => {
-    const byCode = emps.find((e) => e.employee_code && e.employee_code.trim().toLowerCase() === g.code.trim().toLowerCase());
+    const code = g.code.trim().toLowerCase();
+    const byCode = emps.find((e) => e.employee_code && e.employee_code.trim().toLowerCase() === code);
     if (byCode) return byCode.id;
-    const byName = emps.filter((e) => normName(e.full_name) && normName(e.full_name) === normName(g.name));
-    return byName.length === 1 ? byName[0].id : '';
+    const num = digits(g.code);
+    const byNum = num ? emps.filter((e) => digits(e.employee_code) && Number(digits(e.employee_code)) === Number(num)) : [];
+    if (byNum.length === 1) return byNum[0].id;
+    const target = normName(g.name);
+    const byName = emps.filter((e) => normName(e.full_name) && normName(e.full_name) === target);
+    if (byName.length === 1) return byName[0].id;
+    const scored = emps.map((e) => ({ id: e.id, score: similarity(normName(e.full_name), target) })).sort((a, b) => b.score - a.score);
+    return scored[0] && scored[0].score >= 0.8 && (!scored[1] || scored[0].score - scored[1].score >= 0.08) ? scored[0].id : '';
   };
   const model = new Map(groups.map((g) => {
     const saved = savedMap.get(g.code);
