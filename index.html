@@ -423,11 +423,56 @@
   .skeleton { background: linear-gradient(90deg, #EEF0F3 25%, #F6F7F9 37%, #EEF0F3 63%); background-size: 400% 100%; animation: shimmer 1.3s ease infinite; border-radius: 8px; }
   @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
+  /* ---------- Payroll ---------- */
+  .st { display: inline-grid; place-items: center; min-width: 32px; height: 22px; padding: 0 6px; border-radius: 6px; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; }
+  .st-F { background: var(--green-soft); color: var(--green); }
+  .st-HD, .st-MPH { background: var(--amber-soft); color: var(--amber); }
+  .st-L { background: var(--red-soft); color: var(--red); }
+  .st-WO, .st-NA { background: var(--gray-soft); color: var(--muted); }
+  .st-MP { background: var(--blue-soft); color: var(--blue); }
+  .st-MPH { box-shadow: inset 0 0 0 1.5px #E9C27A; }
+  .att-wrap { overflow-x: auto; }
+  table.att { border-collapse: separate; border-spacing: 0; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .att th, .att td { min-width: 58px; padding: 7px 5px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); color: var(--text-2); }
+  .att th.lbl { position: sticky; left: 0; z-index: 2; min-width: 128px; text-align: left; padding-left: 16px; background: var(--surface); font-weight: 600; color: var(--text); box-shadow: 1px 0 0 var(--border); }
+  .att tr.hdr td, .att tr.hdr th { background: var(--surface-2); }
+  .att tr.hdr.sub td { font-size: 11.5px; color: var(--muted); }
+  .att td.sun { background: #FAFAFB; }
+  .att tr.final-row td, .att tr.final-row th { background: #FBFBFF; border-bottom: 0; }
+  .att td.changed { box-shadow: inset 0 0 0 2px var(--accent); }
+  .att .short { color: var(--amber); font-weight: 600; }
+  select.st-select { appearance: none; border: 0; border-radius: 6px; height: 24px; padding: 0 16px 0 7px; font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 4px center; }
+  select.st-select:focus { outline: 2px solid var(--accent); }
+  .count-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .count-grid > div { display: grid; justify-items: start; gap: 4px; padding: 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); }
+  .count-grid b { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; color: var(--text); line-height: 1.1; }
+  .count-grid span:last-child { font-size: 12px; color: var(--muted); }
+  .pay-line { margin-top: 14px; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .pay-line.strong { background: var(--green-soft); color: #14532D; }
+  .pay-line b { font-size: 15px; }
+  .legend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .legend span:not(.st) { margin-right: 8px; }
+  .rep-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+  .rep-list { display: grid; gap: 2px; max-height: 260px; overflow-y: auto; }
+  .rep-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .rep-row:last-child { border-bottom: 0; }
+  .rep-row b { font-weight: 500; color: var(--text); }
+  .rep-row > span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+  .rules-list { display: grid; gap: 12px; }
+  .rules-list > div { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-2); }
+  .rules-list .st { flex: none; margin-top: 1px; }
+  .pay-table th.grp { text-align: center; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .pay-table td.diff { color: var(--accent); font-weight: 600; }
+  .pay-table tfoot td { background: var(--surface-2); border-top: 1px solid var(--border); padding: 12px; }
+
   /* ---------- Responsive ---------- */
   @media (max-width: 1100px) {
     .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .split { grid-template-columns: minmax(0, 1fr); }
+    .split { grid-template-columns: minmax(0, 1fr) !important; }
     .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rep-grid { grid-template-columns: minmax(0, 1fr); }
   }
   @media (max-width: 900px) {
     .auth { grid-template-columns: minmax(0, 1fr); }
@@ -448,6 +493,7 @@
   }
   @media (max-width: 640px) {
     .stats, .g2, .g3, .g4, .kv { grid-template-columns: minmax(0, 1fr); }
+    .count-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .span-2 { grid-column: auto; }
     .salary-row { grid-template-columns: 1fr 1fr; }
     .salary-row.head { display: none; }
@@ -538,6 +584,7 @@ const ICONS = {
   phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
   mail: '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 6L2 7"/>',
   wallet: '<path d="M20 12V8H6a2 2 0 0 1 0-4h12v4"/><path d="M4 6v12a2 2 0 0 0 2 2h14v-4"/><path d="M18 12a2 2 0 0 0 0 4h4v-4z"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   sparkle: '<path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -565,6 +612,8 @@ const fmtRelative = (ts) => {
   return fmtDate(new Date(ts).toISOString());
 };
 const INR = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+const INR2 = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtINR2 = (n) => (n === null || n === undefined || n === '' || isNaN(n)) ? '—' : INR2.format(Number(n));
 const fmtINR = (n) => (n === null || n === undefined || n === '' || isNaN(n)) ? '—' : INR.format(Number(n));
 const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
 const colorFor = (s) => { let h = 0; for (const c of String(s || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return AVATAR_COLORS[h % AVATAR_COLORS.length]; };
@@ -750,8 +799,8 @@ let renderSeq = 0;
 
 function parseRoute() {
   const h = location.hash.startsWith('#/') ? location.hash.slice(2) : '';
-  const [page = '', id = ''] = h.split('/');
-  return { page, id: decodeURIComponent(id) };
+  const [page = '', id = '', sub = ''] = h.split('/');
+  return { page, id: decodeURIComponent(id), sub: decodeURIComponent(sub) };
 }
 const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
 
@@ -1329,6 +1378,8 @@ const NAV = {
       { label: 'People' },
       { key: 'access', label: 'Access Control', icon: 'shield', badge: accessBadge },
       { key: 'emd', label: 'Employee Master Data', icon: 'users' },
+      { label: 'Finance' },
+      { key: 'payroll', label: 'Payroll', icon: 'wallet' },
       { label: 'Settings' },
       { key: 'team-access', label: 'Team Access', icon: 'sliders' },
     ];
@@ -1340,7 +1391,7 @@ const NAV = {
   ],
 };
 const PAGES = {
-  admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess },
+  admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, payroll: pagePayroll },
   team: { home: pageTeamHome, profile: pageMyProfile },
 };
 const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
@@ -2000,6 +2051,759 @@ async function pageTeamAccess() {
         try {
           await withBusy(ev.currentTarget, 'Saving…', () => api.saveVisibility(value));
           toast('Team access settings saved.');
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+/* =====================================================================
+   PAYROLL (Module 3) — attendance upload, mapping, day-wise calculation
+   ===================================================================== */
+const DEFAULT_RULES = { weekday_full_minutes: 540, saturday_full_minutes: 300, sunday_paid_off: true };
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const ST_LABEL = { F: 'F', HD: 'HD', L: 'L', WO: 'WO', MP: 'MP', MPH: 'HD', NA: '—' };
+const ST_TITLE = {
+  F: 'Full day', HD: 'Half day — worked less than the full-day hours', L: 'Leave — no punch in or out',
+  WO: 'Weekly off (Sunday)', MP: 'Missed punch — counted as a full day', MPH: 'Half day — every 3rd missed punch',
+  NA: 'Before date of joining — not counted',
+};
+const SYSTEM_TO_FINAL = { F: 'F', MP: 'F', HD: 'HD', MPH: 'HD', L: 'L', WO: 'WO', NA: 'NA' };
+const XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+
+state.payroll = { runs: null, runId: null, data: null, codeMap: null, rules: null };
+
+// Supabase returns at most 1,000 rows per request, so page through.
+async function fetchAll(build, pageSize = 1000) {
+  const out = [];
+  for (let from = 0; ; from += pageSize) {
+    const rows = await q(build().range(from, from + pageSize - 1));
+    out.push(...rows);
+    if (rows.length < pageSize) return out;
+  }
+}
+
+const payrollApi = {
+  runs: () => q(db.from('payroll_runs').select('*').is('superseded_at', null).order('month', { ascending: false })),
+  punches: (runId) => fetchAll(() => db.from('attendance_punches')
+    .select('emp_code, emp_name, work_date, day_label, punch_in, punch_out').eq('run_id', runId).order('id')),
+  adjustments: (runId) => fetchAll(() => db.from('attendance_adjustments')
+    .select('emp_code, work_date, final_status').eq('run_id', runId).order('work_date')),
+  results: (runId) => fetchAll(() => db.from('payroll_results').select('*').eq('run_id', runId).eq('included', true).order('emp_code')),
+  codeMap: () => fetchAll(() => db.from('attendance_code_map').select('*').order('emp_code')),
+  rules: async () => {
+    const row = await q(db.from('app_settings').select('value').eq('key', 'attendance_rules').maybeSingle());
+    return { ...DEFAULT_RULES, ...(row?.value || {}) };
+  },
+  saveRules: (value) => q(db.from('app_settings')
+    .update({ value, updated_by: state.user.id, updated_at: new Date().toISOString() })
+    .eq('key', 'attendance_rules').select()),
+};
+
+async function ensurePayroll({ reload = false } = {}) {
+  await ensureAdmin();
+  const P = state.payroll;
+  if (!P.runs || reload) {
+    [P.runs, P.codeMap, P.rules] = await Promise.all([payrollApi.runs(), payrollApi.codeMap(), payrollApi.rules()]);
+  }
+  if (!P.runs.some((r) => r.id === P.runId)) P.runId = P.runs[0]?.id || null;
+  if (!P.runId) { P.data = null; return; }
+  if (!P.data || P.data.runId !== P.runId || reload) {
+    const [punches, adjustments, results] = await Promise.all([
+      payrollApi.punches(P.runId), payrollApi.adjustments(P.runId), payrollApi.results(P.runId)]);
+    P.data = { runId: P.runId, punches, adjustments, results };
+  }
+}
+const currentRun = () => state.payroll.runs?.find((r) => r.id === state.payroll.runId) || null;
+
+/* ---------- Attendance rules engine ---------- */
+const timeToMin = (t) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
+const fmtClock = (t) => (t ? String(t).slice(0, 5) : '—');
+const fmtDuration = (m) => (m == null ? '—' : `${Math.floor(m / 60)}h ${pad(m % 60)}m`);
+const daysInMonth = (monthIso) => { const d = parseISODate(monthIso); return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); };
+const stChip = (s, title) => `<span class="st st-${s}" title="${esc(title || ST_TITLE[s] || '')}">${ST_LABEL[s] || s}</span>`;
+
+/* Builds every day of the month for one employee.
+   Rules: both punches and ≥ full-day hours → F; both but shorter → HD;
+   one punch missing → missed punch (every 3rd one is a half day, the rest
+   count as full days); no punches → L; Sunday → weekly off. */
+function computeAttendance(rows, monthIso, rules, adjustments, doj) {
+  const byDate = new Map(rows.map((r) => [r.work_date, r]));
+  const base = parseISODate(monthIso);
+  const days = [];
+  let misses = 0;
+  for (let i = 1; i <= daysInMonth(monthIso); i++) {
+    const iso = `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(i)}`;
+    const wd = new Date(base.getFullYear(), base.getMonth(), i).getDay();
+    const r = byDate.get(iso);
+    const inM = timeToMin(r?.punch_in);
+    const rawOut = timeToMin(r?.punch_out);
+    const outM = inM != null && rawOut === inM ? null : rawOut; // the same time twice is a single punch
+    const need = wd === 6 ? rules.saturday_full_minutes : rules.weekday_full_minutes;
+    let mins = null, sys, missNo = null;
+    if (doj && iso < doj) sys = 'NA';
+    else if (wd === 0) sys = 'WO';
+    else if (inM != null && outM != null) {
+      mins = outM - inM;
+      if (mins < 0) mins += 1440; // overnight shift
+      sys = mins >= need ? 'F' : 'HD';
+    } else if (inM != null || outM != null) {
+      misses += 1; missNo = misses;
+      sys = misses % 3 === 0 ? 'MPH' : 'MP';
+    } else sys = 'L';
+    const editable = sys === 'HD' || sys === 'L' || sys === 'MP' || sys === 'MPH';
+    const systemFinal = SYSTEM_TO_FINAL[sys];
+    const adj = editable ? adjustments.get(iso) || null : null;
+    days.push({
+      iso, d: i, wd, dayLabel: r?.day_label || DAY_NAMES[wd], in: r?.punch_in || null, out: outM == null ? null : r?.punch_out,
+      inM, outM, mins, need, sys, missNo, editable, systemFinal, saved: adj, final: adj || systemFinal,
+      missing: sys === 'MP' || sys === 'MPH' ? (inM == null ? 'IN' : 'OUT') : null,
+    });
+  }
+  return days;
+}
+function tally(days, which) {
+  const c = { F: 0, HD: 0, L: 0, WO: 0 };
+  for (const d of days) {
+    const s = which === 'system' ? SYSTEM_TO_FINAL[d.sys] : d.final;
+    if (s in c) c[s] += 1;
+  }
+  return c;
+}
+function salaryForMonth(empId, monthIso) {
+  const rows = salariesOf(empId).filter((s) => s.effective_month <= monthIso);
+  const row = rows[rows.length - 1] || salariesOf(empId)[0];
+  return row ? Number(row.amount) : null;
+}
+function payFor(counts, salary, rules) {
+  const daily = salary ? salary / 30 : 0;
+  const fullDays = counts.F + (rules.sunday_paid_off ? counts.WO : 0);
+  return { daily, fullDays, payable: Math.round(fullDays * daily + counts.HD * daily * 0.5) };
+}
+function groupPunches(punches) {
+  const groups = new Map();
+  for (const p of punches) {
+    if (!groups.has(p.emp_code)) groups.set(p.emp_code, { code: p.emp_code, name: p.emp_name || '', rows: [] });
+    const g = groups.get(p.emp_code);
+    if (!g.name && p.emp_name) g.name = p.emp_name;
+    g.rows.push(p);
+  }
+  return [...groups.values()].sort((a, b) => (a.name || a.code).localeCompare(b.name || b.code));
+}
+const codeMapIndex = () => new Map(state.payroll.codeMap.filter((m) => m.employee_id).map((m) => [m.emp_code, m.employee_id]));
+
+function payrollSheet() {
+  const P = state.payroll;
+  const run = currentRun();
+  if (!run || !P.data) return { run, mapped: [], unmapped: [], groups: [] };
+  const groups = groupPunches(P.data.punches);
+  const map = codeMapIndex();
+  const adjByCode = new Map();
+  for (const a of P.data.adjustments) {
+    if (!a.final_status) continue;
+    if (!adjByCode.has(a.emp_code)) adjByCode.set(a.emp_code, new Map());
+    adjByCode.get(a.emp_code).set(a.work_date, a.final_status);
+  }
+  const mapped = [], unmapped = [];
+  for (const g of groups) {
+    const emp = byId(map.get(g.code));
+    if (!emp) { unmapped.push(g); continue; }
+    const days = computeAttendance(g.rows, run.month, P.rules, adjByCode.get(g.code) || new Map(), emp.date_of_joining);
+    const pre = tally(days, 'system');
+    const post = tally(days, 'final');
+    const salary = salaryForMonth(emp.id, run.month);
+    mapped.push({ g, emp, days, pre, post, salary, prePay: payFor(pre, salary, P.rules), ...payFor(post, salary, P.rules) });
+  }
+  mapped.sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
+  return { run, groups, mapped, unmapped };
+}
+
+/* ---------- Excel parsing (in the browser; the file is never uploaded) ---------- */
+let xlsxLoading = null;
+function loadXLSX() {
+  if (window.XLSX) return Promise.resolve();
+  if (!xlsxLoading) {
+    xlsxLoading = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = XLSX_SRC;
+      s.onload = resolve;
+      s.onerror = () => { xlsxLoading = null; reject(new Error('Could not load the Excel reader. Check your connection and try again.')); };
+      document.head.appendChild(s);
+    });
+  }
+  return xlsxLoading;
+}
+const COL_ALIASES = {
+  code: ['empcode', 'employeecode', 'ecode', 'empid', 'employeeid', 'empno', 'employeeno', 'code', 'cardno', 'staffcode'],
+  name: ['name', 'empname', 'employeename', 'employee', 'staffname'],
+  date: ['date', 'attdate', 'attendancedate', 'punchdate', 'workdate'],
+  day: ['day', 'weekday', 'dayname'],
+  in: ['in', 'intime', 'punchin', 'checkin', 'timein', 'firstin', 'inpunch'],
+  out: ['out', 'outtime', 'punchout', 'checkout', 'timeout', 'lastout', 'outpunch'],
+};
+const MONTH_IDX = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+const isoOf = (y, m, d) => {
+  if (y < 100) y += 2000;
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d ? `${y}-${pad(m)}-${pad(d)}` : null;
+};
+function parseSheetDate(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') {
+    if (v < 1 || v > 80000) return null;
+    const p = XLSX.SSF.parse_date_code(v);
+    return p ? isoOf(p.y, p.m, p.d) : null;
+  }
+  if (v instanceof Date) return isoOf(v.getFullYear(), v.getMonth() + 1, v.getDate());
+  const s = String(v).trim();
+  let m;
+  if ((m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/))) return isoOf(+m[1], +m[2], +m[3]);
+  if ((m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})/))) {
+    let d = +m[1], mo = +m[2];
+    if (mo > 12 && d <= 12) [d, mo] = [mo, d]; // month-first dates
+    return isoOf(+m[3], mo, d);
+  }
+  if ((m = s.match(/^(\d{1,2})[-\s/.]([A-Za-z]{3,})[-\s/.,]*(\d{2,4})/))) {
+    const mo = MONTH_IDX[m[2].slice(0, 3).toLowerCase()];
+    return mo ? isoOf(+m[3], mo, +m[1]) : null;
+  }
+  if ((m = s.match(/^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{4})/))) {
+    const mo = MONTH_IDX[m[1].slice(0, 3).toLowerCase()];
+    return mo ? isoOf(+m[3], mo, +m[2]) : null;
+  }
+  return null;
+}
+// "00:00" and blanks mean no punch.
+function parseSheetTime(v) {
+  if (v == null || v === '') return null;
+  let mins = null;
+  if (typeof v === 'number') {
+    mins = Math.round((v - Math.floor(v)) * 1440) % 1440;
+  } else if (v instanceof Date) {
+    mins = v.getHours() * 60 + v.getMinutes();
+  } else {
+    const m = String(v).trim().match(/(\d{1,2})[:.](\d{2})(?:[:.]\d{2})?\s*([ap])?\.?\s*m?\.?/i);
+    if (!m) return null;
+    let h = +m[1];
+    const min = +m[2];
+    if (m[3]) { const pm = m[3].toLowerCase() === 'p'; if (h === 12) h = pm ? 12 : 0; else if (pm) h += 12; }
+    if (h > 23 || min > 59) return null;
+    mins = h * 60 + min;
+  }
+  return mins ? `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}` : null;
+}
+function extractAttendance(rows) {
+  const norm = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (let h = 0; h < Math.min(rows.length, 40); h++) {
+    const cells = (rows[h] || []).map(norm);
+    const col = {};
+    for (const [key, names] of Object.entries(COL_ALIASES)) {
+      for (const n of names) { const i = cells.indexOf(n); if (i >= 0 && !Object.values(col).includes(i)) { col[key] = i; break; } }
+    }
+    if (col.code == null || col.date == null || (col.in == null && col.out == null)) continue;
+    const out = [];
+    let skipped = 0, lastCode = '', lastName = '';
+    for (let i = h + 1; i < rows.length; i++) {
+      const row = rows[i] || [];
+      if (row.every((c) => String(c ?? '').trim() === '')) continue;
+      const rawCode = row[col.code];
+      let code = typeof rawCode === 'number' ? String(rawCode) : String(rawCode ?? '').trim();
+      let name = col.name != null ? String(row[col.name] ?? '').trim() : '';
+      if (code) { if (code !== lastCode) lastName = ''; lastCode = code; if (name) lastName = name; } else code = lastCode;
+      name = name || lastName;
+      const date = parseSheetDate(row[col.date]);
+      if (!code || !date) { skipped += 1; continue; }
+      out.push({
+        emp_code: code, emp_name: name, work_date: date,
+        day_label: col.day != null ? String(row[col.day] ?? '').trim().slice(0, 12) : '',
+        punch_in: col.in != null ? parseSheetTime(row[col.in]) : null,
+        punch_out: col.out != null ? parseSheetTime(row[col.out]) : null,
+      });
+    }
+    if (out.length) return { rows: out, skipped };
+  }
+  return null;
+}
+async function parseAttendanceFile(file) {
+  await loadXLSX();
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  for (const sheetName of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, raw: true, defval: '' });
+    const res = extractAttendance(rows);
+    if (res) return { ...res, sheetName };
+  }
+  throw new Error('Could not find the columns EmpCode, Name, Date, Day, IN and OUT in this file.');
+}
+
+/* ---------- Upload flow ---------- */
+function pickAttendanceFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls,.csv';
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const busy = toastBusy(`Reading ${file.name}…`);
+    try {
+      const parsed = await parseAttendanceFile(file);
+      busy();
+      showImportPreview(file, parsed);
+    } catch (e) { busy(); toast(friendlyError(e), 'error'); }
+  });
+  input.click();
+}
+function toastBusy(text) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `${spinnerHTML}<span>${esc(text)}</span>`;
+  $('#toast-root').appendChild(el);
+  return () => el.remove();
+}
+function showImportPreview(file, parsed) {
+  const counts = {};
+  for (const r of parsed.rows) { const k = r.work_date.slice(0, 7); counts[k] = (counts[k] || 0) + 1; }
+  const guess = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+  const [gy, gm] = guess.split('-').map(Number);
+  const summarize = (monthIso) => {
+    const key = monthIso.slice(0, 7);
+    const rows = parsed.rows.filter((r) => r.work_date.startsWith(key));
+    const emps = groupPunches(rows);
+    const dates = rows.map((r) => r.work_date).sort();
+    return { rows, emps, outside: parsed.rows.length - rows.length, first: dates[0], last: dates[dates.length - 1] };
+  };
+  const { el, close } = openModal({
+    title: 'Upload attendance', size: 'md',
+    subtitle: `${esc(file.name)} · sheet “${esc(parsed.sheetName)}” · the file itself is not stored`,
+    body: `<div class="field" style="margin-bottom:16px"><label>Payroll month</label>
+             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:280px">${monthYearSelects('imp', gy, gm)}</div></div>
+           <div id="imp-summary"></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-save>${icon('upload', 'sm')}Save attendance</button>`,
+  });
+  const monthIso = () => monthStart($('[data-y="imp"]', el).value, Number($('[data-m="imp"]', el).value));
+  const draw = () => {
+    const s = summarize(monthIso());
+    const existing = state.payroll.runs?.find((r) => r.month === monthIso());
+    $('#imp-summary', el).innerHTML = `
+      <div class="kv" style="margin-bottom:14px">
+        <div><div class="k">Employees</div><div class="v">${s.emps.length}</div></div>
+        <div><div class="k">Attendance rows</div><div class="v">${s.rows.length}</div></div>
+        <div><div class="k">Dates</div><div class="v">${s.first ? `${fmtDate(s.first)} – ${fmtDate(s.last)}` : '—'}</div></div>
+        <div><div class="k">Skipped rows</div><div class="v">${parsed.skipped + s.outside}</div></div>
+      </div>
+      ${s.outside ? `<div class="alert alert-warn" style="margin-bottom:10px">${icon('alert')}<span>${s.outside} row(s) fall outside ${fmtMonth(monthIso())} and will be left out.</span></div>` : ''}
+      ${existing ? `<div class="alert alert-warn" style="margin-bottom:10px">${icon('alert')}<span>${fmtMonth(monthIso())} already has an upload (${esc(existing.source_file_name || 'file')}). Saving replaces it; your day-wise changes are carried over and the old upload is kept in history.</span></div>` : ''}
+      ${s.emps.length ? `<div class="table-wrap" style="max-height:220px;border:1px solid var(--border);border-radius:10px"><table class="table">
+        <thead><tr><th>EmpCode</th><th>Name in sheet</th><th class="num">Days</th><th class="num">Days with punches</th></tr></thead><tbody>
+        ${s.emps.map((g) => `<tr><td class="mono">${esc(g.code)}</td><td>${esc(g.name || '—')}</td><td class="num">${g.rows.length}</td>
+          <td class="num">${g.rows.filter((r) => r.punch_in || r.punch_out).length}</td></tr>`).join('')}
+        </tbody></table></div>` : `<div class="alert alert-error">${icon('alert')}<span>No rows for ${fmtMonth(monthIso())}. Pick the month the sheet is for.</span></div>`}`;
+    $('[data-save]', el).disabled = !s.rows.length;
+  };
+  $$('[data-m="imp"], [data-y="imp"]', el).forEach((sel) => sel.addEventListener('change', draw));
+  draw();
+  $('[data-save]', el).addEventListener('click', async (e) => {
+    const month = monthIso();
+    const { rows } = summarize(month);
+    try {
+      const runId = await withBusy(e.currentTarget, 'Saving…', () => api.rpc('admin_import_attendance', { p_month: month, p_file_name: file.name, p_rows: rows }));
+      close();
+      state.payroll.runId = runId;
+      await ensurePayroll({ reload: true });
+      const unmapped = payrollSheet().unmapped.length;
+      toast(`Attendance for ${fmtMonth(month)} saved.${unmapped ? ` ${unmapped} employee(s) need mapping.` : ''}`);
+      go(unmapped ? '#/payroll/mapping' : '#/payroll');
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
+}
+
+/* ---------- Payroll page ---------- */
+function payrollTabs(active) {
+  const tabs = [['calc', '#/payroll', 'Salary Calculation'], ['mapping', '#/payroll/mapping', 'Mapping'], ['rules', '#/payroll/rules', 'Working Hours']];
+  return `<div><nav class="tabs">${tabs.map(([k, href, l]) => `<a href="${href}" class="${k === active ? 'active' : ''}">${l}</a>`).join('')}</nav></div>`;
+}
+function payrollActions() {
+  const P = state.payroll;
+  const runSelect = P.runs.length
+    ? `<select class="input" id="run-select" style="height:34px;width:auto;min-width:150px" title="Payroll month">
+        ${P.runs.map((r) => `<option value="${r.id}" ${r.id === P.runId ? 'selected' : ''}>${fmtMonth(r.month)}</option>`).join('')}</select>`
+    : '';
+  return `${runSelect}<button class="btn btn-sm btn-primary" id="upload-att">${icon('upload', 'sm')}Upload attendance</button>`;
+}
+function mountPayrollActions() {
+  $('#upload-att')?.addEventListener('click', pickAttendanceFile);
+  $('#run-select')?.addEventListener('change', async (e) => {
+    state.payroll.runId = e.target.value;
+    render();
+  });
+}
+const rulesSummary = (r) => `Full day: Mon–Fri ${fmtDuration(r.weekday_full_minutes)} · Sat ${fmtDuration(r.saturday_full_minutes)} · Sunday ${r.sunday_paid_off ? 'paid weekly off' : 'unpaid weekly off'}`;
+
+async function pagePayroll(r) {
+  await ensurePayroll();
+  if (r.id === 'emp') return pagePayrollEmployee(r.sub);
+  if (r.id === 'mapping') return pagePayrollMapping();
+  if (r.id === 'rules') return pagePayrollRules();
+  return pagePayrollCalc();
+}
+
+function noRunState() {
+  return `<div class="card">${emptyState('upload', 'No attendance uploaded yet',
+    'Upload the month’s punch-in/punch-out sheet (.xlsx). Expected columns: <b>EmpCode · Name · Date · Day · IN · OUT</b>.')}
+    <div style="display:flex;justify-content:center;padding-bottom:28px"><button class="btn btn-primary" id="upload-att-empty">${icon('upload', 'sm')}Upload attendance</button></div></div>`;
+}
+
+async function pagePayrollCalc() {
+  const P = state.payroll;
+  const { run, mapped, unmapped, groups } = payrollSheet();
+  const base = { title: 'Payroll', crumbs: 'Monthly salary calculation from attendance', actions: payrollActions() };
+  if (!run) {
+    return { ...base, html: payrollTabs('calc') + noRunState(), mount() { mountPayrollActions(); $('#upload-att-empty')?.addEventListener('click', pickAttendanceFile); } };
+  }
+  const saved = new Map(P.data.results.map((x) => [x.employee_id, x]));
+  const changed = run.processed_at && mapped.some((m) => !saved.has(m.emp.id) || Number(saved.get(m.emp.id).payable) !== m.payable);
+  const total = mapped.reduce((s, m) => s + m.payable, 0);
+  const noSalary = mapped.filter((m) => m.salary == null);
+  const cell = (c, k) => `<td class="num">${c[k]}</td>`;
+  return {
+    ...base,
+    html: `${payrollTabs('calc')}
+      <div class="stats">
+        <div class="card stat"><div class="top"><span>Month</span><span class="ico" style="background:var(--accent-soft);color:var(--accent)">${icon('calendar')}</span></div>
+          <div class="value" style="font-size:22px">${fmtMonth(run.month)}</div><div class="foot" title="${esc(fmtDateTime(run.uploaded_at))}">${esc(run.source_file_name || 'Uploaded sheet')} · ${fmtRelative(run.uploaded_at)}</div></div>
+        <div class="card stat"><div class="top"><span>Employees in sheet</span><span class="ico" style="background:var(--blue-soft);color:var(--blue)">${icon('users')}</span></div>
+          <div class="value">${groups.length}</div><div class="foot">${mapped.length} mapped · ${unmapped.length} not mapped</div></div>
+        <div class="card stat"><div class="top"><span>Total payable</span><span class="ico" style="background:var(--green-soft);color:var(--green)">${icon('wallet')}</span></div>
+          <div class="value" style="font-size:24px">${fmtINR(total)}</div><div class="foot">After admin adjustments</div></div>
+        <div class="card stat"><div class="top"><span>Payroll status</span><span class="ico" style="background:var(--violet-soft);color:var(--violet)">${icon('fileCheck')}</span></div>
+          <div class="value" style="font-size:18px">${run.processed_at ? (changed ? '<span class="chip amber">Changed since save</span>' : '<span class="chip green">Saved</span>') : '<span class="chip gray">Not saved</span>'}</div>
+          <div class="foot">${run.processed_at ? `Saved ${fmtRelative(run.processed_at)}` : 'Review, then save the payroll'}</div></div>
+      </div>
+      ${unmapped.length ? `<div class="alert alert-warn">${icon('alert')}<span><b>${unmapped.length} employee(s) in the sheet are not mapped</b> to Employee Master Data, so they are not in the calculation. <a href="#/payroll/mapping">Map them</a>.</span></div>` : ''}
+      ${noSalary.length ? `<div class="alert alert-warn">${icon('alert')}<span>No salary in Employee Master Data for: ${noSalary.map((m) => esc(m.emp.full_name)).join(', ')}. Their payable shows ₹0 and they are left out when saving.</span></div>` : ''}
+      <div class="card">
+        <div class="card-head"><div><h3>Salary calculation — ${fmtMonth(run.month)}</h3><p>${rulesSummary(P.rules)} · Daily salary = monthly ÷ 30 · Payable = (Full day${P.rules.sunday_paid_off ? ' + WO' : ''}) × daily + Half day × daily × 0.5</p></div>
+          <div class="right"><button class="btn btn-sm" id="export-payroll" ${mapped.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>
+          <button class="btn btn-sm btn-primary" id="save-payroll" ${mapped.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payroll</button></div></div>
+        ${mapped.length ? `<div class="table-wrap"><table class="table compact pay-table">
+          <thead>
+            <tr><th rowspan="2">Employee</th><th rowspan="2">EmpCode</th><th rowspan="2" class="num">Monthly salary</th><th rowspan="2" class="num">Daily</th>
+              <th colspan="3" class="grp">Pre-adjustment (system)</th><th colspan="3" class="grp">Post-adjustment (final)</th>
+              <th rowspan="2" class="num">WO</th><th rowspan="2" class="num">Payable</th><th rowspan="2"></th></tr>
+            <tr><th class="num">F</th><th class="num">HD</th><th class="num">L</th><th class="num">F</th><th class="num">HD</th><th class="num">L</th></tr>
+          </thead>
+          <tbody>${mapped.map((m) => `<tr data-href="#/payroll/emp/${encodeURIComponent(m.g.code)}">
+            <td>${person(m.emp, esc(m.emp.employee_code || 'No EID'))}</td><td class="mono">${esc(m.g.code)}</td>
+            <td class="num">${m.salary == null ? '<span class="chip amber plain">Not set</span>' : fmtINR(m.salary)}</td>
+            <td class="num">${m.salary == null ? '—' : fmtINR2(m.daily)}</td>
+            ${cell(m.pre, 'F')}${cell(m.pre, 'HD')}${cell(m.pre, 'L')}
+            <td class="num ${m.post.F !== m.pre.F ? 'diff' : ''}">${m.post.F}</td><td class="num ${m.post.HD !== m.pre.HD ? 'diff' : ''}">${m.post.HD}</td><td class="num ${m.post.L !== m.pre.L ? 'diff' : ''}">${m.post.L}</td>
+            <td class="num">${m.post.WO}</td>
+            <td class="num"><b style="color:var(--text)">${fmtINR(m.payable)}</b>${m.payable !== m.prePay.payable ? `<div class="faint" style="font-size:11.5px">system ${fmtINR(m.prePay.payable)}</div>` : ''}</td>
+            <td class="actions"><a class="icon-btn" href="#/payroll/emp/${encodeURIComponent(m.g.code)}" title="Day-wise attendance" aria-label="Day-wise attendance">${icon('arrowRight')}</a></td></tr>`).join('')}
+          </tbody>
+          <tfoot><tr><td colspan="11" style="text-align:right;font-weight:600">Total payable</td><td class="num"><b style="color:var(--text)">${fmtINR(total)}</b></td><td></td></tr></tfoot>
+        </table></div>` : emptyState('users', 'No mapped employees yet', 'Map the sheet’s EmpCodes to employees in the <a href="#/payroll/mapping">Mapping</a> tab.')}
+      </div>`,
+    mount() {
+      mountPayrollActions();
+      $('.pay-table tbody')?.addEventListener('click', (ev) => {
+        const tr = ev.target.closest('tr[data-href]');
+        if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href;
+      });
+      $('#export-payroll')?.addEventListener('click', () => exportPayrollCsv(run, mapped));
+      $('#save-payroll')?.addEventListener('click', async (ev) => {
+        const results = mapped.filter((m) => m.salary != null).map((m) => ({
+          employee_id: m.emp.id, emp_code: m.g.code, monthly_salary: m.salary, daily_salary: Number(m.daily.toFixed(4)),
+          pre_full: m.pre.F, pre_half: m.pre.HD, pre_leave: m.pre.L, pre_weekly_off: m.pre.WO,
+          post_full: m.post.F, post_half: m.post.HD, post_leave: m.post.L, post_weekly_off: m.post.WO, payable: m.payable,
+        }));
+        try {
+          await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_save_payroll', { p_run: run.id, p_results: results, p_rules: P.rules }));
+          toast(`Payroll for ${fmtMonth(run.month)} saved — ${results.length} employee(s), ${fmtINR(results.reduce((s, x) => s + x.payable, 0))}.`);
+          await ensurePayroll({ reload: true });
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+function exportPayrollCsv(run, mapped) {
+  const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const header = ['Employee', 'Employee ID', 'EmpCode', 'Monthly Salary', 'Daily Salary', 'Pre Full', 'Pre Half', 'Pre Leave',
+    'Post Full', 'Post Half', 'Post Leave', 'Weekly Off', 'Payable'];
+  const lines = mapped.map((m) => [m.emp.full_name, m.emp.employee_code, m.g.code, m.salary ?? '', m.salary == null ? '' : m.daily.toFixed(2),
+    m.pre.F, m.pre.HD, m.pre.L, m.post.F, m.post.HD, m.post.L, m.post.WO, m.payable].map(cell).join(','));
+  const blob = new Blob(['﻿' + [header.join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `altius-payroll-${run.month.slice(0, 7)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ---------- Day-wise view for one employee ---------- */
+async function pagePayrollEmployee(code) {
+  const P = state.payroll;
+  const sheet = payrollSheet();
+  const m = sheet.mapped.find((x) => x.g.code === code);
+  const back = `<a class="btn btn-sm" href="#/payroll">${icon('arrowLeft', 'sm')}Back to payroll</a>`;
+  if (!m) {
+    return {
+      title: 'Payroll', crumbs: `<a href="#/payroll">Payroll</a>`, actions: back,
+      html: `<div class="card">${emptyState('users', 'Employee not in this month’s calculation', `EmpCode ${esc(code)} is not mapped or not in the ${sheet.run ? fmtMonth(sheet.run.month) : ''} sheet. Check the <a href="#/payroll/mapping">Mapping</a> tab.`)}</div>`,
+    };
+  }
+  const run = sheet.run;
+  // working copy of the final line: iso -> status (only editable days)
+  const edits = new Map(m.days.filter((d) => d.editable).map((d) => [d.iso, d.final]));
+
+  const daysNow = () => m.days.map((d) => (d.editable ? { ...d, final: edits.get(d.iso) } : d));
+  const countsHTML = (title, sub, c, pay, emphasize) => `
+    <div class="card"><div class="card-head"><div><h3>${title}</h3><p>${sub}</p></div></div>
+      <div class="card-body"><div class="count-grid">
+        <div><span class="st st-F">F</span><b>${c.F}</b><span>Full day</span></div>
+        <div><span class="st st-HD">HD</span><b>${c.HD}</b><span>Half day</span></div>
+        <div><span class="st st-L">L</span><b>${c.L}</b><span>Leave</span></div>
+        <div><span class="st st-WO">WO</span><b>${c.WO}</b><span>Weekly off</span></div>
+      </div>
+      <div class="pay-line ${emphasize ? 'strong' : ''}">${m.salary == null ? 'No salary in Employee Master Data'
+        : `(${c.F}${P.rules.sunday_paid_off ? ` + ${c.WO}` : ''}) × ${fmtINR2(pay.daily)} + ${c.HD} × ${fmtINR2(pay.daily)} × 0.5 = <b>${fmtINR(pay.payable)}</b>`}</div>
+      </div></div>`;
+  const summaryHTML = () => {
+    const days = daysNow();
+    const post = tally(days, 'final');
+    return `<div class="split" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      ${countsHTML('Pre-adjustment', 'System calculation from the punches', m.pre, m.prePay, false)}
+      ${countsHTML('Post-adjustment', 'Final — after admin changes. Salary is paid on this.', post, payFor(post, m.salary, P.rules), true)}</div>`;
+  };
+  const gridHTML = () => {
+    const days = daysNow();
+    const head = (label, fn, cls = '') => `<tr class="${cls}"><th class="lbl">${label}</th>${days.map((d) => `<td class="${d.wd === 0 ? 'sun' : ''}">${fn(d)}</td>`).join('')}</tr>`;
+    return `<table class="att">
+      <thead>${head('Date', (d) => `<b>${pad(d.d)}</b>`, 'hdr')}${head('Day', (d) => esc(d.dayLabel), 'hdr sub')}</thead>
+      <tbody>
+        ${head('IN', (d) => (d.inM == null ? '<span class="faint">—</span>' : fmtClock(d.in)))}
+        ${head('OUT', (d) => (d.outM == null ? '<span class="faint">—</span>' : fmtClock(d.out)))}
+        ${head('Worked', (d) => (d.mins == null ? '<span class="faint">—</span>' : `<span class="${d.mins < d.need ? 'short' : ''}">${fmtDuration(d.mins).replace(' ', '')}</span>`))}
+        ${head('System', (d) => stChip(d.sys, d.sys === 'MP' || d.sys === 'MPH' ? `${ST_TITLE[d.sys]} (missed ${d.missing}, miss #${d.missNo})` : d.sys === 'HD' ? `${ST_TITLE.HD}: ${fmtDuration(d.mins)} of ${fmtDuration(d.need)}` : ST_TITLE[d.sys]))}
+        <tr class="final-row"><th class="lbl">Final<div class="faint" style="font-weight:400;font-size:11px">change HD / L / missed</div></th>${days.map((d) => `<td class="${d.wd === 0 ? 'sun' : ''} ${d.editable && d.final !== d.systemFinal ? 'changed' : ''}">${d.editable
+          ? `<select class="st-select st-${d.final}" data-day="${d.iso}">${['F', 'HD', 'L'].map((s) => `<option value="${s}" ${s === d.final ? 'selected' : ''}>${s}</option>`).join('')}</select>`
+          : stChip(d.final)}</td>`).join('')}</tr>
+      </tbody></table>`;
+  };
+  const reportsHTML = () => {
+    const days = daysNow();
+    const short = m.days.filter((d) => d.sys === 'HD');
+    const missed = m.days.filter((d) => d.sys === 'MP' || d.sys === 'MPH');
+    const leave = m.days.filter((d) => d.sys === 'L');
+    const changedDays = days.filter((d) => d.editable && d.final !== d.systemFinal);
+    const list = (items, fn, empty) => (items.length ? `<div class="rep-list">${items.map(fn).join('')}</div>` : `<p class="muted" style="font-size:13px">${empty}</p>`);
+    const dl = (d) => `<b>${fmtDate(d.iso)}</b> <span class="faint">${esc(d.dayLabel)}</span>`;
+    return `<div class="rep-grid">
+      <div class="card"><div class="card-head"><div><h3>Half days — short hours</h3><p>Both punches, but under the full-day hours</p></div><div class="right"><span class="chip amber plain">${short.length}</span></div></div>
+        <div class="card-body">${list(short, (d) => `<div class="rep-row">${dl(d)}<span>${fmtClock(d.in)}–${fmtClock(d.out)} · ${fmtDuration(d.mins)} of ${fmtDuration(d.need)}</span></div>`, 'None this month.')}</div></div>
+      <div class="card"><div class="card-head"><div><h3>Missed punches</h3><p>Every 3rd missed punch becomes a half day</p></div><div class="right"><span class="chip violet plain">${missed.filter((d) => d.sys === 'MPH').length} HD from ${missed.length}</span></div></div>
+        <div class="card-body">${list(missed, (d) => `<div class="rep-row">${dl(d)}<span>Missed ${d.missing} · miss #${d.missNo} → ${d.sys === 'MPH' ? '<span class="st st-MPH">HD</span> half day' : '<span class="st st-MP">MP</span> counted full'}</span></div>`, 'No missed punches.')}</div></div>
+      <div class="card"><div class="card-head"><div><h3>Leaves</h3><p>No punch in or out on a working day</p></div><div class="right"><span class="chip red plain">${leave.length}</span></div></div>
+        <div class="card-body">${list(leave, (d) => `<div class="rep-row">${dl(d)}</div>`, 'No leaves.')}</div></div>
+      <div class="card"><div class="card-head"><div><h3>Admin changes</h3><p>Days changed in the Final line</p></div><div class="right"><span class="chip blue plain">${changedDays.length}</span></div></div>
+        <div class="card-body">${list(changedDays, (d) => `<div class="rep-row">${dl(d)}<span>${stChip(d.sys)} → ${stChip(d.final)}</span></div>`, 'No changes — the system calculation is used.')}</div></div>
+    </div>`;
+  };
+
+  return {
+    title: m.emp.full_name,
+    crumbs: `<a href="#/payroll">Payroll</a> &nbsp;/&nbsp; ${fmtMonth(run.month)} &nbsp;/&nbsp; Day-wise attendance`,
+    actions: back,
+    html: `
+      <div class="card emp-head">${avatar(m.emp, 'lg')}
+        <div style="min-width:0"><h2>${esc(m.emp.full_name)}</h2>
+          <div class="meta"><span>${esc(m.emp.employee_code || 'No EID')}</span><span>·</span><span>EmpCode ${esc(m.g.code)}${m.g.name && m.g.name !== m.emp.full_name ? ` (“${esc(m.g.name)}” in sheet)` : ''}</span><span>·</span><span>${esc(m.emp.designation || 'No designation')}</span></div></div>
+        <div class="facts">
+          <div><div class="k">Monthly salary</div><div class="v">${fmtINR(m.salary)}</div></div>
+          <div><div class="k">Daily salary (÷30)</div><div class="v">${m.salary == null ? '—' : fmtINR2(m.daily)}</div></div>
+          <div><div class="k">Full day</div><div class="v" style="font-size:13px">Mon–Fri ${fmtDuration(P.rules.weekday_full_minutes)}<br>Sat ${fmtDuration(P.rules.saturday_full_minutes)}</div></div>
+        </div>
+      </div>
+      <div id="att-summary">${summaryHTML()}</div>
+      <div class="card">
+        <div class="card-head"><div><h3>Day-wise attendance — ${fmtMonth(run.month)}</h3><p>System line is calculated from the punches. Change HD, L or missed-punch days in the Final line.</p></div>
+          <div class="right legend">${['F', 'HD', 'L', 'MP', 'WO'].map((s) => `${stChip(s)}<span>${{ F: 'Full', HD: 'Half', L: 'Leave', MP: 'Missed punch', WO: 'Weekly off' }[s]}</span>`).join('')}</div></div>
+        <div class="att-wrap" id="att-grid">${gridHTML()}</div>
+      </div>
+      <div id="att-reports">${reportsHTML()}</div>
+      <div class="savebar hidden" id="savebar">
+        <div class="grow"><b>Unsaved changes</b> <span>— the post-adjustment count and payable update when you save</span></div>
+        <button class="btn btn-sm" id="discard-btn">Discard</button>
+        <button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save changes</button>
+      </div>`,
+    mount() {
+      const redraw = () => {
+        $('#att-summary').innerHTML = summaryHTML();
+        const scroll = $('#att-grid').scrollLeft;
+        $('#att-grid').innerHTML = gridHTML();
+        $('#att-grid').scrollLeft = scroll;
+        $('#att-reports').innerHTML = reportsHTML();
+        const dirty = m.days.some((d) => d.editable && edits.get(d.iso) !== d.final);
+        state.dirty = dirty;
+        $('#savebar').classList.toggle('hidden', !dirty);
+      };
+      $('#att-grid').addEventListener('change', (ev) => {
+        const sel = ev.target.closest('[data-day]');
+        if (!sel) return;
+        edits.set(sel.dataset.day, sel.value);
+        redraw();
+      });
+      $('#discard-btn').addEventListener('click', () => {
+        m.days.forEach((d) => { if (d.editable) edits.set(d.iso, d.final); });
+        redraw();
+      });
+      $('#save-btn').addEventListener('click', async (ev) => {
+        const items = m.days.filter((d) => d.editable && edits.get(d.iso) !== d.final)
+          .map((d) => ({ date: d.iso, status: edits.get(d.iso) === d.systemFinal ? null : edits.get(d.iso) }));
+        try {
+          await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_save_adjustments', { p_run: run.id, p_emp_code: m.g.code, p_items: items }));
+          state.dirty = false;
+          P.data.adjustments = await payrollApi.adjustments(run.id);
+          toast(`Attendance changes saved for ${m.emp.full_name}.`);
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+/* ---------- Mapping: sheet EmpCode ↔ Employee Master Data ---------- */
+async function pagePayrollMapping() {
+  const P = state.payroll;
+  const { run, groups } = payrollSheet();
+  const base = { title: 'Payroll', crumbs: 'Map the sheet’s EmpCode and name to employees in Employee Master Data', actions: payrollActions() };
+  if (!run) return { ...base, html: payrollTabs('mapping') + noRunState(), mount() { mountPayrollActions(); $('#upload-att-empty')?.addEventListener('click', pickAttendanceFile); } };
+
+  const emps = activeEmployees();
+  const savedMap = new Map(P.codeMap.map((x) => [x.emp_code, x.employee_id || '']));
+  const takenBySaved = new Set([...savedMap.values()].filter(Boolean));
+  const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z]/g, '');
+  const suggest = (g) => {
+    const byCode = emps.find((e) => e.employee_code && e.employee_code.trim().toLowerCase() === g.code.trim().toLowerCase());
+    if (byCode) return byCode.id;
+    const byName = emps.filter((e) => normName(e.full_name) && normName(e.full_name) === normName(g.name));
+    return byName.length === 1 ? byName[0].id : '';
+  };
+  const model = new Map(groups.map((g) => {
+    const saved = savedMap.get(g.code);
+    let pick = saved || '';
+    if (!savedMap.has(g.code)) { const s = suggest(g); if (s && !takenBySaved.has(s)) pick = s; }
+    return [g.code, pick];
+  }));
+  const statusOf = (g) => {
+    const pick = model.get(g.code) || '';
+    const saved = savedMap.get(g.code) || '';
+    if (pick && pick === saved) return '<span class="chip green">Mapped</span>';
+    if (!savedMap.has(g.code) && pick) return '<span class="chip blue">Suggested</span>';
+    if (pick !== saved) return '<span class="chip amber">Changed</span>';
+    return '<span class="chip gray">Not mapped</span>';
+  };
+  const rowsHTML = () => groups.map((g) => {
+    const pick = model.get(g.code) || '';
+    const dup = pick && [...model.entries()].some(([c, v]) => c !== g.code && v === pick);
+    return `<tr>
+      <td class="mono"><b>${esc(g.code)}</b></td><td>${esc(g.name || '—')}</td><td class="num">${g.rows.length}</td>
+      <td style="min-width:260px"><select class="input ${dup ? 'invalid' : ''}" data-code="${esc(g.code)}" style="height:36px">
+        <option value="">— Not mapped —</option>
+        ${emps.map((e) => `<option value="${e.id}" ${e.id === pick ? 'selected' : ''}>${esc(e.full_name)}${e.employee_code ? ` · ${esc(e.employee_code)}` : ''}</option>`).join('')}
+      </select>${dup ? '<div class="error-text">Already picked for another EmpCode</div>' : ''}</td>
+      <td>${statusOf(g)}</td></tr>`;
+  }).join('');
+  const mappedCount = () => groups.filter((g) => model.get(g.code)).length;
+
+  return {
+    ...base,
+    html: `${payrollTabs('mapping')}
+      <div class="alert alert-info">${icon('info')}<span>Only mapped employees are included in the salary calculation. Suggestions match the sheet’s EmpCode to the Employee ID in Employee Master Data, then the name. A mapping is remembered for future months.</span></div>
+      <div class="card">
+        <div class="card-head"><div><h3>${fmtMonth(run.month)} sheet — ${groups.length} employee(s)</h3><p id="map-count">${mappedCount()} of ${groups.length} mapped</p></div>
+          <div class="right"><button class="btn btn-sm btn-primary" id="save-map">${icon('check', 'sm')}Save mapping</button></div></div>
+        <div class="table-wrap"><table class="table compact">
+          <thead><tr><th>EmpCode (sheet)</th><th>Name (sheet)</th><th class="num">Days</th><th>Employee (EMD) · Employee ID</th><th>Status</th></tr></thead>
+          <tbody id="map-body">${rowsHTML()}</tbody></table></div>
+      </div>`,
+    mount() {
+      mountPayrollActions();
+      $('#map-body').addEventListener('change', (ev) => {
+        const sel = ev.target.closest('[data-code]');
+        if (!sel) return;
+        model.set(sel.dataset.code, sel.value);
+        $('#map-body').innerHTML = rowsHTML();
+        $('#map-count').textContent = `${mappedCount()} of ${groups.length} mapped`;
+        state.dirty = groups.some((g) => (model.get(g.code) || '') !== (savedMap.get(g.code) || ''));
+      });
+      $('#save-map').addEventListener('click', async (ev) => {
+        const picks = [...model.values()].filter(Boolean);
+        if (new Set(picks).size !== picks.length) return toast('An employee is picked for two EmpCodes. Fix the highlighted rows.', 'error');
+        const items = groups.map((g) => ({ emp_code: g.code, employee_id: model.get(g.code) || null, sheet_name: g.name || null }));
+        try {
+          await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_save_code_map', { p_items: items }));
+          state.dirty = false;
+          P.codeMap = await payrollApi.codeMap();
+          toast(`Mapping saved — ${picks.length} of ${groups.length} employee(s) mapped.`);
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
+  };
+}
+
+/* ---------- Working hours (full-day rules) ---------- */
+async function pagePayrollRules() {
+  const P = state.payroll;
+  const r = P.rules;
+  const hm = (name, mins) => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;max-width:240px">
+      <div class="field"><label class="hint">Hours</label><input class="input mono" type="number" min="0" max="24" name="${name}_h" value="${Math.floor(mins / 60)}"></div>
+      <div class="field"><label class="hint">Minutes</label><input class="input mono" type="number" min="0" max="59" step="5" name="${name}_m" value="${mins % 60}"></div></div>`;
+  return {
+    title: 'Payroll', crumbs: 'Set how much time counts as a full working day', actions: payrollActions(),
+    html: `${payrollTabs('rules')}
+      <div class="split" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+        <form class="card" id="rules-form" novalidate>
+          <div class="card-head"><div><h3>Full-day working time</h3><p>Time between punch in and punch out needed for a full day</p></div></div>
+          <div class="card-body grid" style="gap:20px">
+            <div><div class="label" style="margin-bottom:8px">Monday – Friday</div>${hm('wk', r.weekday_full_minutes)}</div>
+            <div><div class="label" style="margin-bottom:8px">Saturday</div>${hm('sat', r.saturday_full_minutes)}</div>
+            <label class="toggle-row" style="padding:0;border:0"><div class="txt"><b>Sunday is a paid weekly off</b><span>Sundays count as paid days (WO). Turn off if Sundays are unpaid.</span></div>
+              <span class="switch"><input type="checkbox" name="sunday_paid_off" ${r.sunday_paid_off ? 'checked' : ''}><span></span></span></label>
+            <div style="display:flex;justify-content:flex-end"><button class="btn btn-primary" type="submit">${icon('check', 'sm')}Save working hours</button></div>
+          </div>
+        </form>
+        <div class="card">
+          <div class="card-head"><div><h3>How each day is marked</h3><p>System calculation (pre-adjustment)</p></div></div>
+          <div class="card-body rules-list">
+            <div>${stChip('F')}<span><b>Full day</b> — both punch in and punch out, and the time between them meets the full-day hours.</span></div>
+            <div>${stChip('HD')}<span><b>Half day</b> — both punches, but less than the full-day hours.</span></div>
+            <div>${stChip('MP')}<span><b>Missed punch</b> — only IN or only OUT. Counted as a full day, except every 3rd missed punch in the month, which becomes a <b>half day</b>.</span></div>
+            <div>${stChip('L')}<span><b>Leave</b> — no punch in and no punch out on a working day (also days missing from the sheet).</span></div>
+            <div>${stChip('WO')}<span><b>Weekly off</b> — Sunday.</span></div>
+            <div>${stChip('NA')}<span>Days before the employee’s date of joining are not counted.</span></div>
+            <p class="muted" style="font-size:12.5px;margin-top:6px">Salary: daily salary = monthly salary ÷ 30. Payable = Full days × daily + Half days × daily × 0.5${r.sunday_paid_off ? ' (paid weekly offs count as full days)' : ''}, rounded to the nearest rupee. It is calculated from the post-adjustment (Final) line.</p>
+          </div>
+        </div>
+      </div>`,
+    mount() {
+      mountPayrollActions();
+      $('#rules-form').addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const f = ev.currentTarget.elements;
+        const mins = (n) => (Number(f[`${n}_h`].value) || 0) * 60 + (Number(f[`${n}_m`].value) || 0);
+        const value = { weekday_full_minutes: mins('wk'), saturday_full_minutes: mins('sat'), sunday_paid_off: f.sunday_paid_off.checked };
+        if (value.weekday_full_minutes < 30 || value.weekday_full_minutes > 1440 || value.saturday_full_minutes < 30 || value.saturday_full_minutes > 1440) {
+          return toast('Full-day time must be between 30 minutes and 24 hours.', 'error');
+        }
+        try {
+          await withBusy($('button[type=submit]', ev.currentTarget), 'Saving…', () => payrollApi.saveRules(value));
+          P.rules = { ...DEFAULT_RULES, ...value };
+          toast('Working hours saved. The salary calculation now uses them.');
+          render();
         } catch (err) { toast(friendlyError(err), 'error'); }
       });
     },

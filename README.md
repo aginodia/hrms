@@ -8,10 +8,11 @@ A single-file HRMS (`index.html`) for Altius Investech, with Supabase as the dat
 | --- | --- |
 | 1. Sign in / Access control | Sign-up (Name, Email, Phone, Password) → admin gives access or rejects → employee uploads KYC → admin approves (or sends it back) → HRMS access |
 | 2. Employee Master Data (EMD) | Team list (Name, Mail ID, Number, Designation, Reporting Manager, Salary, Last Increment) → detailed info per employee with locked personal fields, editable EID / designation / manager, a month-wise salary history, and the KYC documents |
+| 3. Payroll | Upload the month's punch-in/punch-out sheet → map sheet EmpCodes to employees → day-wise F / HD / L marking from HR's working-hours rules → admin adjustments → monthly payable per employee, saved as the month's payroll |
 
 **Two separate access levels**
 
-* **Admin** (`sayan.mullick@altiusinvestech.com` is the base admin): Dashboard, Access Control, Employee Master Data, and Team Access settings.
+* **Admin** (`sayan.mullick@altiusinvestech.com` is the base admin): Dashboard, Access Control, Employee Master Data, Payroll, and Team Access settings.
 * **Team**: a separate employee portal (Home, My Profile). A team member only ever sees their own records.
 
 The database enforces this split, not just the screens. Row Level Security and `SECURITY DEFINER` functions in the migration under `supabase/migrations/` do the enforcing. Team accounts have no write access to any table. They can't change their own role or status, and they can't read anyone else's rows or files. Admin decides what employees can see about themselves (job details, salary history, KYC documents) on the **Team Access** page.
@@ -24,7 +25,7 @@ The Supabase project **Altius HRMS** (`bejhmbvwaexpafhkseod`) is set up through 
 
 * Tables, row-level security, the `kyc-documents` storage bucket and its policies, and the sign-up trigger are applied.
 * The base admin account `sayan.mullick@altiusinvestech.com` exists, with its email confirmed and role admin / active.
-* Both migrations in `supabase/migrations/` are applied. Nothing is left to run by hand.
+* All migrations in `supabase/migrations/` are applied, including Payroll. Nothing is left to run by hand.
 
 The steps below are for setting up a fresh project from scratch.
 
@@ -116,11 +117,41 @@ The entry with the latest month is the current salary. That entry's month and % 
 
 **Signing out.** **Sign out** is in the top bar on every page (and at the bottom of the sidebar). It ends the session on this device, even if the network call to Supabase fails. If a session expires, the app returns to the sign-in screen with a message.
 
+## Payroll (Module 3)
+
+**Admin → Payroll** has three tabs.
+
+**1. Upload attendance.** Click **Upload attendance** and pick the month's `.xlsx` (`.xls` and `.csv` also work). The sheet needs these columns: **EmpCode · Name · Date · Day · IN · OUT**, one row per employee per day. Header names are matched loosely (for example `Emp Code`, `In Time`, `Punch Out`), and title rows above the header are skipped. The file is read in the browser: only the rows are saved to Supabase (`attendance_punches`), never the Excel file. Uploading the same month again replaces it, keeps the old upload as history, and carries your day-wise changes over.
+
+**2. Mapping.** Each EmpCode and name in the sheet is mapped to an employee in Employee Master Data. Suggestions match the EmpCode to the Employee ID, then the name, and you confirm with **Save mapping**. Only mapped employees appear in the salary calculation. Mappings are remembered for later months.
+
+**3. Working Hours.** HR sets how long a full day is for **Monday–Friday** and for **Saturday**, and whether Sunday is a paid weekly off. Defaults are 9h 00m, 5h 00m and paid.
+
+**How each day is marked (system calculation / pre-adjustment)**
+
+| Mark | Rule |
+| --- | --- |
+| **F** Full day | Both IN and OUT, and the time between them meets the full-day hours for that weekday |
+| **HD** Half day | Both IN and OUT, but less than the full-day hours |
+| **MP** Missed punch | Only IN or only OUT. Counted as a full day, except **every 3rd missed punch** in the month, which becomes a half day |
+| **L** Leave | No IN and no OUT on a working day (also a working day missing from the sheet) |
+| **WO** Weekly off | Sunday |
+| — | Days before the employee's date of joining (not counted) |
+
+**Salary Calculation tab.** Lists mapped employees with the pre-adjustment (system) and post-adjustment (final) counts of Full / Half / Leave, plus the payable amount. Click an employee to see their **day-wise attendance**: one column per date, with rows for Day, IN, OUT, worked time, the **System** mark, and the **Final** mark. In the Final row, HD, L and missed-punch days have a dropdown so the admin can change them. Below the grid are reports listing the short-hours half days, the missed punches (and which one became a half day), the leaves, and the admin's changes.
+
+**Salary formula** (from the Final line):
+daily salary = monthly salary (the salary in effect for that month, from EMD) ÷ 30
+payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest rupee. Paid Sundays count as full days.
+
+**Save payroll** stores each employee's counts and payable for the month (`payroll_results`). **Export CSV** downloads the same table. If anything changes after saving, the status shows "Changed since save".
+
 ### Choices I made where the brief left a gap
 * **Date of birth** is collected in the KYC form. **Date of joining** is set by the admin at approval. Both are locked afterwards, along with name, email and phone.
 * **Reject** keeps the record (under Rejected) instead of deleting it, so HR has a history and can restore a request made by mistake.
 * **Reporting manager** is picked from active employees.
 * The base admin also appears in EMD, so their own salary and designation can be recorded.
+* **Payroll:** Sunday is a weekly off and, by default, paid, so a full month of attendance gives the full salary with the ÷30 rule. A 31-day month can therefore pay slightly more than the monthly salary; HR can turn paid Sundays off. A day missing from the sheet counts as leave. The same time punched twice counts as one punch, and 00:00 counts as no punch.
 
 ---
 
@@ -131,6 +162,7 @@ The entry with the latest month is the current salary. That entry's month and % 
 | `index.html` | The whole app: HTML, CSS and JS. Loads `supabase-js` and the Inter font from CDNs. |
 | `supabase/migrations/20261006000000_hrms_modules_1_2.sql` | Tables, RLS policies, storage bucket and policies, sign-up trigger, and the access/KYC functions. Re-runnable. |
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
+| `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 
 ### Data model
 * `profiles`: one row per user (name, email, phone, role, status, EID, designation, reporting manager, DOJ, DOB, rejection details, audit timestamps)
@@ -138,3 +170,8 @@ The entry with the latest month is the current salary. That entry's month and % 
 * `salary_history`: `(employee_id, effective_month, amount)`, one row per revision; removed rows keep `removed_at` / `removed_by`
 * `app_settings`: `team_visibility` toggles, controlled by admin
 * Storage bucket `kyc-documents` (private): `<user_id>/<document>-<timestamp>.pdf|jpg`. Files open through 10-minute signed links.
+* `payroll_runs`: one attendance upload per month (older uploads kept as history)
+* `attendance_punches`: EmpCode, name, date, day, IN, OUT for each row of the uploaded sheet
+* `attendance_code_map`: sheet EmpCode → employee
+* `attendance_adjustments`: the admin's day-wise F / HD / L changes
+* `payroll_results`: saved monthly counts and payable per employee
