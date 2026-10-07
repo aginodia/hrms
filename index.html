@@ -2127,8 +2127,12 @@ const stChip = (s, title) => `<span class="st st-${s}" title="${esc(title || ST_
    Rules: both punches and ≥ full-day hours → F; both but shorter → HD;
    one punch missing → missed punch (every 3rd one is a half day, the rest
    count as full days); no punches → L; Sunday → weekly off. */
-function computeAttendance(rows, monthIso, rules, adjustments, doj) {
+function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd) {
   const byDate = new Map(rows.map((r) => [r.work_date, r]));
+  // Staff added to the HRMS after they actually joined have a later joining date
+  // in EMD than their first punch; their punches win.
+  const dojIgnored = !!dojFromEmd && rows.some((r) => r.work_date < dojFromEmd && (r.punch_in || r.punch_out));
+  const doj = dojIgnored ? null : dojFromEmd;
   const base = parseISODate(monthIso);
   const days = [];
   let misses = 0;
@@ -2151,7 +2155,7 @@ function computeAttendance(rows, monthIso, rules, adjustments, doj) {
       misses += 1; missNo = misses;
       sys = misses % 3 === 0 ? 'MPH' : 'MP';
     } else sys = 'L';
-    const editable = sys === 'HD' || sys === 'L' || sys === 'MP' || sys === 'MPH';
+    const editable = sys === 'HD' || sys === 'L' || sys === 'MP' || sys === 'MPH' || sys === 'NA';
     const systemFinal = SYSTEM_TO_FINAL[sys];
     const adj = editable ? adjustments.get(iso) || null : null;
     days.push({
@@ -2160,6 +2164,7 @@ function computeAttendance(rows, monthIso, rules, adjustments, doj) {
       missing: sys === 'MP' || sys === 'MPH' ? (inM == null ? 'IN' : 'OUT') : null,
     });
   }
+  days.dojIgnored = dojIgnored;
   return days;
 }
 function tally(days, which) {
@@ -2170,10 +2175,13 @@ function tally(days, which) {
   }
   return c;
 }
+// Salary in effect for the month; if the first salary entry starts later,
+// that earliest entry is used (and flagged on screen).
 function salaryForMonth(empId, monthIso) {
-  const rows = salariesOf(empId).filter((s) => s.effective_month <= monthIso);
-  const row = rows[rows.length - 1] || salariesOf(empId)[0];
-  return row ? Number(row.amount) : null;
+  const all = salariesOf(empId);
+  const inEffect = all.filter((s) => s.effective_month <= monthIso).pop();
+  const row = inEffect || all[0];
+  return row ? { amount: Number(row.amount), from: row.effective_month, fallback: !inEffect } : null;
 }
 function payFor(counts, salary, rules) {
   const daily = salary ? salary / 30 : 0;
@@ -2211,8 +2219,12 @@ function payrollSheet() {
     const days = computeAttendance(g.rows, run.month, P.rules, adjByCode.get(g.code) || new Map(), emp.date_of_joining);
     const pre = tally(days, 'system');
     const post = tally(days, 'final');
-    const salary = salaryForMonth(emp.id, run.month);
-    mapped.push({ g, emp, days, pre, post, salary, prePay: payFor(pre, salary, P.rules), ...payFor(post, salary, P.rules) });
+    const sal = salaryForMonth(emp.id, run.month);
+    const salary = sal ? sal.amount : null;
+    const notes = [];
+    if (days.dojIgnored) notes.push(`Date of joining in Employee Master Data is ${fmtDate(emp.date_of_joining)}, but the sheet has punches before it — it is ignored for ${fmtMonth(run.month)}. Correct the date of joining if it is wrong.`);
+    if (sal?.fallback) notes.push(`No salary entry covers ${fmtMonth(run.month)} — using ${fmtINR(sal.amount)} from ${fmtMonth(sal.from)}. Add the right salary month in Employee Master Data if needed.`);
+    mapped.push({ g, emp, days, pre, post, salary, notes, prePay: payFor(pre, salary, P.rules), ...payFor(post, salary, P.rules) });
   }
   mapped.sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
   return { run, groups, mapped, unmapped };
@@ -2534,7 +2546,7 @@ async function pagePayrollCalc() {
             <tr><th class="num">F</th><th class="num">HD</th><th class="num">L</th><th class="num">F</th><th class="num">HD</th><th class="num">L</th></tr>
           </thead>
           <tbody>${mapped.map((m) => `<tr data-href="#/payroll/emp/${encodeURIComponent(m.g.code)}">
-            <td>${person(m.emp, esc(m.emp.employee_code || 'No EID'))}</td><td class="mono">${esc(m.g.code)}</td>
+            <td>${person(m.emp, esc(m.emp.employee_code || 'No EID'))}${m.notes.length ? `<div title="${esc(m.notes.join(' '))}" style="margin-top:4px"><span class="chip amber plain">${icon('alert', 'sm')} Check</span></div>` : ''}</td><td class="mono">${esc(m.g.code)}</td>
             <td class="num">${m.salary == null ? '<span class="chip amber plain">Not set</span>' : fmtINR(m.salary)}</td>
             <td class="num">${m.salary == null ? '—' : fmtINR2(m.daily)}</td>
             ${cell(m.pre, 'F')}${cell(m.pre, 'HD')}${cell(m.pre, 'L')}
@@ -2629,8 +2641,8 @@ async function pagePayrollEmployee(code) {
         ${head('OUT', (d) => (d.outM == null ? '<span class="faint">—</span>' : fmtClock(d.out)))}
         ${head('Worked', (d) => (d.mins == null ? '<span class="faint">—</span>' : `<span class="${d.mins < d.need ? 'short' : ''}">${fmtDuration(d.mins).replace(' ', '')}</span>`))}
         ${head('System', (d) => stChip(d.sys, d.sys === 'MP' || d.sys === 'MPH' ? `${ST_TITLE[d.sys]} (missed ${d.missing}, miss #${d.missNo})` : d.sys === 'HD' ? `${ST_TITLE.HD}: ${fmtDuration(d.mins)} of ${fmtDuration(d.need)}` : ST_TITLE[d.sys]))}
-        <tr class="final-row"><th class="lbl">Final<div class="faint" style="font-weight:400;font-size:11px">change HD / L / missed</div></th>${days.map((d) => `<td class="${d.wd === 0 ? 'sun' : ''} ${d.editable && d.final !== d.systemFinal ? 'changed' : ''}">${d.editable
-          ? `<select class="st-select st-${d.final}" data-day="${d.iso}">${['F', 'HD', 'L'].map((s) => `<option value="${s}" ${s === d.final ? 'selected' : ''}>${s}</option>`).join('')}</select>`
+        <tr class="final-row"><th class="lbl">Final<div class="faint" style="font-weight:400;font-size:11px">change HD / L / missed / —</div></th>${days.map((d) => `<td class="${d.wd === 0 ? 'sun' : ''} ${d.editable && d.final !== d.systemFinal ? 'changed' : ''}">${d.editable
+          ? `<select class="st-select st-${d.final}" data-day="${d.iso}">${(d.sys === 'NA' ? ['NA', 'F', 'HD', 'L'] : ['F', 'HD', 'L']).map((s) => `<option value="${s}" ${s === d.final ? 'selected' : ''}>${ST_LABEL[s]}</option>`).join('')}</select>`
           : stChip(d.final)}</td>`).join('')}</tr>
       </tbody></table>`;
   };
@@ -2668,6 +2680,7 @@ async function pagePayrollEmployee(code) {
           <div><div class="k">Full day</div><div class="v" style="font-size:13px">Mon–Fri ${fmtDuration(P.rules.weekday_full_minutes)}<br>Sat ${fmtDuration(P.rules.saturday_full_minutes)}</div></div>
         </div>
       </div>
+      ${m.notes.map((n) => `<div class="alert alert-warn">${icon('alert')}<span>${esc(n)}</span></div>`).join('')}
       <div id="att-summary">${summaryHTML()}</div>
       <div class="card">
         <div class="card-head"><div><h3>Day-wise attendance — ${fmtMonth(run.month)}</h3><p>System line is calculated from the punches. Change HD, L or missed-punch days in the Final line.</p></div>

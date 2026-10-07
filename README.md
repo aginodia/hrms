@@ -138,12 +138,12 @@ The entry with the latest month is the current salary. That entry's month and % 
 | **MP** Missed punch | Only IN or only OUT. Counted as a full day, except **every 3rd missed punch** in the month, which becomes a half day |
 | **L** Leave | No IN and no OUT on a working day (also a working day missing from the sheet) |
 | **WO** Weekly off | Sunday |
-| — | Days before the employee's date of joining (not counted) |
+| — | Days before the employee's date of joining (not counted). If the sheet has punches before the joining date in EMD (staff added to the HRMS after they joined), the joining date is ignored for that month and a warning is shown. "—" days can also be changed in the Final line |
 
 **Salary Calculation tab.** Lists mapped employees with the pre-adjustment (system) and post-adjustment (final) counts of Full / Half / Leave, plus the payable amount. Click an employee to see their **day-wise attendance**: one column per date, with rows for Day, IN, OUT, worked time, the **System** mark, and the **Final** mark. In the Final row, HD, L and missed-punch days have a dropdown so the admin can change them. Below the grid are reports listing the short-hours half days, the missed punches (and which one became a half day), the leaves, and the admin's changes.
 
 **Salary formula** (from the Final line):
-daily salary = monthly salary (the salary in effect for that month, from EMD) ÷ 30
+daily salary = monthly salary (the salary in effect for that month, from EMD; if the first salary entry starts later, that entry is used and flagged) ÷ 30
 payable = Full days × daily + Half days × daily × 0.5, rounded to the nearest rupee. Paid Sundays count as full days.
 
 **Save payroll** stores each employee's counts and payable for the month (`payroll_results`). **Export CSV** downloads the same table. If anything changes after saving, the status shows "Changed since save".
