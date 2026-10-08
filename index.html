@@ -1021,11 +1021,11 @@ function renderAuth(view) {
       <p class="auth-switch">Already have an account? <button class="link-btn" data-action="auth-view" data-view="login">Sign in</button></p>`,
     forgot: `
       <h2>Reset your password</h2>
-      <p class="sub">We'll email you a link to set a new password.</p>
+      <p class="sub">We'll email you a code to set a new password.</p>
       <form id="auth-form" novalidate>
         <div class="field"><label>Email</label><input class="input" type="email" name="email" placeholder="you@altiusinvestech.com" autocomplete="email" required></div>
         <div class="form-msg"></div>
-        <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+        <button class="btn btn-primary btn-block" type="submit">Send code</button>
       </form>
       <p class="auth-switch"><button class="link-btn" data-action="auth-view" data-view="login">Back to sign in</button></p>`,
     reset: `
@@ -1037,6 +1037,18 @@ function renderAuth(view) {
         <div class="form-msg"></div>
         <button class="btn btn-primary btn-block" type="submit">Update password</button>
       </form>`,
+    'forgot-code': `
+      <h2>Set a new password</h2>
+      <p class="sub">If <b>${esc(state.resetCode?.email || '')}</b> has an account, a code is on its way. Enter it with your new password.</p>
+      <form id="auth-form" novalidate>
+        <div class="field"><label>Code from the email</label><input class="input mono otp-input" name="token" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="••••••" required></div>
+        <div class="field"><label>New password</label>${passwordField('password', 'At least 8 characters', 'new-password')}</div>
+        <div class="field"><label>Confirm password</label>${passwordField('confirm', 'Re-enter password', 'new-password')}</div>
+        <div class="form-msg"></div>
+        <button class="btn btn-primary btn-block" type="submit">Update password &amp; sign in</button>
+      </form>
+      <p class="auth-switch"><button class="link-btn" id="rc-resend" type="button">Resend code</button> <span class="faint" id="rc-wait"></span>
+        &nbsp;·&nbsp; <button class="link-btn" type="button" data-action="auth-view" data-view="login">Back to sign in</button></p>`,
     otp: `
       <div class="big-ico" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin-bottom:18px">${icon('mail')}</div>
       <h2>Enter the code from your email</h2>
@@ -1086,6 +1098,7 @@ function renderAuth(view) {
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); handleAuthSubmit(v, form); });
   $('#auth-form input')?.focus();
   if (v === 'otp') mountOtpView();
+  if (v === 'forgot-code') mountResetCodeView();
 }
 
 // ---- Email OTP after the password (REQUIRE_EMAIL_OTP) ----
@@ -1094,6 +1107,27 @@ async function sendLoginOtp(email) {
   const { error } = await db.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
   if (error) throw error;
   state.otp = { email, sentAt: Date.now() };
+}
+function mountResetCodeView() {
+  $('.otp-input').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
+  const resend = $('#rc-resend'), wait = $('#rc-wait');
+  const tick = () => {
+    if (!document.body.contains(resend)) return clearInterval(timer);
+    const left = Math.ceil(OTP_RESEND_SECONDS - (Date.now() - (state.resetCode?.sentAt || 0)) / 1000);
+    resend.disabled = left > 0; wait.textContent = left > 0 ? `in ${left}s` : '';
+  };
+  const timer = setInterval(tick, 1000); tick();
+  resend.addEventListener('click', async () => {
+    const msg = $('.form-msg');
+    try {
+      await withBusy(resend, 'Sending…', async () => {
+        const { error } = await db.auth.resetPasswordForEmail(state.resetCode.email, { redirectTo: location.origin + location.pathname });
+        if (error) throw error;
+        state.resetCode.sentAt = Date.now();
+      });
+      msg.innerHTML = `<div class="alert alert-info">${icon('mail')}<span>A new code is on its way.</span></div>`; tick();
+    } catch (e) { msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(friendlyError(e))}</span></div>`; }
+  });
 }
 function mountOtpView() {
   const input = $('.otp-input');
@@ -1185,9 +1219,30 @@ async function handleAuthSubmit(view, form) {
       await withBusy(btn, 'Sending…', async () => {
         const { error } = await db.auth.resetPasswordForEmail(email, { redirectTo });
         if (error) throw error;
-        state.sentMessage = `If an account exists for ${email}, you'll receive a password reset link shortly.`;
-        renderAuth('sent');
+        state.resetCode = { email, sentAt: Date.now() };
       });
+      renderAuth('forgot-code');
+    } else if (view === 'forgot-code') {
+      const token = String(f.token || '').replace(/\D/g, '');
+      if (token.length < 6) return fail('Enter the code from the email.');
+      if (String(f.password).length < 8) return fail('Password must be at least 8 characters.');
+      if (f.password !== f.confirm) return fail('Passwords do not match.');
+      let session = null;
+      await withBusy(btn, 'Updating…', async () => {
+        state.otpGate = true; // hold the app until the new password is saved
+        try {
+          const { data, error } = await db.auth.verifyOtp({ email: state.resetCode.email, token, type: 'recovery' });
+          if (error) throw new Error(/expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Check the latest email, or resend the code.' : error.message);
+          session = data.session;
+          const { error: e2 } = await db.auth.updateUser({ password: f.password });
+          if (e2) { await db.auth.signOut({ scope: 'local' }); throw e2; }
+        } finally { state.otpGate = false; }
+      });
+      state.resetCode = null; state.codeReset = true;
+      setTimeout(() => { state.codeReset = false; }, 5000);
+      toast('Password updated — you are signed in.');
+      history.replaceState(null, '', location.pathname);
+      setTimeout(() => handleAuthEvent('SIGNED_IN', session), 0);
     } else if (view === 'reset') {
       if (String(f.password).length < 8) return fail('Password must be at least 8 characters.');
       if (f.password !== f.confirm) return fail('Passwords do not match.');
@@ -1526,6 +1581,7 @@ const NAV = {
       { key: 'esops', label: 'ESOPs', icon: 'pie' },
       { label: 'Settings' },
       { key: 'team-access', label: 'Team Access', icon: 'sliders' },
+      { key: 'account', label: 'My Account', icon: 'lock' },
     ];
   },
   team: () => [
@@ -1536,7 +1592,7 @@ const NAV = {
   ],
 };
 const PAGES = {
-  admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, payroll: pagePayroll,
+  admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops },
   team: { home: pageTeamHome, profile: pageMyProfile, kyc: pageTeamKyc },
 };
@@ -4639,26 +4695,90 @@ async function pageMyProfile() {
             <div><div class="section-title">Bank details</div><div class="kv">${kv('Account number', maskAccount(kyc.bank_account_number), 'mono')}${kv('IFSC', kyc.bank_ifsc, 'mono')}</div></div>
             <div><div class="section-title">Emergency contact</div><div class="kv">${kv('Name', kyc.emergency_name)}${kv('Relationship', kyc.emergency_relationship)}${kv('Contact number', kyc.emergency_phone)}</div></div>
           </div></div></div>` : ''}
-      <form class="card" id="pw-form" novalidate><div class="card-head"><div><h3>Change password</h3><p>If HR created your account, replace the temporary password here.</p></div></div>
-        <div class="card-body grid g3" style="align-items:end">
-          <div class="field"><label>New password</label><input class="input" type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
-          <div class="field"><label>Confirm new password</label><input class="input" type="password" name="confirm" autocomplete="new-password"></div>
-          <div class="field"><button class="btn btn-primary" type="submit">${icon('lock', 'sm')}Update password</button></div>
-        </div></form>`,
-    mount() {
-      const f = $('#pw-form');
-      f.addEventListener('submit', async (ev) => {
-        ev.preventDefault();
-        const pw = f.elements.password.value, cf = f.elements.confirm.value;
-        if (pw.length < 8) return toast('The password must be at least 8 characters.', 'error');
-        if (pw !== cf) return toast('The passwords do not match.', 'error');
-        try {
-          await withBusy($('button[type=submit]', f), 'Updating…', async () => { const { error } = await db.auth.updateUser({ password: pw }); if (error) throw error; });
-          f.reset();
-          toast('Password updated.');
-        } catch (err) { toast(friendlyError(err), 'error'); }
+      ${changePasswordCardHTML('If HR created your account, replace the temporary password here.')}`,
+    mount() { mountChangePassword(); },
+  };
+}
+
+// ---------- Change password (signed in): a code is emailed first ----------
+// Supabase reauthenticate() emails a one-time code; updateUser({ password, nonce }) checks it.
+function changePasswordCardHTML(sub) {
+  const otp = REQUIRE_EMAIL_OTP;
+  return `<form class="card" id="pw-form" novalidate><div class="card-head"><div><h3>Change password</h3><p>${sub}${otp ? ' A code is emailed to you to confirm it’s you.' : ''}</p></div></div>
+    <div class="card-body grid" style="gap:14px;max-width:680px">
+      <div class="grid g2" style="gap:12px">
+        <div class="field"><label>New password</label>${passwordField('password', 'At least 8 characters', 'new-password')}</div>
+        <div class="field"><label>Confirm new password</label>${passwordField('confirm', 'Re-enter password', 'new-password')}</div>
+      </div>
+      ${otp ? `<div id="pw-step2" class="hidden"><div class="field" style="max-width:320px"><label>Code from your email</label>
+        <input class="input mono otp-input" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="••••••">
+        <div class="hint" id="pw-hint"></div></div></div>` : ''}
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary" type="submit" id="pw-btn">${icon('lock', 'sm')}${otp ? 'Send code to my email' : 'Update password'}</button>
+        ${otp ? '<button type="button" class="link-btn hidden" id="pw-resend">Resend code</button><button type="button" class="link-btn hidden" id="pw-cancel">Cancel</button>' : ''}
+      </div>
+    </div></form>`;
+}
+function mountChangePassword() {
+  const f = $('#pw-form');
+  if (!f) return;
+  $$('[data-pw-toggle]', f).forEach((b) => b.addEventListener('click', () => {
+    const input = b.previousElementSibling; const show = input.type === 'password';
+    input.type = show ? 'text' : 'password'; b.innerHTML = icon(show ? 'eyeOff' : 'eye');
+  }));
+  const btn = $('#pw-btn'), step2 = $('#pw-step2'), resend = $('#pw-resend'), cancel = $('#pw-cancel');
+  let sentAt = 0;
+  const reset = () => {
+    f.reset(); sentAt = 0;
+    if (step2) { step2.classList.add('hidden'); resend.classList.add('hidden'); cancel.classList.add('hidden'); }
+    btn.innerHTML = `${icon('lock', 'sm')}${REQUIRE_EMAIL_OTP ? 'Send code to my email' : 'Update password'}`;
+  };
+  const sendCode = async () => {
+    const { error } = await db.auth.reauthenticate();
+    if (error) throw error;
+    sentAt = Date.now();
+    step2.classList.remove('hidden'); resend.classList.remove('hidden'); cancel.classList.remove('hidden');
+    $('#pw-hint').textContent = `Code sent to ${state.user?.email || 'your email'} — it can take a minute.`;
+    f.elements.code.value = '';
+  };
+  const showVerify = () => { btn.innerHTML = `${icon('check', 'sm')}Verify code & update password`; f.elements.code.focus(); };
+  const checkPw = () => {
+    const pw = f.elements.password.value, cf = f.elements.confirm.value;
+    if (pw.length < 8) { toast('The password must be at least 8 characters.', 'error'); return null; }
+    if (pw !== cf) { toast('The passwords do not match.', 'error'); return null; }
+    return pw;
+  };
+  f.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const pw = checkPw(); if (!pw) return;
+    try {
+      if (REQUIRE_EMAIL_OTP && !sentAt) { await withBusy(btn, 'Sending…', sendCode); showVerify(); return; }
+      const nonce = REQUIRE_EMAIL_OTP ? f.elements.code.value.replace(/\D/g, '') : null;
+      if (REQUIRE_EMAIL_OTP && nonce.length < 6) return toast('Enter the code from the email.', 'error');
+      await withBusy(btn, 'Updating…', async () => {
+        const { error } = await db.auth.updateUser(nonce ? { password: pw, nonce } : { password: pw });
+        if (error) throw new Error(/nonce|otp|token|expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Check the latest email, or resend the code.' : error.message);
       });
-    },
+      reset();
+      toast('Password updated.');
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
+  resend?.addEventListener('click', async () => {
+    const left = Math.ceil(OTP_RESEND_SECONDS - (Date.now() - sentAt) / 1000);
+    if (left > 0) return toast(`You can resend the code in ${left}s.`, 'error');
+    try { await withBusy(resend, 'Sending…', sendCode); toast('A new code is on its way.'); } catch (err) { toast(friendlyError(err), 'error'); }
+  });
+  cancel?.addEventListener('click', reset);
+}
+
+// Admin → My Account
+async function pageAdminAccount() {
+  const p = state.profile;
+  return {
+    title: 'My Account', crumbs: 'Your sign-in details',
+    html: `<div class="card emp-head">${avatar(p, 'lg')}<div style="min-width:0"><h2>${esc(p.full_name)}</h2><div class="meta"><span>${esc(p.email)}</span><span>·</span><span>Admin</span></div></div></div>
+      ${changePasswordCardHTML('Choose a new password for your admin login.')}`,
+    mount() { mountChangePassword(); },
   };
 }
 
@@ -4684,7 +4804,8 @@ if (!db) {
 }
 
 async function handleAuthEvent(event, session) {
-  if (state.otpGate && event !== 'PASSWORD_RECOVERY') return; // waiting for the emailed sign-in code
+  if (state.otpGate) return; // waiting for an emailed code (sign-in or password reset)
+  if (event === 'PASSWORD_RECOVERY' && state.codeReset) { state.codeReset = false; event = 'SIGNED_IN'; } // reset done with a code
   if (event === 'PASSWORD_RECOVERY') {
     state.recovery = true; state.session = session; state.user = session?.user || null;
     return renderAuth('reset');

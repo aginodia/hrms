@@ -156,6 +156,11 @@ The EMD list has three tabs: **Active** (including those on notice), **Resigned 
 * **Show the code in the email.** In Supabase go to Authentication → Emails → Templates → **Magic Link**, and add the code to the body, for example `<p>Your Altius HRMS sign-in code is <b>{{ .Token }}</b></p>`. Without this, the email has only a sign-in link. Clicking that link also signs the person in, but there is no code to type.
 * **Email sending limit.** Supabase's built-in email service sends only a few emails per hour, and every sign-in now needs one. For a whole team, set up your own SMTP (Authentication → Emails → SMTP settings, e.g. Google Workspace, Zoho or SendGrid).
 
+**Passwords with a code.**
+* **Forgot password** (sign-in page): enter the email, then the emailed code together with the new password. The person is signed in straight away. The link in that email also still works.
+* **Change password** when signed in (team: My Profile; admin: Settings → My Account): enter the new password twice, click **Send code to my email**, then enter the code. Supabase checks the code before it saves the password.
+* Each flow uses a different Supabase email template, and each must show `{{ .Token }}`. *Magic link or OTP* is for sign-in. *Reset password* is for forgot password. *Reauthentication* is for change password; Supabase's default for this one already shows the code.
+
 To switch the code step off, set `const REQUIRE_EMAIL_OTP = false;` near the top of `index.html`.
 
 The code step is enforced by the app; Supabase itself still accepts the password alone. Someone with the password and technical skill could call Supabase directly without the code. The database rules (each person sees only their own data, admin-only functions) still apply either way.
