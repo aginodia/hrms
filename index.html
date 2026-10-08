@@ -1752,6 +1752,236 @@ function openAssignEid(e) {
 const KYC_CHIP = { not_started: ['KYC not submitted', 'gray'], sent_back: ['KYC sent back', 'amber'], submitted: ['KYC to review', 'violet'], approved: ['KYC verified', 'green'] };
 const kycChip = (p) => { const [l, t] = KYC_CHIP[p.kyc_status || 'not_started']; return `<span class="chip ${t} plain">${l}</span>`; };
 
+// ---------- Upload employees from Excel (same fields as Add employee) ----------
+const BULK_COLS = [
+  ['full_name', 'Full Name', true, ['fullname', 'name', 'employeename', 'empname']],
+  ['email', 'Email', true, ['email', 'emailid', 'mailid', 'mail', 'officialemail']],
+  ['phone', 'Phone', false, ['phone', 'phoneno', 'phonenumber', 'mobile', 'mobileno', 'contact', 'number']],
+  ['doj', 'Date of Joining (DD-MM-YYYY)', true, ['dateofjoiningddmmyyyy', 'dateofjoining', 'doj', 'joiningdate', 'joindate']],
+  ['eid', 'Employee ID', false, ['employeeid', 'empid', 'empcode', 'employeecode', 'eid', 'ecode']],
+  ['designation', 'Designation', false, ['designation', 'role', 'title', 'position']],
+  ['manager', 'Reporting Manager (Emp ID or Email)', false, ['reportingmanagerempidoremail', 'reportingmanager', 'manager', 'reportsto']],
+  ['salary_from', 'Salary From (MM-YYYY)', false, ['salaryfrommmyyyy', 'salaryfrom', 'salarymonth', 'effectivefrom', 'salaryeffectivefrom']],
+  ['salary', 'Monthly Salary', false, ['monthlysalary', 'salary', 'ctcmonthly', 'grosssalary', 'amount']],
+  ['password', 'Temporary Password', false, ['temporarypassword', 'password', 'temppassword']],
+];
+const bulkNorm = (v) => String(v ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+// Excel date cell (serial number, Date or text such as 05-10-2026 / 5/10/2026 / 2026-10-05 / 5 Oct 2026) → YYYY-MM-DD
+function bulkDate(v) {
+  if (v == null || v === '') return null;
+  const iso = (y, m, d) => (y > 1900 && m >= 1 && m <= 12 && d >= 1 && d <= 31 ? `${y}-${pad(m)}-${pad(d)}` : null);
+  if (v instanceof Date && !isNaN(v)) return iso(v.getFullYear(), v.getMonth() + 1, v.getDate());
+  if (typeof v === 'number' && window.XLSX?.SSF) { const p = XLSX.SSF.parse_date_code(v); return p ? iso(p.y, p.m, p.d) : null; }
+  const s = String(v).trim();
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/); if (m) return iso(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/); if (m) return iso(+m[3], +m[2], +m[1]);
+  m = s.match(/^(\d{1,2})[-\s/]([A-Za-z]{3,})[-\s/,]*(\d{4})$/);
+  if (m) { const mi = MONTHS.findIndex((x) => x.toLowerCase() === m[2].slice(0, 3).toLowerCase()); return mi < 0 ? null : iso(+m[3], mi + 1, +m[1]); }
+  return null;
+}
+// Salary month: MM-YYYY, Oct-2026, October 2026, or any date → first of month
+function bulkMonth(v) {
+  if (v == null || v === '') return null;
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})[-/.](\d{4})$/); if (m && +m[1] >= 1 && +m[1] <= 12) return `${m[2]}-${pad(+m[1])}-01`;
+  m = s.match(/^([A-Za-z]{3,})[-\s/,]*(\d{4})$/);
+  if (m) { const mi = MONTHS.findIndex((x) => x.toLowerCase() === m[1].slice(0, 3).toLowerCase()); if (mi >= 0) return `${m[2]}-${pad(mi + 1)}-01`; }
+  const d = bulkDate(v); return d ? d.slice(0, 8) + '01' : null;
+}
+function parseBulkSheet(rows) {
+  for (let h = 0; h < Math.min(rows.length, 30); h++) {
+    const cells = (rows[h] || []).map(bulkNorm);
+    const idx = {};
+    for (const [key, , , names] of BULK_COLS) { const i = cells.findIndex((c) => names.includes(c)); if (i >= 0) idx[key] = i; }
+    if (idx.full_name == null || idx.email == null) continue;
+    const out = [];
+    rows.slice(h + 1).forEach((row, n) => {
+      const get = (k) => (idx[k] == null ? '' : row[idx[k]]);
+      const str = (k) => { const v = get(k); return v instanceof Date ? v : String(v ?? '').trim(); };
+      if (!String(get('full_name') ?? '').trim() && !String(get('email') ?? '').trim()) return;
+      out.push({ line: h + n + 2, full_name: str('full_name'), email: String(get('email') ?? '').trim().toLowerCase(), phone: normPhone(String(get('phone') ?? '')),
+        dojRaw: get('doj'), eid: typeof get('eid') === 'number' ? String(get('eid')) : str('eid'), designation: str('designation'),
+        manager: String(get('manager') ?? '').trim(), salaryFromRaw: get('salary_from'), salaryRaw: get('salary'), password: String(get('password') ?? '').trim() });
+    });
+    return out;
+  }
+  throw new Error('Could not find the header row. The sheet needs at least “Full Name” and “Email” columns — download the template.');
+}
+async function downloadBulkTemplate() {
+  try {
+    await loadXLSX();
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([BULK_COLS.map(([, label, req]) => label + (req ? ' *' : ''))]);
+    ws['!cols'] = BULK_COLS.map(([, label]) => ({ wch: Math.max(14, label.length + 4) }));
+    XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+    const help = XLSX.utils.aoa_to_sheet([
+      ['Column', 'Required', 'How to fill it'],
+      ['Full Name', 'Yes', 'As it should appear in the HRMS'],
+      ['Email', 'Yes', 'Their sign-in email; must be unique'],
+      ['Phone', 'No', '10-digit mobile number'],
+      ['Date of Joining (DD-MM-YYYY)', 'Yes', 'e.g. 05-10-2026 (an Excel date also works)'],
+      ['Employee ID', 'No', 'Same code as in the attendance sheet, e.g. 0012 — must be unique (0012 = 012)'],
+      ['Designation', 'No', 'e.g. Analyst'],
+      ['Reporting Manager (Emp ID or Email)', 'No', 'Employee ID or email of someone already in the HRMS or earlier/later in this sheet'],
+      ['Salary From (MM-YYYY)', 'No', 'e.g. 10-2026 — defaults to the joining month when a salary is given'],
+      ['Monthly Salary', 'No', 'Amount in ₹, numbers only'],
+      ['Temporary Password', 'No', 'At least 8 characters; leave blank to generate one'],
+    ]);
+    help['!cols'] = [{ wch: 36 }, { wch: 10 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, help, 'How to fill');
+    XLSX.writeFile(wb, 'altius-employees-upload-template.xlsx');
+  } catch (e) { toast(friendlyError(e), 'error'); }
+}
+function pickBulkFile() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls,.csv';
+  input.addEventListener('change', async () => {
+    const file = input.files[0];
+    if (!file) return;
+    try {
+      await loadXLSX();
+      const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
+      let rows = null, lastErr = null;
+      for (const n of wb.SheetNames) {
+        try { rows = parseBulkSheet(XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: '' })); break; } catch (e) { lastErr = e; }
+      }
+      if (!rows) throw lastErr;
+      if (!rows.length) throw new Error('The sheet has no employee rows under the header.');
+      showBulkPreview(file, rows);
+    } catch (e) { toast(friendlyError(e), 'error'); }
+  });
+  input.click();
+}
+// Validate every row against the HRMS and the rest of the sheet.
+function validateBulk(rows) {
+  const P = state.admin.profiles;
+  const seenEmail = new Map(), seenEid = new Map();
+  for (const r of rows) {
+    r.errors = []; r.notes = [];
+    r.doj = bulkDate(r.dojRaw);
+    const salary = String(r.salaryRaw ?? '').replace(/[,₹\s]/g, '');
+    r.salary = salary ? Number(salary) : null;
+    r.salaryMonth = r.salary ? bulkMonth(r.salaryFromRaw) || (r.doj ? r.doj.slice(0, 8) + '01' : null) : null;
+    if (!r.full_name) r.errors.push('Name missing');
+    if (!isEmail(r.email)) r.errors.push('Email missing or invalid');
+    if (!r.doj) r.errors.push(r.dojRaw === '' || r.dojRaw == null ? 'Date of joining missing' : 'Date of joining not understood — use DD-MM-YYYY');
+    if (salary && !(r.salary > 0)) r.errors.push('Salary is not a number');
+    if (r.salary && !r.salaryMonth) r.errors.push('Salary month not understood — use MM-YYYY');
+    if (r.password && r.password.length < 8) r.errors.push('Password shorter than 8 characters');
+    if (isEmail(r.email)) {
+      if (P.some((p) => p.email === r.email)) { r.skip = 'Already in the HRMS'; }
+      else if (seenEmail.has(r.email)) r.errors.push(`Same email as row ${seenEmail.get(r.email)}`);
+      else seenEmail.set(r.email, r.line);
+    }
+    if (r.eid) {
+      const k = normCode(r.eid);
+      const clash = P.find((p) => normCode(p.employee_code) === k);
+      if (clash && !r.skip) r.errors.push(`Employee ID used by ${clash.full_name} (${clash.employee_code})`);
+      else if (seenEid.has(k)) r.errors.push(`Same Employee ID as row ${seenEid.get(k)}`);
+      else seenEid.set(k, r.line);
+    }
+  }
+  // Reporting manager: someone already in the HRMS, or another row in this sheet
+  for (const r of rows) {
+    r.managerId = null; r.managerRow = null;
+    if (!r.manager) continue;
+    const key = r.manager.toLowerCase();
+    const ex = activeEmployees().find((p) => p.email === key || (normCode(p.employee_code) && normCode(p.employee_code) === normCode(r.manager)));
+    if (ex) { r.managerId = ex.id; r.managerName = ex.full_name; continue; }
+    const row = rows.find((x) => x !== r && !x.skip && !x.errors.length && (x.email === key || (x.eid && normCode(x.eid) === normCode(r.manager))));
+    if (row) { r.managerRow = row; r.managerName = row.full_name; } else r.notes.push(`Manager “${r.manager}” not found — left blank`);
+  }
+  return rows;
+}
+function showBulkPreview(file, rows) {
+  validateBulk(rows);
+  const ready = rows.filter((r) => !r.skip && !r.errors.length);
+  const statusCell = (r) => r.result ? r.result
+    : r.skip ? `<span class="chip gray plain">${esc(r.skip)} — skipped</span>`
+    : r.errors.length ? `<span class="chip red plain" title="${esc(r.errors.join(' · '))}">${esc(r.errors[0])}${r.errors.length > 1 ? ` +${r.errors.length - 1}` : ''}</span>`
+    : `<span class="chip green plain">Ready</span>${r.notes.length ? `<div class="faint" style="font-size:11.5px;margin-top:2px">${esc(r.notes.join(' · '))}</div>` : ''}`;
+  const tableHTML = () => `<div class="table-wrap" style="max-height:360px;border:1px solid var(--border);border-radius:10px"><table class="table compact"><thead><tr><th>Row</th><th>Name</th><th>Email</th><th>Emp ID</th><th>Joining</th><th>Manager</th><th class="num">Salary</th><th>Status</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr><td class="faint">${r.line}</td><td>${esc(r.full_name || '—')}<div class="faint" style="font-size:11.5px">${esc(r.designation || '')}</div></td><td>${esc(r.email || '—')}</td><td class="mono">${esc(r.eid || '—')}</td>
+      <td class="nowrap">${r.doj ? fmtDMY(r.doj) : '—'}</td><td>${esc(r.managerName || (r.manager ? '—' : ''))}</td>
+      <td class="num nowrap">${r.salary ? `${fmtINR(r.salary)}<div class="faint" style="font-size:11.5px">from ${fmtMonth(r.salaryMonth)}</div>` : '—'}</td><td>${statusCell(r)}</td></tr>`).join('')}
+    </tbody></table></div>`;
+  const dlg = openModal({
+    title: 'Upload employees', size: 'lg', subtitle: `${esc(file.name)} · ${rows.length} row(s)`,
+    body: `<div class="kv" style="margin-bottom:12px;grid-template-columns:repeat(3,minmax(0,1fr))"><div><div class="k">Ready to add</div><div class="v">${ready.length}</div></div>
+        <div><div class="k">Already in the HRMS</div><div class="v">${rows.filter((r) => r.skip).length}</div></div>
+        <div><div class="k">With problems</div><div class="v">${rows.filter((r) => !r.skip && r.errors.length).length}</div></div></div>
+      <div id="bulk-table">${tableHTML()}</div>
+      <p class="muted" id="bulk-progress" style="font-size:12.5px;margin-top:10px">Each employee gets a login (temporary password from the sheet, or generated) and goes straight into Employee Master Data. Rows with problems are left out — fix them in the sheet and upload it again; people already added are skipped.</p>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok ${ready.length ? '' : 'disabled'}>${icon('upload', 'sm')}Add ${ready.length} employee(s)</button>`,
+  });
+  $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    btn.disabled = true;
+    $$('[data-close]', dlg.el).forEach((b) => { b.disabled = true; }); // no closing half-way through
+    // Managers from this sheet are added before the people who report to them
+    const order = [], placed = new Set();
+    const place = (r, depth = 0) => { if (placed.has(r) || depth > rows.length) return; if (r.managerRow && ready.includes(r.managerRow)) place(r.managerRow, depth + 1); placed.add(r); order.push(r); };
+    ready.forEach((r) => place(r));
+    let stopped = null, added = 0;
+    for (const [i, r] of order.entries()) {
+      if (stopped) { r.result = `<span class="chip amber plain">Not added yet</span><div class="faint" style="font-size:11.5px">${esc(stopped)}</div>`; continue; }
+      $('#bulk-progress', dlg.el).textContent = `Adding ${i + 1} of ${order.length}: ${r.full_name}…`;
+      r.password = r.password || genPassword();
+      try {
+        const { data, error } = await getSignupClient().auth.signUp({ email: r.email, password: r.password,
+          options: { data: { full_name: r.full_name, phone: r.phone || null }, emailRedirectTo: location.origin + location.pathname } });
+        if (error) throw error;
+        if (!data?.user?.id || (Array.isArray(data.user.identities) && !data.user.identities.length)) throw new Error('An account with this email already exists');
+        r.userId = data.user.id;
+        const managerId = r.managerId || r.managerRow?.userId || null;
+        await api.rpc('admin_give_access', {
+          p_user: r.userId, p_doj: r.doj, p_employee_code: r.eid || null, p_designation: r.designation || null,
+          p_manager: managerId, p_salary_month: r.salary ? r.salaryMonth : null, p_salary: r.salary || null,
+        });
+        added += 1;
+        r.result = `<span class="chip green plain">Added</span>${r.managerRow && !managerId ? '<div class="faint" style="font-size:11.5px">Manager not added — set it in EMD</div>' : ''}`;
+      } catch (err) {
+        const msg = friendlyError(err);
+        if (/rate limit|too many|over_email_send_rate_limit|429/i.test(String(err?.message || err) + ' ' + (err?.status || ''))) {
+          stopped = 'Supabase’s email limit was reached — upload the same file again later; people already added are skipped.';
+          r.result = `<span class="chip amber plain">Not added yet</span><div class="faint" style="font-size:11.5px">${esc(stopped)}</div>`;
+        } else r.result = r.userId
+          ? `<span class="chip amber plain" title="${esc(msg)}">Login created, details not saved</span><div class="faint" style="font-size:11.5px">Find them in Access Control → Signup Requests and click Give access</div>`
+          : `<span class="chip red plain" title="${esc(msg)}">${esc(msg)}</span>`;
+      }
+      $('#bulk-table', dlg.el).innerHTML = tableHTML();
+    }
+    $('#bulk-table', dlg.el).innerHTML = tableHTML();
+    $('#bulk-progress', dlg.el).innerHTML = `<b>${added} of ${order.length} added.</b> Download the sign-in details to share each person’s email and temporary password.${stopped ? ` <span class="error-text">${esc(stopped)}</span>` : ''}`;
+    $$('[data-close]', dlg.el).forEach((b) => { b.disabled = false; });
+    const foot = btn.parentElement;
+    foot.innerHTML = `<button class="btn" id="bulk-creds" ${added ? '' : 'disabled'}>${icon('download', 'sm')}Sign-in details (CSV)</button><button class="btn btn-primary" data-close>Done</button>`;
+    $('[data-close]', foot).addEventListener('click', () => dlg.close());
+    $('#bulk-creds', foot).addEventListener('click', () => {
+      const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+      const lines = order.filter((r) => r.userId).map((r) => [r.full_name, r.email, r.password, r.eid, location.origin + location.pathname].map(cell).join(','));
+      const blob = new Blob(['﻿' + ['Name,Email,Temporary Password,Employee ID,Sign-in link', ...lines].join('\n')], { type: 'text/csv;charset=utf-8' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `altius-new-employees-${todayISO()}.csv`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    });
+    state.fin.loaded = false;
+    await refreshAdmin(); // the page under the dialog shows the new people
+  });
+}
+function openBulkMenu() {
+  const dlg = openModal({
+    title: 'Upload employees from Excel', size: 'sm', subtitle: 'Add many employees at once — the same details as Add employee.',
+    body: `<ol class="muted" style="font-size:13px;padding-left:18px;display:grid;gap:6px">
+        <li>Download the template (<b>.xlsx</b>) — one row per employee. The “How to fill” sheet explains each column.</li>
+        <li>Fill <b>Full Name</b>, <b>Email</b> and <b>Date of Joining</b>; the rest is optional.</li>
+        <li>Upload it, check the preview, then add. Everyone goes straight into Employee Master Data; KYC is asked when they sign in.</li></ol>`,
+    footer: `<button class="btn" id="bulk-tpl">${icon('download', 'sm')}Download template</button><button class="btn btn-primary" id="bulk-up">${icon('upload', 'sm')}Upload filled sheet</button>`,
+  });
+  $('#bulk-tpl', dlg.el).addEventListener('click', downloadBulkTemplate);
+  $('#bulk-up', dlg.el).addEventListener('click', () => { dlg.close(); pickBulkFile(); });
+}
+
 /* ---------- Access Control ---------- */
 async function pageAccess(r) {
   await ensureAdmin();
@@ -1812,13 +2042,14 @@ async function pageAccess(r) {
   return {
     title: 'Access Control',
     crumbs: 'Give access to sign-ups or add employees directly — KYC is checked alongside, it never blocks access',
-    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
+    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm" id="bulk-emp">${icon('upload', 'sm')}Upload Excel</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
     html: `
       <div><nav class="tabs">${tabs.map(([k, l]) => `<a href="#/access/${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${lists[k].length}</span></a>`).join('')}</nav></div>
       <div class="card">${table}</div>`,
     mount() {
       $('#refresh-btn').addEventListener('click', (e) => withBusy(e.currentTarget, '', refreshAdmin));
       $('#add-emp').addEventListener('click', () => openOnboardDialog('add'));
+      $('#bulk-emp').addEventListener('click', openBulkMenu);
       $$('[data-grant]').forEach((b) => b.addEventListener('click', () => openOnboardDialog('grant', byId(b.dataset.grant))));
       $$('[data-reject]').forEach((b) => b.addEventListener('click', () => rejectDialog(byId(b.dataset.reject))));
       $$('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
@@ -2002,8 +2233,9 @@ async function pageEmd() {
   return {
     title: 'Employee Master Data',
     crumbs: `${tabs.active.length} active · ${tabs.rt.length} resigned / terminated · ${tabs.fnf.length} F&F completed`,
-    actions: `<div class="search">${icon('search')}<input class="input" id="emd-search" placeholder="Search name, email, designation…" value="${esc(state.emdSearch)}"></div>
-              <button class="btn btn-sm" id="emd-export" ${all.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>
+    actions: `<div class="search">${icon('search')}<input class="input" id="emd-search" placeholder="Search…" style="width:180px" value="${esc(state.emdSearch)}"></div>
+              <button class="btn btn-sm" id="emd-export" ${all.length ? '' : 'disabled'} title="Export CSV">${icon('download', 'sm')}Export</button>
+              <button class="btn btn-sm" id="emd-bulk">${icon('upload', 'sm')}Upload Excel</button>
               <button class="btn btn-sm btn-primary" id="emd-add">${icon('userPlus', 'sm')}Add employee</button>`,
     html: `<div><nav class="tabs">${[['active', 'Active'], ['rt', 'Resigned & Terminated'], ['fnf', 'F&F completed']].map(([k, l]) => `<a href="#/emd" data-emd-tab="${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${tabs[k].length}</span></a>`).join('')}</nav></div>
       <div class="card">${all.length ? `<div class="table-wrap"><table class="table compact">
@@ -2020,6 +2252,7 @@ async function pageEmd() {
       });
       $('#emd-export').addEventListener('click', () => exportEmdCsv(filter(state.emdSearch)));
       $('#emd-add').addEventListener('click', () => openOnboardDialog('add'));
+      $('#emd-bulk').addEventListener('click', openBulkMenu);
       $('#emd-body')?.addEventListener('click', (ev) => {
         const eb = ev.target.closest('[data-eid]');
         if (eb) { ev.preventDefault(); return openAssignEid(byId(eb.dataset.eid)); }

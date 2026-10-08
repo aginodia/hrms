@@ -105,6 +105,16 @@ There is **no bottleneck**. Once access is given (or the admin adds the employee
 
 The login is created and the employee is added to EMD straight away. A sign-in summary (link, email, temporary password) is shown to copy and share. The employee can change the password in **My Profile → Change password**. If email confirmation is switched on in Supabase, they must click the confirmation email first.
 
+**Upload Excel (admin).** Use this to add many employees at once. The **Upload Excel** button is in Employee Master Data and Access Control.
+1. **Download template** gives an `.xlsx` with one row per employee and the same fields as Add employee: Full Name*, Email*, Phone, Date of Joining* (DD-MM-YYYY), Employee ID, Designation, Reporting Manager (Emp ID or email), Salary From (MM-YYYY), Monthly Salary, Temporary Password. A "How to fill" sheet explains each column. Your own sheet works too if its headers match.
+2. **Upload filled sheet** shows a preview: each row is marked *Ready*, *Already in the HRMS* (skipped), or with its problem (bad email, missing joining date, duplicate email, Employee ID already used, and so on).
+3. Click **Add**. For each Ready row, a login is created and the person goes straight into Employee Master Data. Managers listed in the same sheet are added first, so their team members can report to them.
+4. **Sign-in details (CSV)** gives each person's email and temporary password, to share.
+
+Rows with problems are left out. Fix them in the sheet and upload it again; people already added are skipped. Because email confirmation is on in Supabase, each new login sends a confirmation email. If Supabase's email limit is reached, the upload stops and the remaining rows show *Not added yet*. Upload the same file again later to add them.
+
+**Clearing test data.** `supabase/scripts/clear_test_data.sql` removes every user except the admin login (which keeps its Employee ID) and all KYC, salary, payroll, finance and log data. It keeps the settings. Run it once in the Supabase SQL Editor. It is not a migration, and it cannot be undone.
+
 **Give access (admin).** In Access Control → Signup Requests, **Give access** opens the same employment form: date of joining (defaults to today), Employee ID, designation, manager and starting salary. The person moves into EMD immediately.
 
 **KYC (employee).** When they sign in, the KYC form is shown with **Skip for now**. Skipping takes them into the HRMS. Home then shows a *Complete your KYC* card, and **My KYC** in the menu carries a badge. The form shows again at their next sign-in until it is submitted. Files must be PDF or JPG, up to 5 MB each.
