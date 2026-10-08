@@ -165,6 +165,23 @@ To switch the code step off, set `const REQUIRE_EMAIL_OTP = false;` near the top
 
 The code step is enforced by the app; Supabase itself still accepts the password alone. Someone with the password and technical skill could call Supabase directly without the code. The database rules (each person sees only their own data, admin-only functions) still apply either way.
 
+**Admins (management) and Non-EMD.** Access Control has **Admins** and **Non-EMD** tabs.
+* **Give admin access** makes someone part of management. They then use only the admin console (no employee portal) and are kept out of Employee Master Data, payroll and finance lists.
+* **Revoke admin** turns them back into a normal user. The base admin can't be revoked, and nobody can change their own access.
+* **Non-EMD** is for people who can sign in to the employee portal but are not employees. They are not in EMD, payroll or finance. **Move someone to Non-EMD** and **Move to EMD** switch a person either way, and the Give access / Add employee form has a **Type** field.
+* Reporting-manager pickers still list everyone, so a manager can be from management.
+
+**KYC: Save vs Skip.** The KYC form has **Save & finish later**, which stores whatever has been filled in, even if it's only the emergency contact. It isn't submitted, and the form reopens with those details. **Skip** stores nothing from that visit: anything typed and any files uploaded during it are discarded. Admins see each employee's KYC status on their EMD page, with **Review — approve or send back** once it's submitted, as well as in Access Control → KYC Review.
+
+**Change requests.** Once KYC is submitted, employees can't edit their details directly. In **My Profile → Request a change** they ask for a new name, phone, date of birth, bank account / IFSC or emergency contact. **Nothing changes until an admin approves it** in Access Control → **Change requests**. That tab shows each detail's current and requested value, with **Approve** or **Reject** (a reason is required to reject). The employee sees the outcome, and can withdraw a request while it's still waiting. Only one request can be waiting at a time.
+
+**Employee portal.**
+* **Home:** Employee ID, designation, manager, joining date, current salary, last net pay, loan remaining, and the KYC status.
+* **My Profile:** personal, employment, bank and emergency details, documents, salary history, change requests, and change password.
+* **My Pay:** monthly payroll (days, earned, PT, net pay), bonus and leave encashment, variable, and loans with the remaining balance.
+
+What employees see follows **Team Access**: job details, salary history and KYC documents as before, plus new switches for *Monthly pay* and *Bonus, variable & loans*.
+
 **Signing out.** **Sign out** is in the top bar on every page (and at the bottom of the sidebar). It ends the session on this device, even if the network call to Supabase fails. If a session expires, the app returns to the sign-in screen with a message.
 
 ## Payroll (Module 3)
@@ -271,6 +288,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261012000000_roles_nonemd_kyc_drafts_change_requests.sql` | Admin give/revoke, Non-EMD (member type), KYC drafts (Save vs Skip), change requests with admin approval, and `my_portal()` for the employee portal. Re-runnable. |
 | `supabase/migrations/20261011000000_payroll_left_codes.sql` | Payroll mapping: mark sheet EmpCodes as left / resigned (kept out of payroll and hidden in later months). Re-runnable. |
 | `supabase/migrations/20261010000000_onboarding_no_bottleneck.sql` | Give access straight into EMD, KYC status alongside (skip / submit / send back / approve without blocking), Assign Emp ID with logging; moves anyone mid-onboarding into the HRMS. Re-runnable. |
 | `supabase/migrations/20261009000000_notice_bonus_ledger_repayments.sql` | Notice period (resignation date + last working day), the add-only bonus ledger with payment dates, and manual loan repayments. Admin-only. Re-runnable. |
