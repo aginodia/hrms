@@ -155,6 +155,14 @@ The EMD list has three tabs: **Active** (including those on notice), **Resigned 
 **Sign-in code (email OTP).** Signing in now takes two steps. After the password is accepted, a one-time code is emailed to the user, and they type it on the next screen. Wrong codes are refused, and **Resend code** works after 60 seconds. After that the session stays signed in until they sign out. Two Supabase settings make it work. They are dashboard settings, so I haven't changed them:
 * **Show the code in the email.** In Supabase go to Authentication → Emails → Templates → **Magic Link**, and add the code to the body, for example `<p>Your Altius HRMS sign-in code is <b>{{ .Token }}</b></p>`. Without this, the email has only a sign-in link. Clicking that link also signs the person in, but there is no code to type.
 * **Email sending limit.** Supabase's built-in email service sends only a few emails per hour, and every sign-in now needs one. For a whole team, set up your own SMTP (Authentication → Emails → SMTP settings, e.g. Google Workspace, Zoho or SendGrid).
+* **"The email … could not be sent" / sign-in or sign-up hangs for ~10 seconds.** Supabase gives up on any request whose email takes over 10 seconds to send (the Auth logs show `504 request_timeout` on `/signup`, `/otp` or `/recover`). The SMTP settings are wrong. Check them:
+  * **Port:** use `587` or `465`. Port 25 is usually blocked from cloud servers.
+  * **Host:** `smtp.gmail.com` for Google Workspace or Gmail, `smtp.office365.com` for Microsoft 365, `smtp.zoho.in` for Zoho India.
+  * **Username:** the full mailbox address.
+  * **Password:** an *App Password*, not the normal login password. Google needs 2-Step Verification on before it lets you create one. Microsoft 365 needs "Authenticated SMTP" enabled for that mailbox.
+  * **Sender email:** the same mailbox, or an alias it is allowed to send as.
+
+  After saving, try **Forgot password** once and look in **Logs → Auth**. The request should finish in 1–3 seconds. Until SMTP works, you can set `REQUIRE_EMAIL_OTP = false` in `index.html` so existing users can still sign in with just their password. Sign-up still needs the confirmation email.
 
 **Passwords with a code.**
 * **Forgot password** (sign-in page): enter the email, then the emailed code together with the new password. The person is signed in straight away. The link in that email also still works.

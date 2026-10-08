@@ -714,6 +714,11 @@ function friendlyError(err) {
   if (/row-level security|permission denied/i.test(msg)) return 'You do not have permission to do that.';
   if (/rate limit/i.test(msg)) return 'Too many attempts. Please wait a minute and try again.';
   if (/Could not find the function/i.test(msg)) return 'This action is not set up in the database yet — apply the latest file in supabase/migrations.';
+  // Supabase Auth answers 504 when sending the email (sign-up confirmation, sign-in code, reset code) hangs,
+  // and "Error sending … email" when the mail server refuses it — both point at the SMTP settings.
+  if (err?.status === 504 || err?.code === 'request_timeout' || /Error sending .*email/i.test(msg)) {
+    return 'The email with your code / link could not be sent — the mail (SMTP) settings in Supabase need to be fixed. Please tell the HR admin.';
+  }
   if (/timed out/i.test(msg)) return 'The server took too long to respond. Check your connection and try again.';
   if (/Invalid API key|No API key/i.test(msg)) return 'The Supabase key in index.html is not valid for this project.';
   if (/schema cache|relation .* does not exist/i.test(msg)) return 'The database is not set up yet — apply the schema in supabase/migrations first.';
