@@ -152,6 +152,14 @@ The entry with the latest month is the current salary. That entry's month and % 
 
 The EMD list has three tabs: **Active** (including those on notice), **Resigned & Terminated**, and **F&F completed**. **Mark active again** clears an exit before F&F.
 
+**Sign-in code (email OTP).** Signing in now takes two steps. After the password is accepted, a one-time code is emailed to the user, and they type it on the next screen. Wrong codes are refused, and **Resend code** works after 60 seconds. After that the session stays signed in until they sign out. Two Supabase settings make it work. They are dashboard settings, so I haven't changed them:
+* **Show the code in the email.** In Supabase go to Authentication → Emails → Templates → **Magic Link**, and add the code to the body, for example `<p>Your Altius HRMS sign-in code is <b>{{ .Token }}</b></p>`. Without this, the email has only a sign-in link. Clicking that link also signs the person in, but there is no code to type.
+* **Email sending limit.** Supabase's built-in email service sends only a few emails per hour, and every sign-in now needs one. For a whole team, set up your own SMTP (Authentication → Emails → SMTP settings, e.g. Google Workspace, Zoho or SendGrid).
+
+To switch the code step off, set `const REQUIRE_EMAIL_OTP = false;` near the top of `index.html`.
+
+The code step is enforced by the app; Supabase itself still accepts the password alone. Someone with the password and technical skill could call Supabase directly without the code. The database rules (each person sees only their own data, admin-only functions) still apply either way.
+
 **Signing out.** **Sign out** is in the top bar on every page (and at the bottom of the sidebar). It ends the session on this device, even if the network call to Supabase fails. If a session expires, the app returns to the sign-in screen with a message.
 
 ## Payroll (Module 3)
@@ -163,6 +171,9 @@ The EMD list has three tabs: **Active** (including those on notice), **Resigned 
 * **A simple table** with the columns **EmpCode · Name · Date · Day · IN · OUT**, one row per employee per day. Header names are matched loosely (for example `Emp Code`, `In Time`, `Punch Out`), and title rows above the header are skipped. The file is read in the browser: only the rows are saved to Supabase (`attendance_punches`), never the Excel file. Uploading the same month again replaces it, keeps the old upload as history, and carries your day-wise changes over.
 
 **2. Mapping.** Each EmpCode in the sheet is mapped to an employee in Employee Master Data. **The EmpCode must be the same as the Employee ID in EMD**: case and leading zeros are ignored (`0003` = `003`), but prefixes are not (`0047` ≠ `AI-0047`). Names are never used. Matching IDs are suggested, and you confirm with **Save mapping**. A mapping where the IDs differ (or the employee has no Employee ID) is flagged in red here and in the salary table, and saving it asks for confirmation. Only mapped employees appear in the salary calculation. Mappings are remembered for later months.
+
+**People who have left.** The first sheets will include people who left before the HRMS existed. In the Mapping dropdown, choose **Left / resigned — not in HRMS**, or use **Mark not-mapped as left** to do every unmapped row at once, then click **Save mapping**. Left EmpCodes are kept out of payroll and are not counted as "not mapped". From then on they are folded into a closed **Left / resigned — N hidden** list, so they no longer appear for mapping in later months. To undo one, open that list and change its dropdown back.
+
 
 **4. Professional Tax.** HR keeps the PT slabs (monthly salary from → to → PT amount). Each employee's monthly salary is matched to a slab, and that PT is deducted: **Net payable = Earned − PT**. The slabs are prefilled with West Bengal rates (up to ₹10,000: ₹0; ₹10,001–15,000: ₹110; ₹15,001–25,000: ₹130; ₹25,001–40,000: ₹150; above ₹40,000: ₹200). Check these against the current notification.
 
@@ -255,6 +266,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261011000000_payroll_left_codes.sql` | Payroll mapping: mark sheet EmpCodes as left / resigned (kept out of payroll and hidden in later months). Re-runnable. |
 | `supabase/migrations/20261010000000_onboarding_no_bottleneck.sql` | Give access straight into EMD, KYC status alongside (skip / submit / send back / approve without blocking), Assign Emp ID with logging; moves anyone mid-onboarding into the HRMS. Re-runnable. |
 | `supabase/migrations/20261009000000_notice_bonus_ledger_repayments.sql` | Notice period (resignation date + last working day), the add-only bonus ledger with payment dates, and manual loan repayments. Admin-only. Re-runnable. |
 | `supabase/migrations/20261008000000_exits_variable_upload_loans.sql` | Employment status and F&F, the finance activity log, variable sheet uploads, loans and loan deductions from Variable / Bonus. Admin-only. Re-runnable. |

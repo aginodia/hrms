@@ -164,6 +164,11 @@
   .card-foot { display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 14px 20px; }
   .chip.lwd { background: var(--red-soft); color: var(--red); font-weight: 600; }
   .row-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; }
+  tr.row-left td { color: var(--muted); }
+  details.left-codes > summary { list-style: none; }
+  details.left-codes > summary::-webkit-details-marker { display: none; }
+  details.left-codes[open] > summary .right svg { transform: rotate(90deg); }
+  .otp-input { font-size: 22px; letter-spacing: .4em; text-align: center; height: 52px; }
   .chips-line { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
   .status-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .status-actions { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
@@ -560,6 +565,9 @@
    ===================================================================== */
 const SUPABASE_URL = 'https://bejhmbvwaexpafhkseod.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_Pv8a0r1Q8kNqqV34CcS5lw_dOaGpLZD';
+// Sign-in asks for a one-time code emailed to the user after the password is checked.
+// Set to false to turn the email code off (e.g. if Supabase can't send emails).
+const REQUIRE_EMAIL_OTP = true;
 
 /* ===================================================================== */
 const BASE_ADMIN_EMAIL = 'sayan.mullick@altiusinvestech.com';
@@ -1029,6 +1037,17 @@ function renderAuth(view) {
         <div class="form-msg"></div>
         <button class="btn btn-primary btn-block" type="submit">Update password</button>
       </form>`,
+    otp: `
+      <div class="big-ico" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin-bottom:18px">${icon('mail')}</div>
+      <h2>Enter the code from your email</h2>
+      <p class="sub">We've sent a sign-in code to <b>${esc(state.otp?.email || '')}</b>. It can take a minute to arrive — check spam too.</p>
+      <form id="auth-form" novalidate>
+        <div class="field"><label>Code</label><input class="input mono otp-input" name="token" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="••••••" required></div>
+        <div class="form-msg"></div>
+        <button class="btn btn-primary btn-block" type="submit">Verify &amp; sign in</button>
+      </form>
+      <p class="auth-switch"><button class="link-btn" id="otp-resend" type="button">Resend code</button> <span class="faint" id="otp-wait"></span>
+        &nbsp;·&nbsp; <button class="link-btn" type="button" id="otp-cancel">Use a different account</button></p>`,
     sent: `
       <div class="big-ico" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--green-soft);color:var(--green);margin-bottom:18px">${icon('mail')}</div>
       <h2>Check your inbox</h2>
@@ -1066,6 +1085,39 @@ function renderAuth(view) {
   const form = $('#auth-form');
   if (form) form.addEventListener('submit', (e) => { e.preventDefault(); handleAuthSubmit(v, form); });
   $('#auth-form input')?.focus();
+  if (v === 'otp') mountOtpView();
+}
+
+// ---- Email OTP after the password (REQUIRE_EMAIL_OTP) ----
+const OTP_RESEND_SECONDS = 60;
+async function sendLoginOtp(email) {
+  const { error } = await db.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
+  if (error) throw error;
+  state.otp = { email, sentAt: Date.now() };
+}
+function mountOtpView() {
+  const input = $('.otp-input');
+  input.addEventListener('input', () => {
+    input.value = input.value.replace(/\D/g, '');
+    if (input.value.length === 6) $('#auth-form').requestSubmit(); // the usual code length
+  });
+  const resend = $('#otp-resend'), wait = $('#otp-wait');
+  const tick = () => {
+    if (!document.body.contains(resend)) return clearInterval(timer);
+    const left = Math.ceil(OTP_RESEND_SECONDS - (Date.now() - (state.otp?.sentAt || 0)) / 1000);
+    resend.disabled = left > 0;
+    wait.textContent = left > 0 ? `in ${left}s` : '';
+  };
+  const timer = setInterval(tick, 1000); tick();
+  resend.addEventListener('click', async () => {
+    const msg = $('.form-msg');
+    try {
+      await withBusy(resend, 'Sending…', () => sendLoginOtp(state.otp.email));
+      msg.innerHTML = `<div class="alert alert-info">${icon('mail')}<span>A new code is on its way.</span></div>`;
+      tick();
+    } catch (e) { msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(friendlyError(e))}</span></div>`; }
+  });
+  $('#otp-cancel').addEventListener('click', () => { state.otpGate = false; state.otp = null; renderAuth('login'); });
 }
 
 async function handleAuthSubmit(view, form) {
@@ -1081,10 +1133,30 @@ async function handleAuthSubmit(view, form) {
     if (view === 'login') {
       if (!isEmail(email) || !f.password) return fail('Enter your email and password.');
       await withBusy(btn, 'Signing in…', async () => {
-        const { data, error } = await db.auth.signInWithPassword({ email, password: f.password });
-        if (error) throw error;
-        if (!data?.session) throw new Error('Sign-in did not return a session. Please try again.');
-        // Move on right away rather than waiting only for the auth event.
+        if (REQUIRE_EMAIL_OTP) state.otpGate = true; // hold the app until the emailed code is entered
+        try {
+          const { data, error } = await db.auth.signInWithPassword({ email, password: f.password });
+          if (error) throw error;
+          if (!data?.session) throw new Error('Sign-in did not return a session. Please try again.');
+          if (!REQUIRE_EMAIL_OTP) {
+            // Move on right away rather than waiting only for the auth event.
+            setTimeout(() => handleAuthEvent('SIGNED_IN', data.session), 0);
+            return;
+          }
+          // Password is right. Drop that session on this device; the real one comes from the code.
+          await db.auth.signOut({ scope: 'local' });
+          await sendLoginOtp(email);
+        } catch (err) { state.otpGate = false; throw err; }
+      });
+      if (REQUIRE_EMAIL_OTP && state.otpGate) renderAuth('otp');
+    } else if (view === 'otp') {
+      const token = String(f.token || '').replace(/\D/g, '');
+      if (token.length < 6) return fail('Enter the code from the email.');
+      await withBusy(btn, 'Verifying…', async () => {
+        state.otpGate = false;
+        const { data, error } = await db.auth.verifyOtp({ email: state.otp.email, token, type: 'email' });
+        if (error) { state.otpGate = true; throw new Error(/expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Check the latest email, or resend the code.' : error.message); }
+        state.otp = null;
         setTimeout(() => handleAuthEvent('SIGNED_IN', data.session), 0);
       });
     } else if (view === 'signup') {
@@ -2774,21 +2846,25 @@ function idCheck(code, emp) {
   return normCode(emp.employee_code) === normCode(code) ? { ok: true, text: 'ID matches' } : { ok: false, text: `ID mismatch — EMD has ${emp.employee_code}` };
 }
 const codeMapIndex = () => new Map(state.payroll.codeMap.filter((m) => m.employee_id).map((m) => [m.emp_code, m.employee_id]));
+// EmpCodes marked "Left / resigned" in Mapping (people who left before the HRMS) — hidden from later months
+const leftCodeSet = () => new Set(state.payroll.codeMap.filter((m) => m.left_at).map((m) => m.emp_code));
 
 function payrollSheet() {
   const P = state.payroll;
   const run = currentRun();
-  if (!run || !P.data) return { run, mapped: [], unmapped: [], exited: [], groups: [] };
+  if (!run || !P.data) return { run, mapped: [], unmapped: [], exited: [], left: [], groups: [] };
   const groups = groupPunches(P.data.punches);
   const map = codeMapIndex();
+  const leftCodes = leftCodeSet();
   const adjByCode = new Map();
   for (const a of P.data.adjustments) {
     if (!a.final_status) continue;
     if (!adjByCode.has(a.emp_code)) adjByCode.set(a.emp_code, new Map());
     adjByCode.get(a.emp_code).set(a.work_date, a.final_status);
   }
-  const mapped = [], unmapped = [], exited = [];
+  const mapped = [], unmapped = [], exited = [], left = [];
   for (const g of groups) {
+    if (leftCodes.has(g.code)) { left.push(g); continue; } // marked as left — not in payroll
     const emp = byId(map.get(g.code));
     if (emp?.fnf_completed_at) { exited.push({ g, emp }); continue; } // journey ended — not channelled
     if (!emp) { unmapped.push(g); continue; }
@@ -2808,7 +2884,7 @@ function payrollSheet() {
     mapped.push({ g, emp, days, pre, post, salary, notes, rt: isRT(emp), idOk: !check || check.ok, prePay: payFor(pre, salary, P.rules), ...pay, pt, net: Math.max(0, pay.payable - pt) });
   }
   mapped.sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
-  return { run, groups, mapped, unmapped, exited };
+  return { run, groups, mapped, unmapped, exited, left };
 }
 
 /* ---------- Excel parsing (in the browser; the file is never uploaded) ---------- */
@@ -3091,7 +3167,7 @@ function noRunState() {
 
 async function pagePayrollCalc() {
   const P = state.payroll;
-  const { run, mapped, unmapped, groups, exited } = payrollSheet();
+  const { run, mapped, unmapped, groups, exited, left } = payrollSheet();
   const base = { title: 'Payroll', crumbs: 'Monthly salary calculation from attendance', actions: payrollActions() };
   if (!run) {
     return { ...base, html: payrollTabs('calc') + noRunState(), mount() { mountPayrollActions(); $('#upload-att-empty')?.addEventListener('click', pickAttendanceFile); } };
@@ -3111,14 +3187,14 @@ async function pagePayrollCalc() {
         <div class="card stat"><div class="top"><span>Month</span><span class="ico" style="background:var(--accent-soft);color:var(--accent)">${icon('calendar')}</span></div>
           <div class="value" style="font-size:22px">${fmtMonth(run.month)}</div><div class="foot" title="${esc(fmtDateTime(run.uploaded_at))}">${esc(run.source_file_name || 'Uploaded sheet')} · ${fmtRelative(run.uploaded_at)}</div></div>
         <div class="card stat"><div class="top"><span>Employees in sheet</span><span class="ico" style="background:var(--blue-soft);color:var(--blue)">${icon('users')}</span></div>
-          <div class="value">${groups.length}</div><div class="foot">${mapped.length} mapped · ${unmapped.length} not mapped${exited.length ? ` · ${exited.length} F&F done` : ''}</div></div>
+          <div class="value">${groups.length}</div><div class="foot">${mapped.length} mapped · ${unmapped.length} not mapped${left.length ? ` · ${left.length} left` : ''}${exited.length ? ` · ${exited.length} F&F done` : ''}</div></div>
         <div class="card stat"><div class="top"><span>Total net payable</span><span class="ico" style="background:var(--green-soft);color:var(--green)">${icon('wallet')}</span></div>
           <div class="value" style="font-size:24px">${fmtINR(totalNet)}</div><div class="foot">${fmtINR(total)} earned − ${fmtINR(totalPt)} PT</div></div>
         <div class="card stat"><div class="top"><span>Payroll status</span><span class="ico" style="background:var(--violet-soft);color:var(--violet)">${icon('fileCheck')}</span></div>
           <div class="value" style="font-size:18px">${run.processed_at ? (changed ? '<span class="chip amber">Changed since save</span>' : '<span class="chip green">Saved</span>') : '<span class="chip gray">Not saved</span>'}</div>
           <div class="foot">${run.processed_at ? `Saved ${fmtRelative(run.processed_at)}` : 'Review, then save the payroll'}</div></div>
       </div>
-      ${unmapped.length ? `<div class="alert alert-warn">${icon('alert')}<span><b>${unmapped.length} employee(s) in the sheet are not mapped</b> to Employee Master Data, so they are not in the calculation. <a href="#/payroll/mapping">Map them</a>.</span></div>` : ''}
+      ${unmapped.length ? `<div class="alert alert-warn">${icon('alert')}<span><b>${unmapped.length} employee(s) in the sheet are not mapped</b> to Employee Master Data, so they are not in the calculation. <a href="#/payroll/mapping">Map them</a>, or mark people who have left as <b>Left / resigned</b>.</span></div>` : ''}
       ${noSalary.length ? `<div class="alert alert-warn">${icon('alert')}<span>No salary in Employee Master Data for: ${noSalary.map((m) => esc(m.emp.full_name)).join(', ')}. Their payable shows ₹0 and they are left out when saving.</span></div>` : ''}
       <div class="card">
         <div class="card-head"><div><h3>Salary calculation — ${fmtMonth(run.month)}</h3><p>${rulesSummary(P.rules)} · Daily salary = monthly ÷ 30 · Earned = (Full day${P.rules.sunday_paid_off ? ' + WO' : ''}) × daily + Half day × daily × 0.5 · Net = Earned − Professional Tax</p></div>
@@ -3407,6 +3483,7 @@ async function pagePayrollEmployee(code) {
 }
 
 /* ---------- Mapping: sheet EmpCode ↔ Employee Master Data ---------- */
+const LEFT = '__left__'; // Mapping dropdown value: the person in the sheet has left (not in the HRMS)
 async function pagePayrollMapping() {
   const P = state.payroll;
   const { run, groups } = payrollSheet();
@@ -3414,8 +3491,8 @@ async function pagePayrollMapping() {
   if (!run) return { ...base, html: payrollTabs('mapping') + noRunState(), mount() { mountPayrollActions(); $('#upload-att-empty')?.addEventListener('click', pickAttendanceFile); } };
 
   const emps = activeEmployees();
-  const savedMap = new Map(P.codeMap.map((x) => [x.emp_code, x.employee_id || '']));
-  const takenBySaved = new Set([...savedMap.values()].filter(Boolean));
+  const savedMap = new Map(P.codeMap.map((x) => [x.emp_code, x.left_at ? LEFT : x.employee_id || '']));
+  const takenBySaved = new Set([...savedMap.values()].filter((v) => v && v !== LEFT));
   // The sheet's EmpCode must be the Employee ID in EMD (names are not used).
   const suggest = (g) => {
     const hits = emps.filter((e) => normCode(e.employee_code) && normCode(e.employee_code) === normCode(g.code));
@@ -3427,65 +3504,96 @@ async function pagePayrollMapping() {
     if (!savedMap.has(g.code)) { const s = suggest(g); if (s && !takenBySaved.has(s)) pick = s; }
     return [g.code, pick];
   }));
+  // Codes already saved as "left" are folded away; everything else is listed
+  const leftSaved = groups.filter((g) => savedMap.get(g.code) === LEFT);
+  const main = groups.filter((g) => savedMap.get(g.code) !== LEFT);
+  const isEmp = (v) => v && v !== LEFT;
   const statusOf = (g) => {
     const pick = model.get(g.code) || '';
     const saved = savedMap.get(g.code) || '';
-    if (!pick) return '<span class="chip gray">Not mapped</span>';
+    const label = savedMap.has(g.code) ? 'Changed' : pick && pick === suggest(g) ? 'Suggested' : 'New';
+    const unsaved = pick === saved ? '' : ` <span class="chip ${savedMap.has(g.code) ? 'amber' : 'blue'} plain">${label} · not saved</span>`;
+    if (!pick) return '<span class="chip gray">Not mapped</span>' + unsaved;
+    if (pick === LEFT) return '<span class="chip gray plain">Left — not in payroll, hidden from next month</span>' + unsaved;
     const check = idCheck(g.code, byId(pick));
-    const idChip = `<span class="chip ${check.ok ? 'green' : 'red'}">${esc(check.text)}</span>`;
-    const saveChip = pick === saved ? '' : ` <span class="chip ${savedMap.has(g.code) ? 'amber' : 'blue'} plain">${savedMap.has(g.code) ? 'Changed' : 'Suggested'} · not saved</span>`;
-    return idChip + saveChip;
+    return `<span class="chip ${check.ok ? 'green' : 'red'}">${esc(check.text)}</span>` + unsaved;
   };
-  const rowsHTML = () => groups.map((g) => {
+  const rowsHTML = (list) => list.map((g) => {
     const pick = model.get(g.code) || '';
-    const dup = pick && [...model.entries()].some(([c, v]) => c !== g.code && v === pick);
-    return `<tr>
+    const dup = isEmp(pick) && [...model.entries()].some(([c, v]) => c !== g.code && v === pick);
+    return `<tr class="${pick === LEFT ? 'row-left' : ''}">
       <td class="mono"><b>${esc(g.code)}</b></td><td>${esc(g.name || '—')}</td><td class="num">${g.rows.length}</td>
       <td style="min-width:260px"><select class="input ${dup ? 'invalid' : ''}" data-code="${esc(g.code)}" style="height:36px">
         <option value="">— Not mapped —</option>
+        <option value="${LEFT}" ${pick === LEFT ? 'selected' : ''}>Left / resigned — not in HRMS</option>
+        <optgroup label="Employee Master Data">
         ${emps.map((e) => `<option value="${e.id}" ${e.id === pick ? 'selected' : ''}>${esc(e.full_name)}${e.employee_code ? ` · ${esc(e.employee_code)}` : ''}</option>`).join('')}
+        </optgroup>
       </select>${dup ? '<div class="error-text">Already picked for another EmpCode</div>' : ''}</td>
       <td>${statusOf(g)}</td></tr>`;
   }).join('');
-  const mappedCount = () => groups.filter((g) => model.get(g.code)).length;
+  const counts = () => {
+    const v = groups.map((g) => model.get(g.code) || '');
+    return { mapped: v.filter(isEmp).length, left: v.filter((x) => x === LEFT).length, none: v.filter((x) => !x).length };
+  };
+  const countText = () => { const c = counts(); return `${c.mapped} mapped · ${c.left} left / resigned · ${c.none} not mapped`; };
+  const tableHead = '<thead><tr><th>EmpCode (sheet)</th><th>Name (sheet)</th><th class="num">Days</th><th>Employee (EMD) · Employee ID</th><th>Status</th></tr></thead>';
 
   return {
     ...base,
     html: `${payrollTabs('mapping')}
-      <div class="alert alert-info">${icon('info')}<span>Only mapped employees are included in the salary calculation. The sheet’s <b>EmpCode must be the same as the Employee ID</b> in Employee Master Data (leading zeros are ignored, so 0003 = 003) — names are not used. A mapping where they differ is flagged in red. Mappings are remembered for future months.</span></div>
+      <div class="alert alert-info">${icon('info')}<span>Only mapped employees are included in the salary calculation. The sheet’s <b>EmpCode must be the same as the Employee ID</b> in Employee Master Data (leading zeros are ignored, so 0003 = 003) — names are not used. People in the sheet who have already left can be set to <b>Left / resigned</b>: they are left out of payroll and won’t show up for mapping again in later months. Mappings are remembered.</span></div>
       <div class="card">
-        <div class="card-head"><div><h3>${fmtMonth(run.month)} sheet — ${groups.length} employee(s)</h3><p id="map-count">${mappedCount()} of ${groups.length} mapped</p></div>
-          <div class="right"><button class="btn btn-sm btn-primary" id="save-map">${icon('check', 'sm')}Save mapping</button></div></div>
-        <div class="table-wrap"><table class="table compact">
-          <thead><tr><th>EmpCode (sheet)</th><th>Name (sheet)</th><th class="num">Days</th><th>Employee (EMD) · Employee ID</th><th>Status</th></tr></thead>
-          <tbody id="map-body">${rowsHTML()}</tbody></table></div>
-      </div>`,
+        <div class="card-head"><div><h3>${fmtMonth(run.month)} sheet — ${main.length} EmpCode(s) to map</h3><p id="map-count">${countText()}</p></div>
+          <div class="right"><button class="btn btn-sm" id="all-left" title="Set every “Not mapped” row to Left / resigned">Mark not-mapped as left</button>
+            <button class="btn btn-sm btn-primary" id="save-map">${icon('check', 'sm')}Save mapping</button></div></div>
+        ${main.length ? `<div class="table-wrap"><table class="table compact">${tableHead}<tbody id="map-body">${rowsHTML(main)}</tbody></table></div>`
+          : `<div id="map-body">${emptyState('check', 'Nothing left to map', 'Every EmpCode in this sheet is mapped or marked as left.')}</div>`}
+      </div>
+      ${leftSaved.length ? `<details class="card left-codes"><summary class="card-head" style="cursor:pointer"><div><h3>Left / resigned — ${leftSaved.length} EmpCode(s) hidden</h3><p>Marked earlier as people who have left. They are not in payroll. Open to change one back.</p></div>
+          <div class="right">${icon('arrowRight', 'sm')}</div></summary>
+          <div class="table-wrap"><table class="table compact">${tableHead}<tbody id="left-body">${rowsHTML(leftSaved)}</tbody></table></div></details>` : ''}`,
     mount() {
       mountPayrollActions();
-      $('#map-body').addEventListener('change', (ev) => {
+      const redraw = () => {
+        if ($('#map-body')?.tagName === 'TBODY') $('#map-body').innerHTML = rowsHTML(main);
+        if ($('#left-body')) $('#left-body').innerHTML = rowsHTML(leftSaved);
+        $('#map-count').textContent = countText();
+        state.dirty = groups.some((g) => (model.get(g.code) || '') !== (savedMap.get(g.code) || ''));
+      };
+      $$('#map-body, #left-body').forEach((tb) => tb.addEventListener('change', (ev) => {
         const sel = ev.target.closest('[data-code]');
         if (!sel) return;
         model.set(sel.dataset.code, sel.value);
-        $('#map-body').innerHTML = rowsHTML();
-        $('#map-count').textContent = `${mappedCount()} of ${groups.length} mapped`;
-        state.dirty = groups.some((g) => (model.get(g.code) || '') !== (savedMap.get(g.code) || ''));
+        redraw();
+      }));
+      $('#all-left').addEventListener('click', () => {
+        const none = main.filter((g) => !model.get(g.code));
+        if (!none.length) return toast('No “Not mapped” rows to mark.', 'error');
+        none.forEach((g) => model.set(g.code, LEFT));
+        redraw();
+        toast(`${none.length} row(s) set to Left / resigned — check them, then Save mapping.`);
       });
       $('#save-map').addEventListener('click', async (ev) => {
         const btn = ev.currentTarget; // currentTarget is cleared once the handler awaits
-        const picks = [...model.values()].filter(Boolean);
+        const picks = [...model.values()].filter(isEmp);
         if (new Set(picks).size !== picks.length) return toast('An employee is picked for two EmpCodes. Fix the highlighted rows.', 'error');
-        const mismatched = groups.filter((g) => model.get(g.code) && !idCheck(g.code, byId(model.get(g.code))).ok);
+        const mismatched = groups.filter((g) => isEmp(model.get(g.code)) && !idCheck(g.code, byId(model.get(g.code))).ok);
         if (mismatched.length && !(await confirmDialog({
           title: 'Employee ID does not match',
           message: `For ${mismatched.map((g) => `<b>${esc(g.code)}</b>`).join(', ')}, the sheet’s EmpCode is not the same as the Employee ID in Employee Master Data. Save anyway? These rows stay flagged in red.`,
           confirmText: 'Save anyway', danger: true,
         }))) return;
-        const items = groups.map((g) => ({ emp_code: g.code, employee_id: model.get(g.code) || null, sheet_name: g.name || null }));
+        const items = groups.map((g) => {
+          const v = model.get(g.code) || '';
+          return { emp_code: g.code, employee_id: isEmp(v) ? v : null, sheet_name: g.name || null, left: v === LEFT };
+        });
         try {
           await withBusy(btn, 'Saving…', () => api.rpc('admin_save_code_map', { p_items: items }));
           state.dirty = false;
           P.codeMap = await payrollApi.codeMap();
-          toast(`Mapping saved — ${picks.length} of ${groups.length} employee(s) mapped.`);
+          const c = counts();
+          toast(`Mapping saved — ${c.mapped} mapped${c.left ? `, ${c.left} left / resigned` : ''}${c.none ? `, ${c.none} not mapped` : ''}.`);
           render();
         } catch (err) { toast(friendlyError(err), 'error'); }
       });
@@ -4576,6 +4684,7 @@ if (!db) {
 }
 
 async function handleAuthEvent(event, session) {
+  if (state.otpGate && event !== 'PASSWORD_RECOVERY') return; // waiting for the emailed sign-in code
   if (event === 'PASSWORD_RECOVERY') {
     state.recovery = true; state.session = session; state.user = session?.user || null;
     return renderAuth('reset');
