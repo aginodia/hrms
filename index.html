@@ -571,9 +571,10 @@
    ===================================================================== */
 const SUPABASE_URL = 'https://bejhmbvwaexpafhkseod.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_Pv8a0r1Q8kNqqV34CcS5lw_dOaGpLZD';
-// Sign-in asks for a one-time code emailed to the user after the password is checked.
-// Set to false to turn the email code off (e.g. if Supabase can't send emails).
-const REQUIRE_EMAIL_OTP = true;
+// false = the HRMS sends no emails at all: sign-in is email + password, admin approval is the gate,
+// a forgotten password is reset by an admin (Access Control → Reset password).
+// true = emailed one-time codes for sign-in, forgot password and change password (needs working SMTP in Supabase).
+const SEND_AUTH_EMAILS = false;
 
 /* ===================================================================== */
 const BASE_ADMIN_EMAIL = 'sayan.mullick@altiusinvestech.com';
@@ -622,6 +623,7 @@ const ICONS = {
   file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/>',
   fileCheck: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 15 2 2 4-4"/>',
   lock: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   x: '<path d="M18 6 6 18M6 6l12 12"/>',
   arrowLeft: '<path d="m12 19-7-7 7-7M19 12H5"/>',
@@ -705,7 +707,8 @@ function toast(message, type = 'ok') {
 function friendlyError(err) {
   const msg = String(err?.message || err || 'Something went wrong');
   if (/Invalid login credentials/i.test(msg)) return 'Incorrect email or password.';
-  if (/Email not confirmed/i.test(msg)) return 'Please confirm your email first — check your inbox for the confirmation link.';
+  if (/Email not confirmed/i.test(msg)) return SEND_AUTH_EMAILS ? 'Please confirm your email first — check your inbox for the confirmation link.' : 'Your account is waiting for the HR admin to give you access.';
+  if (/Email address .*not authorized|Error sending confirmation/i.test(msg) && !SEND_AUTH_EMAILS) return 'Sign-up is trying to send a confirmation email. In Supabase turn off Authentication → Sign In / Providers → Email → "Confirm email".';
   if (/User already registered/i.test(msg)) return 'An account with this email already exists. Try signing in instead.';
   if (/profiles_employee_code_key|employee_code/i.test(msg) && /duplicate|unique/i.test(msg)) return 'This Employee ID is already assigned to someone else.';
   if (/salary_history_employee_id_effective_month_key/i.test(msg)) return 'Each month can only have one salary entry.';
@@ -1032,7 +1035,7 @@ function renderAuth(view) {
         <button class="btn btn-primary btn-block" type="submit">Request access</button>
       </form>
       <p class="auth-switch">Already have an account? <button class="link-btn" data-action="auth-view" data-view="login">Sign in</button></p>`,
-    forgot: `
+    forgot: SEND_AUTH_EMAILS ? `
       <h2>Reset your password</h2>
       <p class="sub">We'll email you a code to set a new password.</p>
       <form id="auth-form" novalidate>
@@ -1040,7 +1043,11 @@ function renderAuth(view) {
         <div class="form-msg"></div>
         <button class="btn btn-primary btn-block" type="submit">Send code</button>
       </form>
-      <p class="auth-switch"><button class="link-btn" data-action="auth-view" data-view="login">Back to sign in</button></p>`,
+      <p class="auth-switch"><button class="link-btn" data-action="auth-view" data-view="login">Back to sign in</button></p>` : `
+      <div class="big-ico" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin-bottom:18px">${icon('lock')}</div>
+      <h2>Forgot your password?</h2>
+      <p class="sub">Ask the HR admin to reset it. They will give you a temporary password — sign in with it, then set your own from <b>My Profile → Change password</b>.</p>
+      <button class="btn btn-block" data-action="auth-view" data-view="login">${icon('arrowLeft')}Back to sign in</button>`,
     reset: `
       <h2>Set a new password</h2>
       <p class="sub">Choose a new password for your account.</p>
@@ -1075,7 +1082,7 @@ function renderAuth(view) {
         &nbsp;·&nbsp; <button class="link-btn" type="button" id="otp-cancel">Use a different account</button></p>`,
     sent: `
       <div class="big-ico" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--green-soft);color:var(--green);margin-bottom:18px">${icon('mail')}</div>
-      <h2>Check your inbox</h2>
+      <h2>${SEND_AUTH_EMAILS ? 'Check your inbox' : 'Account created'}</h2>
       <p class="sub" id="sent-msg">${esc(state.sentMessage || '')}</p>
       <button class="btn btn-block" data-action="auth-view" data-view="login">${icon('arrowLeft')}Back to sign in</button>`,
   };
@@ -1114,7 +1121,7 @@ function renderAuth(view) {
   if (v === 'forgot-code') mountResetCodeView();
 }
 
-// ---- Email OTP after the password (REQUIRE_EMAIL_OTP) ----
+// ---- Email OTP after the password (SEND_AUTH_EMAILS) ----
 const OTP_RESEND_SECONDS = 60;
 async function sendLoginOtp(email) {
   const { error } = await db.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
@@ -1180,12 +1187,12 @@ async function handleAuthSubmit(view, form) {
     if (view === 'login') {
       if (!isEmail(email) || !f.password) return fail('Enter your email and password.');
       await withBusy(btn, 'Signing in…', async () => {
-        if (REQUIRE_EMAIL_OTP) state.otpGate = true; // hold the app until the emailed code is entered
+        if (SEND_AUTH_EMAILS) state.otpGate = true; // hold the app until the emailed code is entered
         try {
           const { data, error } = await db.auth.signInWithPassword({ email, password: f.password });
           if (error) throw error;
           if (!data?.session) throw new Error('Sign-in did not return a session. Please try again.');
-          if (!REQUIRE_EMAIL_OTP) {
+          if (!SEND_AUTH_EMAILS) {
             // Move on right away rather than waiting only for the auth event.
             setTimeout(() => handleAuthEvent('SIGNED_IN', data.session), 0);
             return;
@@ -1195,7 +1202,7 @@ async function handleAuthSubmit(view, form) {
           await sendLoginOtp(email);
         } catch (err) { state.otpGate = false; throw err; }
       });
-      if (REQUIRE_EMAIL_OTP && state.otpGate) renderAuth('otp');
+      if (SEND_AUTH_EMAILS && state.otpGate) renderAuth('otp');
     } else if (view === 'otp') {
       const token = String(f.token || '').replace(/\D/g, '');
       if (token.length < 6) return fail('Enter the code from the email.');
@@ -1222,8 +1229,11 @@ async function handleAuthSubmit(view, form) {
         if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
           throw new Error('User already registered');
         }
+        // With "Confirm email" off in Supabase a session comes back and the waiting screen opens.
         if (!data.session) {
-          state.sentMessage = `We've sent a confirmation link to ${email}. Confirm your email, then sign in — your access request will then be with the admin.`;
+          state.sentMessage = SEND_AUTH_EMAILS
+            ? `We've sent a confirmation link to ${email}. Confirm your email, then sign in — your access request will then be with the admin.`
+            : `Your request is with the HR admin. Once they give you access, sign in with ${email} and your password.`;
           renderAuth('sent');
         }
       });
@@ -1889,7 +1899,7 @@ function openOnboardDialog(mode, p = null) {
           title: 'Employee added', size: 'sm', subtitle: `${esc(String(f.full_name).trim())} is in Employee Master Data.`,
           body: `<p class="muted" style="margin-bottom:10px">Share these sign-in details with them. On first sign-in they see the KYC form and can skip it.</p>
             <pre class="share-box" id="share-box">${esc(share)}</pre>
-            <p class="faint" style="font-size:12px;margin-top:8px">If email confirmation is switched on in Supabase, they must click the link in the confirmation email before signing in.</p>`,
+            ${SEND_AUTH_EMAILS ? '<p class="faint" style="font-size:12px;margin-top:8px">If email confirmation is switched on in Supabase, they must click the link in the confirmation email before signing in.</p>' : ''}`,
           footer: `<button class="btn" id="copy-share">${icon('file', 'sm')}Copy</button><button class="btn btn-primary" data-close>Done</button>`,
         });
         $('#copy-share', done.el).addEventListener('click', async () => {
@@ -2181,6 +2191,48 @@ function pickPersonDialog({ title, subtitle, people, confirmText, run, done }) {
     catch (err) { toast(friendlyError(err), 'error'); }
   });
 }
+// No reset emails: an admin sets a temporary password and passes it on; the person changes it after signing in.
+function openResetPasswordDialog(preset) {
+  const me = state.user.id;
+  const people = state.admin.profiles.filter((p) => !p.rejected_at && p.id !== me && (p.email !== BASE_ADMIN_EMAIL))
+    .sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const dlg = openModal({
+    title: 'Reset password', subtitle: 'Set a temporary password, then give it to the person. They can change it from My Profile after signing in.', size: 'sm',
+    body: `<div class="search" style="margin-bottom:10px">${icon('search')}<input class="input" id="rp-search" placeholder="Search name, Employee ID or email…" style="width:100%"></div>
+      <div class="elig-list" id="rp-list" style="max-height:260px">${people.map((e) => `<label class="elig-row" data-name="${esc((e.full_name + ' ' + (e.employee_code || '') + ' ' + e.email).toLowerCase())}">
+        <input type="radio" name="rp" value="${e.id}" ${preset === e.id ? 'checked' : ''}>${person(e, esc(e.email))}</label>`).join('') || '<p class="muted">No one to pick.</p>'}</div>
+      <div class="field" style="margin-top:14px"><label>Temporary password</label>
+        <div style="display:flex;gap:8px"><input class="input mono" id="rp-pw" value="${esc(genPassword())}" minlength="8" autocomplete="off" style="flex:1">
+        <button type="button" class="btn btn-sm" id="rp-new" title="New password">${icon('refresh', 'sm')}</button></div>
+        <div class="hint">At least 8 characters.</div></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('lock', 'sm')}Set password</button>`,
+  });
+  $('#rp-search', dlg.el).addEventListener('input', (e) => { const t = e.target.value.trim().toLowerCase(); $$('.elig-row', dlg.el).forEach((r) => r.classList.toggle('hidden', !!t && !r.dataset.name.includes(t))); });
+  $('#rp-new', dlg.el).addEventListener('click', () => { $('#rp-pw', dlg.el).value = genPassword(); });
+  $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const id = $('input[name=rp]:checked', dlg.el)?.value;
+    if (!id) return toast('Pick someone first.', 'error');
+    const pw = $('#rp-pw', dlg.el).value.trim();
+    if (pw.length < 8) return toast('The password must be at least 8 characters.', 'error');
+    const p = byId(id);
+    try {
+      await withBusy(btn, 'Saving…', () => api.rpc('admin_set_password', { p_user: id, p_password: pw }));
+      dlg.close();
+      const share = `Altius HRMS: ${location.origin + location.pathname}\nEmail: ${p.email}\nTemporary password: ${pw}`;
+      const done = openModal({
+        title: 'Password reset', size: 'sm', subtitle: `${esc(p.full_name)} can sign in with the new password now.`,
+        body: `<p class="muted" style="margin-bottom:10px">Share these sign-in details with them. They can change the password from My Profile → Change password.</p>
+          <pre class="share-box" id="rp-share">${esc(share)}</pre>`,
+        footer: `<button class="btn" id="rp-copy">${icon('copy', 'sm')}Copy</button><button class="btn btn-primary" data-close>Done</button>`,
+      });
+      $('#rp-copy', done.el).addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(share); toast('Copied.'); }
+        catch { const r = document.createRange(); r.selectNodeContents($('#rp-share', done.el)); getSelection().removeAllRanges(); getSelection().addRange(r); }
+      });
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
+}
 const CHANGE_FIELDS = {
   full_name: 'Full name', phone: 'Phone', date_of_birth: 'Date of birth', bank_account_number: 'Bank account number', bank_ifsc: 'IFSC',
   emergency_name: 'Emergency contact name', emergency_relationship: 'Emergency contact relationship', emergency_phone: 'Emergency contact number',
@@ -2303,7 +2355,7 @@ async function pageAccess(r) {
   return {
     title: 'Access Control',
     crumbs: 'Give access to sign-ups or add employees directly — KYC is checked alongside, it never blocks access',
-    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm" id="bulk-emp">${icon('upload', 'sm')}Upload Excel</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
+    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm" id="reset-pw">${icon('lock', 'sm')}Reset password</button><button class="btn btn-sm" id="bulk-emp">${icon('upload', 'sm')}Upload Excel</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
     html: `
       <div><nav class="tabs tabs-wrap">${tabs.map(([k, l]) => `<a href="#/access/${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${lists[k].length}</span></a>`).join('')}</nav></div>
       ${tab === 'admins' ? `<div class="alert alert-info">${icon('info')}<span>Admins are the management team. They use only the admin console (no employee portal) and are kept out of Employee Master Data and payroll.</span>
@@ -2316,6 +2368,7 @@ async function pageAccess(r) {
     mount() {
       $('#refresh-btn').addEventListener('click', (e) => withBusy(e.currentTarget, '', refreshAdmin));
       $('#add-emp').addEventListener('click', () => openOnboardDialog('add'));
+      $('#reset-pw').addEventListener('click', () => openResetPasswordDialog());
       $('#bulk-emp').addEventListener('click', openBulkMenu);
       $$('[data-grant]').forEach((b) => b.addEventListener('click', () => openOnboardDialog('grant', byId(b.dataset.grant))));
       $$('[data-reject]').forEach((b) => b.addEventListener('click', () => rejectDialog(byId(b.dataset.reject))));
@@ -4984,12 +5037,14 @@ async function pageMyPay() {
   };
 }
 
-// ---------- Change password (signed in): a code is emailed first ----------
-// Supabase reauthenticate() emails a one-time code; updateUser({ password, nonce }) checks it.
+// ---------- Change password (signed in) ----------
+// SEND_AUTH_EMAILS: Supabase reauthenticate() emails a one-time code; updateUser({ password, nonce }) checks it.
+// Otherwise the current password is checked first (on the separate no-session client, so this tab's session is untouched).
 function changePasswordCardHTML(sub) {
-  const otp = REQUIRE_EMAIL_OTP;
+  const otp = SEND_AUTH_EMAILS;
   return `<form class="card" id="pw-form" novalidate><div class="card-head"><div><h3>Change password</h3><p>${sub}${otp ? ' A code is emailed to you to confirm it’s you.' : ''}</p></div></div>
     <div class="card-body grid" style="gap:14px;max-width:680px">
+      ${otp ? '' : `<div class="field" style="max-width:334px"><label>Current password</label>${passwordField('current', 'Your current password', 'current-password')}</div>`}
       <div class="grid g2" style="gap:12px">
         <div class="field"><label>New password</label>${passwordField('password', 'At least 8 characters', 'new-password')}</div>
         <div class="field"><label>Confirm new password</label>${passwordField('confirm', 'Re-enter password', 'new-password')}</div>
@@ -5015,7 +5070,7 @@ function mountChangePassword() {
   const reset = () => {
     f.reset(); sentAt = 0;
     if (step2) { step2.classList.add('hidden'); resend.classList.add('hidden'); cancel.classList.add('hidden'); }
-    btn.innerHTML = `${icon('lock', 'sm')}${REQUIRE_EMAIL_OTP ? 'Send code to my email' : 'Update password'}`;
+    btn.innerHTML = `${icon('lock', 'sm')}${SEND_AUTH_EMAILS ? 'Send code to my email' : 'Update password'}`;
   };
   const sendCode = async () => {
     const { error } = await db.auth.reauthenticate();
@@ -5036,12 +5091,21 @@ function mountChangePassword() {
     ev.preventDefault();
     const pw = checkPw(); if (!pw) return;
     try {
-      if (REQUIRE_EMAIL_OTP && !sentAt) { await withBusy(btn, 'Sending…', sendCode); showVerify(); return; }
-      const nonce = REQUIRE_EMAIL_OTP ? f.elements.code.value.replace(/\D/g, '') : null;
-      if (REQUIRE_EMAIL_OTP && nonce.length < 6) return toast('Enter the code from the email.', 'error');
+      if (SEND_AUTH_EMAILS && !sentAt) { await withBusy(btn, 'Sending…', sendCode); showVerify(); return; }
+      const nonce = SEND_AUTH_EMAILS ? f.elements.code.value.replace(/\D/g, '') : null;
+      if (SEND_AUTH_EMAILS && nonce.length < 6) return toast('Enter the code from the email.', 'error');
+      const current = SEND_AUTH_EMAILS ? null : f.elements.current.value;
+      if (!SEND_AUTH_EMAILS && !current) return toast('Enter your current password.', 'error');
+      if (!SEND_AUTH_EMAILS && current === pw) return toast('The new password must be different from the current one.', 'error');
       await withBusy(btn, 'Updating…', async () => {
+        if (!SEND_AUTH_EMAILS) {
+          const { error: e1 } = await getSignupClient().auth.signInWithPassword({ email: state.user?.email || state.profile?.email, password: current });
+          if (e1) throw new Error(/Invalid login credentials/i.test(e1.message) ? 'Your current password is not correct.' : e1.message);
+          await getSignupClient().auth.signOut({ scope: 'local' });
+        }
         const { error } = await db.auth.updateUser(nonce ? { password: pw, nonce } : { password: pw });
-        if (error) throw new Error(/nonce|otp|token|expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Check the latest email, or resend the code.' : error.message);
+        if (error && /reauthenticat/i.test(error.message + (error.code || ''))) throw new Error('For safety, please sign out and sign in again, then change your password.');
+        if (error) throw new Error(nonce && /nonce|otp|token|expired|invalid/i.test(error.message) ? 'That code is wrong or has expired. Check the latest email, or resend the code.' : error.message);
       });
       reset();
       toast('Password updated.');

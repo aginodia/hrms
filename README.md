@@ -53,7 +53,7 @@ In **Authentication → URL Configuration**:
 * **Site URL**: your Netlify URL, e.g. `https://altius-hrms.netlify.app`
 * **Redirect URLs**: add the same URL (plus `http://localhost:8080` if you test locally)
 
-In **Authentication → Providers → Email**, keep **Confirm email** turned **on** (recommended). Sign-up confirmation and password-reset links use the Site URL above.
+In **Authentication → Providers → Email**, turn **Confirm email** **off**. The HRMS sends no emails; admin approval is the gate (see *Sign-in without emails* below).
 
 ### 3. Create the base admin account
 Do this **right after** running the schema.
@@ -152,26 +152,30 @@ The entry with the latest month is the current salary. That entry's month and % 
 
 The EMD list has three tabs: **Active** (including those on notice), **Resigned & Terminated**, and **F&F completed**. **Mark active again** clears an exit before F&F.
 
-**Sign-in code (email OTP).** Signing in now takes two steps. After the password is accepted, a one-time code is emailed to the user, and they type it on the next screen. Wrong codes are refused, and **Resend code** works after 60 seconds. After that the session stays signed in until they sign out. Two Supabase settings make it work. They are dashboard settings, so I haven't changed them:
-* **Show the code in the email.** In Supabase go to Authentication → Emails → Templates → **Magic Link**, and add the code to the body, for example `<p>Your Altius HRMS sign-in code is <b>{{ .Token }}</b></p>`. Without this, the email has only a sign-in link. Clicking that link also signs the person in, but there is no code to type.
-* **Email sending limit.** Supabase's built-in email service sends only a few emails per hour, and every sign-in now needs one. For a whole team, set up your own SMTP (Authentication → Emails → SMTP settings, e.g. Google Workspace, Zoho or SendGrid).
-* **"The email … could not be sent" / sign-in or sign-up hangs for ~10 seconds.** Supabase gives up on any request whose email takes over 10 seconds to send (the Auth logs show `504 request_timeout` on `/signup`, `/otp` or `/recover`). The SMTP settings are wrong. Check them:
-  * **Port:** use `587` or `465`. Port 25 is usually blocked from cloud servers.
-  * **Host:** `smtp.gmail.com` for Google Workspace or Gmail, `smtp.office365.com` for Microsoft 365, `smtp.zoho.in` for Zoho India.
-  * **Username:** the full mailbox address.
-  * **Password:** an *App Password*, not the normal login password. Google needs 2-Step Verification on before it lets you create one. Microsoft 365 needs "Authenticated SMTP" enabled for that mailbox.
-  * **Sender email:** the same mailbox, or an alias it is allowed to send as.
+**Sign-in without emails.** The HRMS sends no emails at all. There are no sign-in codes, no confirmation links and no reset emails. Admin approval is the gate.
+* **Sign-in** needs only the email and password.
+* **Sign-up**: the person fills in the form and sees "Your request is with the admin" straight away. They can't use the HRMS until an admin clicks **Give access** in Access Control. Giving access also confirms the account's email in Supabase.
+* **Forgot password**: the sign-in page tells the person to ask the HR admin.
+  * The admin opens **Access Control → Reset password**, picks the person and sets a temporary password. One is suggested.
+  * The admin copies the sign-in details and shares them.
+  * The base admin's password can only be changed by the base admin.
+* **Change password** when signed in (team: My Profile; admin: Settings → My Account): enter the current password, then the new one twice.
 
-  After saving, try **Forgot password** once and look in **Logs → Auth**. The request should finish in 1–3 seconds. Until SMTP works, you can set `REQUIRE_EMAIL_OTP = false` in `index.html` so existing users can still sign in with just their password. Sign-up still needs the confirmation email.
+**One Supabase setting is needed.** It's a dashboard setting, so the app can't change it: Authentication → Sign In / Providers → **Email** → turn **Confirm email** **off** and save. While it is on, every sign-up tries to send a confirmation email.
 
-**Passwords with a code.**
-* **Forgot password** (sign-in page): enter the email, then the emailed code together with the new password. The person is signed in straight away. The link in that email also still works.
-* **Change password** when signed in (team: My Profile; admin: Settings → My Account): enter the new password twice, click **Send code to my email**, then enter the code. Supabase checks the code before it saves the password.
-* Each flow uses a different Supabase email template, and each must show `{{ .Token }}`. *Magic link or OTP* is for sign-in. *Reset password* is for forgot password. *Reauthentication* is for change password; Supabase's default for this one already shows the code.
+Custom SMTP and the email templates are no longer used, so they can stay off.
 
-To switch the code step off, set `const REQUIRE_EMAIL_OTP = false;` near the top of `index.html`.
+**Switching emails back on later.** Set `const SEND_AUTH_EMAILS = true;` near the top of `index.html`. This brings back the emailed codes for sign-in, forgot password and change password. It needs working SMTP and the templates to show `{{ .Token }}`:
+* *Magic link or OTP* for sign-in.
+* *Reset password* for forgot password.
+* *Reauthentication* for change password.
 
-The code step is enforced by the app; Supabase itself still accepts the password alone. Someone with the password and technical skill could call Supabase directly without the code. The database rules (each person sees only their own data, admin-only functions) still apply either way.
+If those emails hang for about 10 seconds and the Auth logs show `504 request_timeout`, check the SMTP settings:
+* **Port:** `587` or `465`, not 25.
+* **Host:** for example `smtp.gmail.com` or `smtp.office365.com`.
+* **Username:** the full mailbox address.
+* **Password:** an App Password.
+* **Sender:** the same mailbox.
 
 **Admins (management) and Non-EMD.** Access Control has **Admins** and **Non-EMD** tabs.
 * **Give admin access** makes someone part of management. They then use only the admin console (no employee portal) and are kept out of Employee Master Data, payroll and finance lists.
@@ -296,6 +300,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261013000000_no_auth_emails.sql` | Sign-in without emails: giving access confirms the account, admins set temporary passwords (`admin_set_password`), and accounts already approved or waiting are confirmed once. |
 | `supabase/migrations/20261012000000_roles_nonemd_kyc_drafts_change_requests.sql` | Admin give/revoke, Non-EMD (member type), KYC drafts (Save vs Skip), change requests with admin approval, and `my_portal()` for the employee portal. Re-runnable. |
 | `supabase/migrations/20261011000000_payroll_left_codes.sql` | Payroll mapping: mark sheet EmpCodes as left / resigned (kept out of payroll and hidden in later months). Re-runnable. |
 | `supabase/migrations/20261010000000_onboarding_no_bottleneck.sql` | Give access straight into EMD, KYC status alongside (skip / submit / send back / approve without blocking), Assign Emp ID with logging; moves anyone mid-onboarding into the HRMS. Re-runnable. |
