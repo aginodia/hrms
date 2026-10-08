@@ -6,7 +6,7 @@ A single-file HRMS (`index.html`) for Altius Investech, with Supabase as the dat
 
 | Module | What it covers |
 | --- | --- |
-| 1. Sign in / Access control | Sign-up (Name, Email, Phone, Password) → admin gives access or rejects → employee uploads KYC → admin approves (or sends it back) → HRMS access |
+| 1. Sign in / Access control | Sign-up (Name, Email, Phone, Password) → admin gives access (straight into the HRMS) or rejects; or the admin adds the employee directly. KYC is asked at sign-in, can be skipped and done later, and is verified by admin without blocking access |
 | 2. Employee Master Data (EMD) | Team list (Name, Mail ID, Number, Designation, Reporting Manager, Salary, Last Increment) → detailed info per employee with locked personal fields, editable EID / designation / manager, a month-wise salary history, and the KYC documents |
 | 3. Payroll | Upload the month's punch-in/punch-out sheet → map sheet EmpCodes to employees → day-wise F / HD / L marking from HR's working-hours rules → admin adjustments → monthly payable per employee, minus Professional Tax, saved as the month's payroll |
 | 4. Finance | Variable (uploaded sheet), Bonus & Leave Encashment, Loans (repaid from Variable / Bonus), Monthly Expenses (from the Google Form), ESOPs (placeholder) |
@@ -86,27 +86,45 @@ Then update the Site URL in step 2 if your Netlify URL changed.
 ## How the flow works
 
 ```
-Sign up ──► [pending] ──Admin: Give access──► [kyc_pending] ──Employee submits KYC──► [kyc_submitted]
-   │                                               ▲                                     │
-   │                                               └────────Admin: Send back (note)──────┤
-   └──── Admin: Reject (at any of these stages) ──► [Rejected] ──Admin: Restore──► back to [pending]
-                                                                                          │
-                                         Admin: Approve (DOJ, EID, designation, manager, starting salary)
-                                                                                          ▼
-                                                                    [active] → appears in Employee Master Data
+Sign up ──► [pending] ──Admin: Give access (DOJ, EID, …)──► [active] → in Employee Master Data, can use the HRMS
+   │                                                            │
+   └── Admin: Reject ──► [Rejected] ──Restore──► [pending]      │   KYC runs alongside, never blocks:
+                                                                │   not submitted ──employee submits──► to review
+Admin: Add employee (creates the login) ────────────────────────┘        ▲                               │
+                                                                         └──── Admin: Send back (note) ◄──┤
+                                                                                 Admin: Approve ──► verified
 ```
 
-**KYC form (employee).** Files must be PDF or JPG, up to 5 MB each.
+There is **no bottleneck**. Once access is given (or the admin adds the employee), the person is in Employee Master Data and in payroll at once.
+
+**Add employee (admin).** Click **Add employee** in Employee Master Data or Access Control. Enter:
+* Name, email and phone.
+* A temporary password (auto-generated; click ↻ for a new one).
+* Date of joining.
+* Optionally: Employee ID, designation, reporting manager and starting salary.
+
+The login is created and the employee is added to EMD straight away. A sign-in summary (link, email, temporary password) is shown to copy and share. The employee can change the password in **My Profile → Change password**. If email confirmation is switched on in Supabase, they must click the confirmation email first.
+
+**Give access (admin).** In Access Control → Signup Requests, **Give access** opens the same employment form: date of joining (defaults to today), Employee ID, designation, manager and starting salary. The person moves into EMD immediately.
+
+**KYC (employee).** When they sign in, the KYC form is shown with **Skip for now**. Skipping takes them into the HRMS. Home then shows a *Complete your KYC* card, and **My KYC** in the menu carries a badge. The form shows again at their next sign-in until it is submitted. Files must be PDF or JPG, up to 5 MB each.
 Required: Aadhaar, PAN, 10th marksheet, 12th marksheet, graduation marksheet, date of birth, bank account number + IFSC, and an emergency contact (name, relationship, number).
 Optional: last payslip and leave (relieving) letter.
 Files upload as soon as they're picked, and the form keeps a local draft, so a page refresh doesn't lose any work.
 
-**Approval (admin).** In Access Control → KYC Review, open the submission, view each document, then either:
-* **Approve**: sets the date of joining and, optionally, EID, designation, reporting manager and starting salary.
-* **Send back**: returns the KYC to the employee with a note on what to fix.
-* **Reject KYC**: cancels their access. A reason is required, and the employee sees it when they sign in.
+**KYC review (admin).** Access Control has two KYC tabs:
+* **KYC Review** lists submitted KYCs. Open one, view the documents, then **Approve KYC** or **Send back** with a note. The employee sees the note and resubmits.
+* **KYC not submitted** lists employees who skipped the form or were sent back.
 
-**Rejecting.** A sign-up, someone awaiting KYC, or a submitted KYC can be rejected. Nothing is deleted: the person moves to **Access Control → Rejected**, with the stage and reason, and can't use the HRMS. **Restore** sends them back to Signup Requests.
+EMD rows carry a *KYC not submitted / sent back / to review* tag until the KYC is verified.
+
+**Assign Emp ID (EMD).** An employee without an Employee ID shows **+ Assign Emp ID** in the list; anyone else shows a ✎ next to their ID to change it.
+* Only the ID is needed, nothing else.
+* IDs are unique ignoring case and leading zeros (0007 = 007), the same rule Payroll uses.
+* The change is recorded in the employee's Activity log.
+* Payroll → Mapping suggests the match for that EmpCode straight away.
+
+**Rejecting.** A sign-up request can be rejected. Nothing is deleted: the person moves to **Access Control → Rejected**, with the reason, and can't use the HRMS. **Restore** sends them back to Signup Requests.
 
 **Salary history (EMD → Show detailed info).** Each row is *Month · Year · Salary*, meaning "from this month onwards the salary is X". For example:
 
@@ -227,6 +245,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261010000000_onboarding_no_bottleneck.sql` | Give access straight into EMD, KYC status alongside (skip / submit / send back / approve without blocking), Assign Emp ID with logging; moves anyone mid-onboarding into the HRMS. Re-runnable. |
 | `supabase/migrations/20261009000000_notice_bonus_ledger_repayments.sql` | Notice period (resignation date + last working day), the add-only bonus ledger with payment dates, and manual loan repayments. Admin-only. Re-runnable. |
 | `supabase/migrations/20261008000000_exits_variable_upload_loans.sql` | Employment status and F&F, the finance activity log, variable sheet uploads, loans and loan deductions from Variable / Bonus. Admin-only. Re-runnable. |
 

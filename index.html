@@ -209,6 +209,11 @@
   .auth-switch { margin-top: 22px; text-align: center; color: var(--muted); font-size: 13.5px; }
   .link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-weight: 500; }
   .link-btn:hover { text-decoration: underline; }
+  .link-btn svg.i { width: 12px; height: 12px; vertical-align: -1px; }
+  .btn.btn-xs { height: 24px; padding: 0 8px; font-size: 11.5px; gap: 4px; border-radius: 7px; margin-top: 2px; }
+  .btn.btn-accent { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  .btn.btn-accent:hover { background: var(--accent); color: #fff; }
+  .share-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
   .brand-mark {
     width: 32px; height: 32px; border-radius: 9px; background: var(--primary); color: #fff;
@@ -625,6 +630,7 @@ const ICONS = {
   receipt: '<path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2z"/><path d="M8 8h8M8 12h8M8 16h5"/>',
   pie: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   sparkle: '<path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -870,9 +876,22 @@ function render() {
     case 'pending':       return renderWaiting('pending');
     case 'kyc_pending':   return renderKycForm();
     case 'kyc_submitted': return renderWaiting('submitted');
-    case 'active':        return renderShell('team');
+    case 'active':        return showKycPrompt(p) ? renderKycForm() : renderShell('team');
     default:              return renderWaiting(p.rejected_at ? 'rejected' : 'inactive');
   }
+}
+
+// KYC no longer blocks the HRMS: it is shown when an employee signs in, and they can skip it.
+const KYC_OPEN = ['not_started', 'sent_back'];
+const kycSkipKey = () => `altius-hrms-kyc-skip-${state.user?.id}`;
+const kycSkipped = () => { try { return sessionStorage.getItem(kycSkipKey()) === '1'; } catch { return !!state.kycSkipped; } };
+const showKycPrompt = (p) => p.role === 'team' && KYC_OPEN.includes(p.kyc_status || 'not_started')
+  && (state.forceKyc || parseRoute().page === 'kyc' || !kycSkipped());
+function skipKyc() {
+  try { sessionStorage.setItem(kycSkipKey(), '1'); } catch { state.kycSkipped = true; }
+  state.forceKyc = false;
+  if (!location.hash || location.hash === '#/kyc') location.hash = '#/home';
+  render();
 }
 
 async function loadSelfAndRoute() {
@@ -1141,14 +1160,14 @@ function renderWaiting(kind) {
   const steps = [
     { t: 'Account created', s: fmtDateTime(p.created_at), done: true },
     { t: 'Access given by admin', s: p.access_granted_at ? fmtDateTime(p.access_granted_at) : 'Waiting for admin', done: !!p.access_granted_at, now: kind === 'pending' },
-    { t: 'KYC submitted', s: p.kyc_submitted_at ? fmtDateTime(p.kyc_submitted_at) : 'Upload documents & details', done: kind === 'submitted' },
-    { t: 'KYC approved — HRMS access', s: kind === 'submitted' ? 'Under review' : 'Final step', done: false, now: kind === 'submitted' },
+    { t: 'Use the HRMS', s: 'Straight after access is given', done: false },
+    { t: 'KYC', s: 'Asked when you sign in — you can skip it and do it later', done: false },
   ];
   const content = {
     pending: {
       ico: 'clock', bg: 'var(--amber-soft)', fg: 'var(--amber)',
       title: 'Your request is with the admin',
-      text: `Thanks, ${esc(firstName(p.full_name))}. An admin will review your sign-up. Once access is given, you'll be asked to complete your KYC here.`,
+      text: `Thanks, ${esc(firstName(p.full_name))}. An admin will review your sign-up. Once access is given you can use the HRMS right away; your KYC can be done then or later.`,
     },
     submitted: {
       ico: 'fileCheck', bg: 'var(--violet-soft)', fg: 'var(--violet)',
@@ -1228,7 +1247,8 @@ async function renderKycForm() {
   <main class="solo">
     <div class="solo-hero">
       <h1>Complete your onboarding</h1>
-      <p>Hi ${esc(firstName(p.full_name))}, the admin has given you access. Upload your documents and details below — once submitted, HR will verify and activate your HRMS account.</p>
+      <p>Hi ${esc(firstName(p.full_name))}, welcome to Altius. Upload your documents and details below for HR to verify. Short on time? <b>Skip for now</b> — you can use the HRMS and finish this later from <b>My KYC</b>.</p>
+      ${p.status === 'active' ? `<div style="margin-top:12px"><button type="button" class="btn" data-skip-kyc>${icon('arrowRight', 'sm')}Skip for now</button></div>` : ''}
       <div class="steps" id="kyc-steps"></div>
     </div>
     ${p.kyc_remarks ? `<div class="alert alert-warn">${icon('alert')}<div><b>Sent back by admin:</b> ${esc(p.kyc_remarks)}<br><span style="font-size:12.5px">Please make the corrections and submit again.</span></div></div>` : ''}
@@ -1271,10 +1291,12 @@ async function renderKycForm() {
       <div id="kyc-msg"></div>
       <div class="form-foot">
         <span class="muted" style="font-size:12.5px">${icon('lock', 'sm')} Your documents are stored privately and visible only to HR.</span>
-        <button class="btn btn-primary" type="submit" style="height:42px;padding:0 22px">Submit for review ${icon('arrowRight')}</button>
+        <span style="display:flex;gap:8px">${p.status === 'active' ? '<button type="button" class="btn" data-skip-kyc style="height:42px">Skip for now</button>' : ''}
+        <button class="btn btn-primary" type="submit" style="height:42px;padding:0 22px">Submit for review ${icon('arrowRight')}</button></span>
       </div>
     </form>
   </main>`;
+  $$('[data-skip-kyc]').forEach((b) => b.addEventListener('click', () => { persist(); skipKyc(); }));
 
   const form = $('#kyc-form');
   const val = (name) => String(form.elements[name].value || '').trim();
@@ -1388,6 +1410,8 @@ async function renderKycForm() {
       await withBusy(btn, 'Submitting…', () => api.rpc('submit_kyc', { p: payload }));
       clearKycDraft();
       toast('KYC submitted for review.');
+      state.forceKyc = false;
+      if (location.hash === '#/kyc') location.hash = '#/home';
       await loadSelfAndRoute();
     } catch (err) {
       msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(friendlyError(err))}</span></div>`;
@@ -1398,12 +1422,15 @@ async function renderKycForm() {
 /* =====================================================================
    APP SHELL (separate navigation for admin and team)
    ===================================================================== */
+// KYC runs alongside employment: to review = submitted; outstanding = not submitted yet / sent back.
+const kycToReview = (p) => p.status === 'active' && p.kyc_status === 'submitted';
+const kycOutstanding = (p) => p.status === 'active' && p.role === 'team' && !p.fnf_completed_at && KYC_OPEN.includes(p.kyc_status || 'not_started');
 function adminCounts() {
   const P = state.admin.profiles;
   return {
     pending: P.filter((p) => p.status === 'pending').length,
-    review: P.filter((p) => p.status === 'kyc_submitted').length,
-    awaiting: P.filter((p) => p.status === 'kyc_pending').length,
+    review: P.filter(kycToReview).length,
+    awaiting: P.filter(kycOutstanding).length,
     active: P.filter((p) => p.status === 'active').length,
   };
 }
@@ -1433,12 +1460,13 @@ const NAV = {
     { label: 'Menu' },
     { key: 'home', label: 'Home', icon: 'home' },
     { key: 'profile', label: 'My Profile', icon: 'user' },
+    { key: 'kyc', label: 'My KYC', icon: 'fileCheck', badge: KYC_OPEN.includes(state.profile?.kyc_status || 'not_started') ? 1 : 0 },
   ],
 };
 const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops },
-  team: { home: pageTeamHome, profile: pageMyProfile },
+  team: { home: pageTeamHome, profile: pageMyProfile, kyc: pageTeamKyc },
 };
 const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
 
@@ -1544,7 +1572,7 @@ async function pageDashboard() {
   await ensureAdmin();
   const c = adminCounts();
   const P = state.admin.profiles;
-  const attention = P.filter((p) => p.status === 'pending' || p.status === 'kyc_submitted')
+  const attention = P.filter((p) => p.status === 'pending' || kycToReview(p))
     .sort((a, b) => new Date(b.kyc_submitted_at || b.created_at) - new Date(a.kyc_submitted_at || a.created_at)).slice(0, 6);
   const recent = P.filter((p) => p.status === 'active' && p.date_of_joining)
     .sort((a, b) => b.date_of_joining.localeCompare(a.date_of_joining)).slice(0, 6);
@@ -1565,8 +1593,8 @@ async function pageDashboard() {
       <div class="stats">
         ${stat('#/emd', 'Employees', c.active, `This month's payroll ${fmtINR(payroll)}`, 'users', 'var(--accent-soft)', 'var(--accent)')}
         ${stat('#/access/requests', 'Signup requests', c.pending, 'Waiting for access decision', 'userPlus', 'var(--amber-soft)', 'var(--amber)')}
-        ${stat('#/access/kyc', 'KYC to review', c.review, 'Submitted, awaiting approval', 'fileCheck', 'var(--violet-soft)', 'var(--violet)')}
-        ${stat('#/access/awaiting', 'Awaiting KYC', c.awaiting, 'Access given, KYC not submitted', 'clock', 'var(--blue-soft)', 'var(--blue)')}
+        ${stat('#/access/kyc', 'KYC to review', c.review, 'Submitted, waiting for your check', 'fileCheck', 'var(--violet-soft)', 'var(--violet)')}
+        ${stat('#/access/awaiting', 'KYC not submitted', c.awaiting, 'Working already — KYC still to come', 'clock', 'var(--blue-soft)', 'var(--blue)')}
       </div>
       <div class="split">
         <div class="card">
@@ -1574,7 +1602,7 @@ async function pageDashboard() {
             <div class="right"><a class="btn btn-sm" href="#/access">Open Access Control</a></div></div>
           ${attention.length ? attention.map((p) => `
             <div class="list-row">${person(p, esc(p.email))}
-              <div class="right">${statusChip(p.status)}<span class="faint nowrap" style="font-size:12px">${fmtRelative(p.kyc_submitted_at || p.created_at)}</span>
+              <div class="right">${p.status === 'pending' ? statusChip(p.status) : kycChip(p)}<span class="faint nowrap" style="font-size:12px">${fmtRelative(p.status === 'pending' ? p.created_at : p.kyc_submitted_at)}</span>
               <a class="btn btn-sm" href="#/access/${p.status === 'pending' ? 'requests' : 'kyc'}">${p.status === 'pending' ? 'Decide' : 'Review'}</a></div></div>`).join('')
             : emptyState('check', 'All caught up', 'No pending sign-ups or KYC reviews.')}
         </div>
@@ -1590,6 +1618,140 @@ async function pageDashboard() {
   };
 }
 
+// Give access (mode 'grant', for a sign-up request) or Add employee (mode 'add', creates the login too).
+// Either way the person goes straight into Employee Master Data; KYC follows when they sign in.
+const genPassword = () => {
+  const a = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  const r = new Uint32Array(10); (window.crypto || window.msCrypto).getRandomValues(r);
+  return 'Altius@' + Array.from(r, (x) => a[x % a.length]).join('').slice(0, 6);
+};
+// A second client that never stores a session, so signing the new employee up leaves the admin signed in.
+let signupClient = null;
+const getSignupClient = () => (signupClient ||= window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY,
+  { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'altius-hrms-add-employee' } }));
+
+function openOnboardDialog(mode, p = null) {
+  const adding = mode === 'add';
+  const now = new Date();
+  const dlg = openModal({
+    title: adding ? 'Add employee' : `Give access — ${p.full_name}`, size: 'md',
+    subtitle: adding ? 'Creates their login and adds them to Employee Master Data. They can sign in straight away and fill KYC later.'
+      : `${esc(p.email)} · ${esc(p.phone || '—')} — goes straight into Employee Master Data. KYC is asked when they sign in, and they can skip it.`,
+    body: `<form id="ob-form" class="grid" style="gap:14px" novalidate>
+        ${adding ? `<div class="section-title" style="margin:0">Login</div>
+        <div class="grid g2" style="gap:12px">
+          <div class="field"><label>Full name<span class="req">*</span></label><input class="input" name="full_name" placeholder="e.g. Priya Sharma"></div>
+          <div class="field"><label>Email<span class="req">*</span></label><input class="input" name="email" type="email" placeholder="name@altiusinvestech.com"></div>
+          <div class="field"><label>Phone</label><input class="input" name="phone" type="tel" placeholder="98765 43210"></div>
+          <div class="field"><label>Temporary password<span class="req">*</span></label><div style="display:flex;gap:6px"><input class="input mono" name="password" value="${genPassword()}"><button type="button" class="btn" id="ob-gen" title="New password">${icon('refresh', 'sm')}</button></div>
+            <div class="hint">Share it with them; they can change it in My Profile.</div></div>
+        </div>
+        <div class="section-title" style="margin:6px 0 0">Employment</div>` : ''}
+        <div class="grid g2" style="gap:12px">
+          <div class="field"><label>Date of joining<span class="req">*</span></label><input class="input" type="date" name="doj" value="${todayISO()}"></div>
+          <div class="field"><label>Employee ID</label><input class="input" name="eid" placeholder="e.g. 0012 — same as the attendance sheet"></div>
+          <div class="field"><label>Designation</label><input class="input" name="designation" placeholder="e.g. Analyst"></div>
+          <div class="field"><label>Reporting manager</label><select class="input" name="manager">${managerOptions('', p?.id)}</select></div>
+        </div>
+        <div class="field"><label>Starting salary <span class="faint">(optional, monthly)</span></label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px">${monthYearSelects('ob', now.getFullYear(), now.getMonth() + 1)}
+          <input class="input mono" name="salary" inputmode="decimal" placeholder="₹ Amount"></div></div>
+        <div id="ob-msg"></div>
+      </form>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}${adding ? 'Add employee' : 'Give access'}</button>`,
+  });
+  const el = dlg.el, form = $('#ob-form', el), msg = $('#ob-msg', el);
+  $('#ob-gen', el)?.addEventListener('click', () => { form.elements.password.value = genPassword(); });
+  form.elements.doj.addEventListener('change', () => {
+    const d = parseISODate(form.elements.doj.value); if (!d) return;
+    $('[data-m="ob"]', form).value = String(d.getMonth() + 1); $('[data-y="ob"]', form).value = String(d.getFullYear());
+  });
+  $('[data-ok]', el).addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const f = Object.fromEntries(new FormData(form));
+    const fail = (t) => { msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${t}</span></div>`; };
+    msg.innerHTML = '';
+    const email = String(f.email || '').trim().toLowerCase();
+    if (adding) {
+      if (!String(f.full_name || '').trim()) return fail('Enter the full name.');
+      if (!isEmail(email)) return fail('Enter a valid email address.');
+      if (state.admin.profiles.some((x) => x.email === email)) return fail('Someone with this email already exists — check Access Control or Employee Master Data.');
+      if (String(f.password || '').length < 8) return fail('The temporary password must be at least 8 characters.');
+    }
+    if (!f.doj) return fail('Date of joining is required.');
+    const eid = String(f.eid || '').trim();
+    const clash = eid && state.admin.profiles.find((x) => x.id !== p?.id && normCode(x.employee_code) && normCode(x.employee_code) === normCode(eid));
+    if (clash) return fail(`Employee ID ${esc(eid)} is already used by ${esc(clash.full_name)} (${esc(clash.employee_code)}).`);
+    const salary = String(f.salary || '').replace(/[,₹\s]/g, '');
+    if (salary && !(Number(salary) > 0)) return fail('Enter a valid salary amount, or leave it empty.');
+    const sm = $('[data-m="ob"]', form).value, sy = $('[data-y="ob"]', form).value;
+    try {
+      await withBusy(btn, adding ? 'Adding…' : 'Giving access…', async () => {
+        let userId = p?.id;
+        if (adding) {
+          const { data, error } = await getSignupClient().auth.signUp({ email, password: f.password,
+            options: { data: { full_name: String(f.full_name).trim(), phone: normPhone(f.phone) || null }, emailRedirectTo: location.origin + location.pathname } });
+          if (error) throw error;
+          if (!data?.user?.id || (Array.isArray(data.user.identities) && !data.user.identities.length)) throw new Error('An account with this email already exists.');
+          userId = data.user.id;
+        }
+        await api.rpc('admin_give_access', {
+          p_user: userId, p_doj: f.doj, p_employee_code: eid || null, p_designation: String(f.designation || '').trim() || null,
+          p_manager: f.manager || null, p_salary_month: salary ? monthStart(sy, Number(sm)) : null, p_salary: salary ? Number(salary) : null,
+        });
+      });
+      dlg.close();
+      if (adding) {
+        const appUrl = location.origin + location.pathname;
+        const share = `Altius HRMS: ${appUrl}\nEmail: ${email}\nTemporary password: ${f.password}`;
+        const done = openModal({
+          title: 'Employee added', size: 'sm', subtitle: `${esc(String(f.full_name).trim())} is in Employee Master Data.`,
+          body: `<p class="muted" style="margin-bottom:10px">Share these sign-in details with them. On first sign-in they see the KYC form and can skip it.</p>
+            <pre class="share-box" id="share-box">${esc(share)}</pre>
+            <p class="faint" style="font-size:12px;margin-top:8px">If email confirmation is switched on in Supabase, they must click the link in the confirmation email before signing in.</p>`,
+          footer: `<button class="btn" id="copy-share">${icon('file', 'sm')}Copy</button><button class="btn btn-primary" data-close>Done</button>`,
+        });
+        $('#copy-share', done.el).addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(share); toast('Copied.'); } catch { toast('Select the text and copy it.', 'error'); }
+        });
+      } else toast(`Access given — ${p.full_name} is in Employee Master Data. KYC will be asked when they sign in.`);
+      state.fin.loaded = false;
+      await refreshAdmin();
+    } catch (err) { fail(esc(friendlyError(err))); }
+  });
+}
+
+// EMD → Assign Emp ID: just the Employee ID, recorded in the log; payroll mapping matches on it.
+function openAssignEid(e) {
+  const dlg = openModal({
+    title: e.employee_code ? 'Change Employee ID' : 'Assign Employee ID', size: 'sm', subtitle: `${esc(e.full_name)} · ${esc(e.email)}`,
+    body: `<div class="field"><label>Employee ID<span class="req">*</span></label><input class="input mono" id="eid-in" value="${esc(e.employee_code || '')}" placeholder="e.g. 0012">
+        <div class="hint">Use the same code as in the attendance sheet — Payroll → Mapping matches on it (leading zeros don’t matter: 0003 = 003).</div></div>
+      <div id="eid-msg" style="margin-top:8px"></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Save</button>`,
+  });
+  const inp = $('#eid-in', dlg.el);
+  inp.focus();
+  const save = async (btn) => {
+    const code = inp.value.trim();
+    if (!code) { inp.classList.add('invalid'); return; }
+    const clash = state.admin.profiles.find((x) => x.id !== e.id && normCode(x.employee_code) && normCode(x.employee_code) === normCode(code));
+    if (clash) { $('#eid-msg', dlg.el).innerHTML = `<div class="error-text">${esc(code)} is already used by ${esc(clash.full_name)} (${esc(clash.employee_code)}) — 0007 and 007 count as the same ID.</div>`; return; }
+    try {
+      await withBusy(btn, 'Saving…', () => api.rpc('admin_set_employee_code', { p_user: e.id, p_code: code }));
+      dlg.close();
+      toast(`Employee ID ${code} saved for ${e.full_name}.`);
+      state.fin.loaded = false;
+      if (state.payroll) state.payroll.runs = null; // payroll mapping picks up the new ID
+      await refreshAdmin();
+    } catch (err) { $('#eid-msg', dlg.el).innerHTML = `<div class="error-text">${esc(friendlyError(err))}</div>`; }
+  };
+  $('[data-ok]', dlg.el).addEventListener('click', (ev) => save(ev.currentTarget));
+  inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') save($('[data-ok]', dlg.el)); });
+}
+const KYC_CHIP = { not_started: ['KYC not submitted', 'gray'], sent_back: ['KYC sent back', 'amber'], submitted: ['KYC to review', 'violet'], approved: ['KYC verified', 'green'] };
+const kycChip = (p) => { const [l, t] = KYC_CHIP[p.kyc_status || 'not_started']; return `<span class="chip ${t} plain">${l}</span>`; };
+
 /* ---------- Access Control ---------- */
 async function pageAccess(r) {
   await ensureAdmin();
@@ -1597,11 +1759,11 @@ async function pageAccess(r) {
   const P = state.admin.profiles;
   const lists = {
     requests: P.filter((p) => p.status === 'pending').sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
-    kyc: P.filter((p) => p.status === 'kyc_submitted').sort((a, b) => new Date(a.kyc_submitted_at) - new Date(b.kyc_submitted_at)),
-    awaiting: P.filter((p) => p.status === 'kyc_pending').sort((a, b) => new Date(b.access_granted_at) - new Date(a.access_granted_at)),
+    kyc: P.filter(kycToReview).sort((a, b) => new Date(a.kyc_submitted_at) - new Date(b.kyc_submitted_at)),
+    awaiting: P.filter(kycOutstanding).sort((a, b) => new Date(b.access_granted_at || b.created_at) - new Date(a.access_granted_at || a.created_at)),
     rejected: P.filter((p) => p.rejected_at).sort((a, b) => new Date(b.rejected_at) - new Date(a.rejected_at)),
   };
-  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['awaiting', 'Awaiting KYC'], ['rejected', 'Rejected']];
+  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['awaiting', 'KYC not submitted'], ['rejected', 'Rejected']];
   const rows = lists[tab];
 
   let table;
@@ -1609,7 +1771,7 @@ async function pageAccess(r) {
     table = {
       requests: emptyState('inbox', 'No signup requests', 'New sign-ups will appear here for you to give access or reject.'),
       kyc: emptyState('fileCheck', 'Nothing to review', 'When employees submit their KYC, it will appear here.'),
-      awaiting: emptyState('clock', 'No one is pending KYC', 'People you give access to appear here until they submit KYC.'),
+      awaiting: emptyState('clock', 'Everyone has submitted KYC', 'Employees who skipped KYC (or were sent back) appear here until they submit it.'),
       rejected: emptyState('x', 'No rejected requests', 'Sign-ups and KYC submissions you reject are kept here, and can be restored.'),
     }[tab];
   } else if (tab === 'requests') {
@@ -1625,19 +1787,18 @@ async function pageAccess(r) {
       ${rows.map((p) => `<tr>
         <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
         <td class="nowrap muted" title="${esc(fmtDateTime(p.kyc_submitted_at))}">${fmtRelative(p.kyc_submitted_at)}</td>
-        <td class="actions"><button class="btn btn-sm btn-danger" data-reject="${p.id}">${icon('x', 'sm')}Reject</button>
-        <button class="btn btn-sm btn-primary" data-review="${p.id}">${icon('eye', 'sm')}Review KYC</button></td></tr>`).join('')}
+        <td class="actions"><button class="btn btn-sm btn-primary" data-review="${p.id}">${icon('eye', 'sm')}Review KYC</button></td></tr>`).join('')}
       </tbody></table></div>`;
   } else if (tab === 'awaiting') {
-    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Access given</th><th>Status</th><th></th></tr></thead><tbody>
+    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Joined</th><th>KYC</th><th></th></tr></thead><tbody>
       ${rows.map((p) => `<tr>
-        <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
-        <td class="nowrap muted">${fmtDateTime(p.access_granted_at)}</td>
-        <td>${p.kyc_remarks ? `<span class="chip amber" title="${esc(p.kyc_remarks)}">Sent back</span>` : statusChip(p.status)}</td>
-        <td class="actions"><button class="btn btn-sm btn-danger" data-reject="${p.id}">${icon('x', 'sm')}Reject</button></td></tr>`).join('')}
+        <td>${person(p, esc(p.employee_code || 'No EID'))}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
+        <td class="nowrap muted">${fmtDate(p.date_of_joining)}</td>
+        <td><span title="${esc(p.kyc_remarks || '')}">${kycChip(p)}</span></td>
+        <td class="actions"><a class="btn btn-sm" href="#/emd/${p.id}">Open in EMD</a></td></tr>`).join('')}
       </tbody></table></div>`;
   } else {
-    const stage = (p) => p.kyc_submitted_at ? 'At KYC review' : p.access_granted_at ? 'Awaiting KYC' : 'Sign-up request';
+    const stage = (p) => p.kyc_submitted_at ? 'At KYC review' : p.access_granted_at ? 'After access' : 'Sign-up request';
     table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Rejected at</th><th>Reason</th><th>Rejected</th><th></th></tr></thead><tbody>
       ${rows.map((p) => `<tr>
         <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
@@ -1650,21 +1811,15 @@ async function pageAccess(r) {
 
   return {
     title: 'Access Control',
-    crumbs: 'Approve sign-ups, then verify KYC before employees can use the HRMS',
-    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button>`,
+    crumbs: 'Give access to sign-ups or add employees directly — KYC is checked alongside, it never blocks access',
+    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
     html: `
       <div><nav class="tabs">${tabs.map(([k, l]) => `<a href="#/access/${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${lists[k].length}</span></a>`).join('')}</nav></div>
       <div class="card">${table}</div>`,
     mount() {
       $('#refresh-btn').addEventListener('click', (e) => withBusy(e.currentTarget, '', refreshAdmin));
-      $$('[data-grant]').forEach((b) => b.addEventListener('click', async () => {
-        const p = byId(b.dataset.grant);
-        try {
-          await withBusy(b, 'Giving access…', () => api.rpc('admin_grant_access', { p_user: p.id }));
-          toast(`Access given — ${p.full_name} can now fill the KYC form.`);
-          await refreshAdmin();
-        } catch (e) { toast(friendlyError(e), 'error'); }
-      }));
+      $('#add-emp').addEventListener('click', () => openOnboardDialog('add'));
+      $$('[data-grant]').forEach((b) => b.addEventListener('click', () => openOnboardDialog('grant', byId(b.dataset.grant))));
       $$('[data-reject]').forEach((b) => b.addEventListener('click', () => rejectDialog(byId(b.dataset.reject))));
       $$('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
         const p = byId(b.dataset.restore);
@@ -1741,8 +1896,6 @@ async function openKycReview(id, btn) {
   try { kyc = await withBusy(btn, 'Loading…', () => api.kycFor(id)); }
   catch (e) { return toast(friendlyError(e), 'error'); }
   if (!kyc) return toast('No KYC record found for this employee.', 'error');
-  const now = new Date();
-
   const { el, close } = openModal({
     title: `KYC review — ${p.full_name}`,
     subtitle: `${esc(p.email)} · ${esc(p.phone || '—')} · submitted ${esc(fmtDateTime(p.kyc_submitted_at))}`,
@@ -1765,57 +1918,31 @@ async function openKycReview(id, btn) {
               <div><div class="k">Contact number</div><div class="v">${esc(kyc.emergency_phone)}</div></div>
             </div></div>
         </div>
-        <form id="approve-form" class="card" style="background:var(--surface-2)" novalidate>
-          <div class="card-body grid" style="gap:14px">
-            <div><h3 style="font-size:15px">Approve &amp; onboard</h3><p class="muted" style="font-size:12.5px;margin-top:2px">Adds ${esc(firstName(p.full_name))} to Employee Master Data and gives HRMS access.</p></div>
-            <div class="field"><label>Date of joining<span class="req">*</span></label><input class="input" type="date" name="doj" value="${todayISO()}" required></div>
-            <div class="grid g2" style="gap:12px">
-              <div class="field"><label>Employee ID</label><input class="input" name="eid" placeholder="e.g. AI-0012"></div>
-              <div class="field"><label>Designation</label><input class="input" name="designation" placeholder="e.g. Analyst"></div>
-            </div>
-            <div class="field"><label>Reporting manager</label><select class="input" name="manager">${managerOptions('', id)}</select></div>
-            <div class="field"><label>Starting salary <span class="faint">(optional, monthly)</span></label>
-              <div style="display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px">${monthYearSelects('start', now.getFullYear(), now.getMonth() + 1)}
-              <input class="input mono" name="salary" inputmode="decimal" placeholder="₹ Amount"></div></div>
-            <div class="approve-msg"></div>
+        <div class="card" style="background:var(--surface-2)"><div class="card-body grid" style="gap:12px">
+          <div><h3 style="font-size:15px">Employment</h3><p class="muted" style="font-size:12.5px;margin-top:2px">${esc(firstName(p.full_name))} already works in the HRMS — this only verifies the KYC.</p></div>
+          <div class="kv">
+            <div><div class="k">Employee ID</div><div class="v">${esc(p.employee_code || '—')}</div></div>
+            <div><div class="k">Date of joining</div><div class="v">${fmtDate(p.date_of_joining)}</div></div>
+            <div><div class="k">Designation</div><div class="v">${esc(p.designation || '—')}</div></div>
+            <div><div class="k">Reporting manager</div><div class="v">${esc(byId(p.reporting_manager_id)?.full_name || '—')}</div></div>
           </div>
-        </form>
+          <a class="btn btn-sm" href="#/emd/${p.id}" data-close-link style="justify-self:start">Open in Employee Master Data</a>
+        </div></div>
       </div>`,
-    footer: `<button class="btn btn-danger left" data-reject-kyc>${icon('x', 'sm')}Reject KYC</button>
-             <button class="btn" data-sendback>${icon('arrowLeft', 'sm')}Send back to employee</button>
+    footer: `<button class="btn" data-sendback>${icon('arrowLeft', 'sm')}Send back to employee</button>
              <button class="btn" data-close>Cancel</button>
              <button class="btn btn-success" data-approve>${icon('check', 'sm')}Approve KYC</button>`,
   });
 
-  const form = $('#approve-form', el);
-  form.elements.doj.addEventListener('change', () => {
-    const d = parseISODate(form.elements.doj.value);
-    if (!d) return;
-    $('[data-m="start"]', form).value = String(d.getMonth() + 1);
-    $('[data-y="start"]', form).value = String(d.getFullYear());
-  });
+  $('[data-close-link]', el)?.addEventListener('click', () => close());
   $('[data-approve]', el).addEventListener('click', async (e) => {
-    const f = Object.fromEntries(new FormData(form));
-    const msg = $('.approve-msg', form);
-    msg.innerHTML = '';
-    if (!f.doj) { msg.innerHTML = `<div class="error-text">Date of joining is required.</div>`; return; }
-    const salary = String(f.salary || '').replace(/[,₹\s]/g, '');
-    if (salary && !(Number(salary) > 0)) { msg.innerHTML = `<div class="error-text">Enter a valid salary amount, or leave it empty.</div>`; return; }
-    const sm = $('[data-m="start"]', form).value, sy = $('[data-y="start"]', form).value;
     try {
-      await withBusy(e.currentTarget, 'Approving…', () => api.rpc('admin_approve_kyc', {
-        p_user: id, p_doj: f.doj, p_employee_code: f.eid || null, p_designation: f.designation || null,
-        p_manager: f.manager || null, p_salary_month: salary ? monthStart(sy, Number(sm)) : null, p_salary: salary ? Number(salary) : null,
-      }));
+      await withBusy(e.currentTarget, 'Approving…', () => api.rpc('admin_verify_kyc', { p_user: id }));
       close();
-      toast(`${p.full_name} approved and added to Employee Master Data.`);
+      toast(`${p.full_name}'s KYC is verified.`);
       await refreshAdmin();
-    } catch (err) {
-      msg.innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(friendlyError(err))}</span></div>`;
-    }
+    } catch (err) { toast(friendlyError(err), 'error'); }
   });
-
-  $('[data-reject-kyc]', el).addEventListener('click', () => rejectDialog(p, close));
 
   $('[data-sendback]', el).addEventListener('click', () => {
     const dlg = openModal({
@@ -1851,7 +1978,9 @@ async function pageEmd() {
     const mgr = byId(e.reporting_manager_id);
     const future = s.latest && s.latest.effective_month > todayISO();
     return `<tr data-href="#/emd/${e.id}">
-      <td>${person(e, esc(e.employee_code || 'No EID'))}${empState(e) !== 'active' ? `<div class="chips-line">${empChip(e)}${lwdChip(e)}${isRT(e) ? settleChip(e) : ''}</div>` : ''}</td>
+      <td>${person(e, e.employee_code ? `${esc(e.employee_code)}${empState(e) === 'fnf' ? '' : ` <button class="link-btn" data-eid="${e.id}" title="Change Employee ID">${icon('edit', 'sm')}</button>`}`
+          : empState(e) === 'fnf' ? 'No EID' : `<button class="btn btn-xs btn-accent" data-eid="${e.id}">${icon('plus', 'sm')}Assign Emp ID</button>`)}
+        ${empState(e) !== 'active' || (e.role === 'team' && e.kyc_status !== 'approved' && empState(e) !== 'fnf') ? `<div class="chips-line">${empState(e) !== 'active' ? `${empChip(e)}${lwdChip(e)}${isRT(e) ? settleChip(e) : ''}` : ''}${e.role === 'team' && e.kyc_status !== 'approved' && empState(e) !== 'fnf' ? kycChip(e) : ''}</div>` : ''}</td>
       <td class="trunc" title="${esc(e.email)}">${esc(e.email)}</td>
       <td class="nowrap">${esc(e.phone || '—')}</td>
       <td class="wrap">${esc(e.designation || '—')}</td>
@@ -1874,12 +2003,13 @@ async function pageEmd() {
     title: 'Employee Master Data',
     crumbs: `${tabs.active.length} active · ${tabs.rt.length} resigned / terminated · ${tabs.fnf.length} F&F completed`,
     actions: `<div class="search">${icon('search')}<input class="input" id="emd-search" placeholder="Search name, email, designation…" value="${esc(state.emdSearch)}"></div>
-              <button class="btn btn-sm" id="emd-export" ${all.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>`,
+              <button class="btn btn-sm" id="emd-export" ${all.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>
+              <button class="btn btn-sm btn-primary" id="emd-add">${icon('userPlus', 'sm')}Add employee</button>`,
     html: `<div><nav class="tabs">${[['active', 'Active'], ['rt', 'Resigned & Terminated'], ['fnf', 'F&F completed']].map(([k, l]) => `<a href="#/emd" data-emd-tab="${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${tabs[k].length}</span></a>`).join('')}</nav></div>
       <div class="card">${all.length ? `<div class="table-wrap"><table class="table compact">
         <thead><tr><th>Name</th><th>Mail ID</th><th>Number</th><th>Designation</th><th>Reporting Manager</th><th class="num">Salary</th><th style="white-space:normal;min-width:84px">Last Increment</th><th></th></tr></thead>
         <tbody id="emd-body">${bodyHTML(filter(state.emdSearch))}</tbody></table></div>`
-      : emptyState('users', tab === 'active' ? 'No employees yet' : 'No one here', tab === 'active' ? 'Employees appear here once their KYC is approved in Access Control.' : tab === 'rt' ? 'Employees marked Resigned or Terminated in their detailed info appear here until F&F.' : 'Employees whose F&F is completed are kept here for the record.')}</div>`,
+      : emptyState('users', tab === 'active' ? 'No employees yet' : 'No one here', tab === 'active' ? 'Click <b>Add employee</b>, or give access to a sign-up in Access Control — they appear here straight away.' : tab === 'rt' ? 'Employees marked Resigned or Terminated in their detailed info appear here until F&F.' : 'Employees whose F&F is completed are kept here for the record.')}</div>`,
     mount() {
       $$('[data-emd-tab]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); state.emdTab = a.dataset.emdTab; render(); }));
       const input = $('#emd-search');
@@ -1889,7 +2019,10 @@ async function pageEmd() {
         if (body) body.innerHTML = bodyHTML(filter(input.value));
       });
       $('#emd-export').addEventListener('click', () => exportEmdCsv(filter(state.emdSearch)));
+      $('#emd-add').addEventListener('click', () => openOnboardDialog('add'));
       $('#emd-body')?.addEventListener('click', (ev) => {
+        const eb = ev.target.closest('[data-eid]');
+        if (eb) { ev.preventDefault(); return openAssignEid(byId(eb.dataset.eid)); }
         const tr = ev.target.closest('tr[data-href]');
         if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href;
       });
@@ -4102,13 +4235,33 @@ async function pageTeamHome() {
         ${card('Reporting manager', me.reporting_manager_name, 'users')}
         ${card('Date of joining', me.date_of_joining ? fmtDate(me.date_of_joining) : '', 'clock')}
       </div>` : ''}
-      <div class="card"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-        <span class="ico" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--green-soft);color:var(--green)">${icon('check')}</span>
-        <div style="flex:1;min-width:220px"><h3 style="font-size:15px">You're all set</h3>
-          <p class="muted" style="margin-top:2px">Your onboarding is complete. More features will appear here as HR enables them.</p></div>
-        <a class="btn" href="#/profile">View my profile ${icon('arrowRight', 'sm')}</a>
-      </div></div>`,
+      ${kycStatusCard(state.profile)}`,
   };
+}
+
+const KYC_INFO = {
+  not_started: ['amber', 'alert', 'Complete your KYC', 'Upload your documents, bank details and emergency contact so HR can verify them.', 'Complete KYC'],
+  sent_back: ['red', 'alert', 'KYC sent back — please fix', '', 'Fix and resubmit'],
+  submitted: ['violet', 'clock', 'KYC submitted', 'HR is reviewing your documents. Nothing else is needed from you for now.', ''],
+  approved: ['green', 'check', 'You’re all set', 'Your KYC is verified. More features will appear here as HR enables them.', ''],
+};
+function kycStatusCard(p) {
+  const st = p?.kyc_status || 'not_started';
+  const [tone, ico, title, text, cta] = KYC_INFO[st] || KYC_INFO.not_started;
+  return `<div class="card"><div class="card-body" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+    <span class="ico" style="width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--${tone}-soft);color:var(--${tone})">${icon(ico)}</span>
+    <div style="flex:1;min-width:220px"><h3 style="font-size:15px">${title}</h3>
+      <p class="muted" style="margin-top:2px">${st === 'sent_back' ? `HR’s note: ${esc(p.kyc_remarks || 'Please check your documents.')}` : text}</p></div>
+    ${cta ? `<button class="btn btn-primary" data-open-kyc>${cta} ${icon('arrowRight', 'sm')}</button>` : `<a class="btn" href="#/profile">View my profile ${icon('arrowRight', 'sm')}</a>`}
+  </div></div>`;
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('[data-open-kyc]')) return;
+  if (location.hash === '#/kyc') { state.forceKyc = true; render(); } else location.hash = '#/kyc';
+});
+// #/kyc opens the form while KYC is open (see render); otherwise this shows its status.
+async function pageTeamKyc() {
+  return { title: 'My KYC', crumbs: 'Documents and details verified by HR', html: kycStatusCard(state.profile) };
 }
 
 async function pageMyProfile() {
@@ -4144,7 +4297,27 @@ async function pageMyProfile() {
           <div class="grid" style="gap:22px">
             <div><div class="section-title">Bank details</div><div class="kv">${kv('Account number', maskAccount(kyc.bank_account_number), 'mono')}${kv('IFSC', kyc.bank_ifsc, 'mono')}</div></div>
             <div><div class="section-title">Emergency contact</div><div class="kv">${kv('Name', kyc.emergency_name)}${kv('Relationship', kyc.emergency_relationship)}${kv('Contact number', kyc.emergency_phone)}</div></div>
-          </div></div></div>` : ''}`,
+          </div></div></div>` : ''}
+      <form class="card" id="pw-form" novalidate><div class="card-head"><div><h3>Change password</h3><p>If HR created your account, replace the temporary password here.</p></div></div>
+        <div class="card-body grid g3" style="align-items:end">
+          <div class="field"><label>New password</label><input class="input" type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters"></div>
+          <div class="field"><label>Confirm new password</label><input class="input" type="password" name="confirm" autocomplete="new-password"></div>
+          <div class="field"><button class="btn btn-primary" type="submit">${icon('lock', 'sm')}Update password</button></div>
+        </div></form>`,
+    mount() {
+      const f = $('#pw-form');
+      f.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        const pw = f.elements.password.value, cf = f.elements.confirm.value;
+        if (pw.length < 8) return toast('The password must be at least 8 characters.', 'error');
+        if (pw !== cf) return toast('The passwords do not match.', 'error');
+        try {
+          await withBusy($('button[type=submit]', f), 'Updating…', async () => { const { error } = await db.auth.updateUser({ password: pw }); if (error) throw error; });
+          f.reset();
+          toast('Password updated.');
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+    },
   };
 }
 
