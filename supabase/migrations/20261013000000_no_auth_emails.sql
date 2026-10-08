@@ -27,8 +27,7 @@ begin
 end;
 $$;
 
-drop trigger if exists profiles_confirm_email on public.profiles;
-create trigger profiles_confirm_email after update of status on public.profiles
+create or replace trigger profiles_confirm_email after update of status on public.profiles
   for each row execute function public._confirm_email_on_access();
 
 -- Admin sets a temporary password
