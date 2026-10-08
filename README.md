@@ -177,11 +177,28 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 * **Password:** an App Password.
 * **Sender:** the same mailbox.
 
-**Admins (management) and Non-EMD.** Access Control has **Admins** and **Non-EMD** tabs.
-* **Give admin access** makes someone part of management. They then use only the admin console (no employee portal) and are kept out of Employee Master Data, payroll and finance lists.
-* **Revoke admin** turns them back into a normal user. The base admin can't be revoked, and nobody can change their own access.
-* **Non-EMD** is for people who can sign in to the employee portal but are not employees. They are not in EMD, payroll or finance. **Move someone to Non-EMD** and **Move to EMD** switch a person either way, and the Give access / Add employee form has a **Type** field.
-* Reporting-manager pickers still list everyone, so a manager can be from management.
+**Admins: Super Admin and Base Admin.** Admins use only the admin console (no employee portal). There are two levels:
+
+| | Super Admin (full, e.g. co-founders) | Base Admin (partial, e.g. HR) |
+| --- | --- | --- |
+| Admin console (Access Control, EMD, payroll, finance, settings) | ✓ | ✓ |
+| Give, change or remove admin access | ✓ | ✗ |
+| Change a Super Admin's record, reset an admin's password | ✓ | ✗ |
+| In Employee Master Data and payroll | ✗ (Non-EMD) | ✓ |
+| Employee ID and reporting manager | Not needed, only a designation | Yes, like any employee |
+
+* **Access Control → Admins** lists both levels. A Super Admin can **Give admin access** (pick the person and the level, plus a designation for a Super Admin), switch someone between **Make Super** / **Make Base**, **Remove** admin access, and edit a Super Admin's designation. A Base Admin sees the list but gets no buttons.
+* **Add employee** (Super Admins only) has a **Type**: *Employee* or *Super Admin — management (Non-EMD)*. Choosing Super Admin hides Employee ID, reporting manager and salary.
+* **Non-EMD now means Super Admin.** The old Non-EMD option for other people is gone. Anyone who was marked Non-EMD moved back into Employee Master Data.
+* **The owner.** The first admin (`BASE_ADMIN_EMAIL`) is always a Super Admin. Nobody can change it, and nobody can change their own admin access.
+* **All existing admins became Super Admins** when this was applied. Use **Make Base** for HR.
+* **Enforced in the database, not just hidden in the screen.** A trigger on `profiles` stops a Base Admin from changing admin access or a Super Admin's record, whichever function they call.
+
+**Org Structure** (admin menu → People). A reporting tree:
+* Super Admins are at the top, each with their designation. Everyone else sits under their reporting manager.
+* People without a manager are listed under **Not placed yet**. Set a reporting manager in EMD; a Super Admin can be picked as the manager.
+* Click anyone in the tree to open them in EMD.
+* People who have resigned or been terminated, and anyone whose F&F is done, are left out.
 
 **KYC: Save vs Skip.** The KYC form has **Save & finish later**, which stores whatever has been filled in, even if it's only the emergency contact. It isn't submitted, and the form reopens with those details. **Skip** stores nothing from that visit: anything typed and any files uploaded during it are discarded. Admins see each employee's KYC status on their EMD page, with **Review — approve or send back** once it's submitted, as well as in Access Control → KYC Review.
 
@@ -300,6 +317,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261014000000_admin_levels_org.sql` | Super Admin / Base Admin (`admin_level`, `is_super_admin`, `admin_set_admin_level`, `admin_set_designation`), the guard trigger on `profiles`, Non-EMD only for Super Admins. |
 | `supabase/migrations/20261013000000_no_auth_emails.sql` | Sign-in without emails: giving access confirms the account, admins set temporary passwords (`admin_set_password`), and accounts already approved or waiting are confirmed once. |
 | `supabase/migrations/20261012000000_roles_nonemd_kyc_drafts_change_requests.sql` | Admin give/revoke, Non-EMD (member type), KYC drafts (Save vs Skip), change requests with admin approval, and `my_portal()` for the employee portal. Re-runnable. |
 | `supabase/migrations/20261011000000_payroll_left_codes.sql` | Payroll mapping: mark sheet EmpCodes as left / resigned (kept out of payroll and hidden in later months). Re-runnable. |

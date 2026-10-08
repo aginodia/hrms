@@ -274,6 +274,17 @@
 
   /* ---------- Cards / tables ---------- */
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); min-width: 0; }
+  /* Org structure */
+  .org-tree, .org-tree ul { list-style: none; margin: 0; padding: 0; }
+  .org-tree ul { margin-left: 22px; padding-left: 18px; border-left: 1px dashed var(--border-strong); }
+  .org-tree li { position: relative; }
+  .org-tree ul > li::before { content: ''; position: absolute; left: -18px; top: 30px; width: 16px; border-top: 1px dashed var(--border-strong); }
+  .org-node { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; margin: 6px 0; max-width: 620px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); color: inherit; text-decoration: none; }
+  a.org-node:hover { border-color: var(--border-strong); }
+  .org-node.top { border-color: var(--violet); box-shadow: 0 0 0 3px var(--violet-soft); }
+  .org-node .org-meta { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  @media (max-width: 640px) { .org-tree ul { margin-left: 10px; padding-left: 12px; } .org-tree ul > li::before { left: -12px; width: 10px; } }
   .card-head { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .card-head h3 { font-size: 15px; }
   .card-head p { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
@@ -647,6 +658,7 @@ const ICONS = {
   pie: '<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>',
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  network: '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
   sparkle: '<path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -1628,6 +1640,7 @@ const NAV = {
       { label: 'People' },
       { key: 'access', label: 'Access Control', icon: 'shield', badge: accessBadge },
       { key: 'emd', label: 'Employee Master Data', icon: 'users' },
+      { key: 'org', label: 'Org Structure', icon: 'network' },
       { label: 'Finance' },
       { key: 'payroll', label: 'Payroll', icon: 'wallet' },
       { key: 'variable', label: 'Variable', icon: 'trending' },
@@ -1649,7 +1662,7 @@ const NAV = {
   ],
 };
 const PAGES = {
-  admin: { dashboard: pageDashboard, access: pageAccess, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
+  admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops },
   team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, kyc: pageTeamKyc },
 };
@@ -1669,7 +1682,7 @@ function paintShell(kind, active, view) {
       <div class="brand">${LOGO}<div>Altius HRMS<small>${kind === 'admin' ? 'Admin console' : 'Employee portal'}</small></div></div>
       <nav class="nav">${navHTML}</nav>
       <div class="side-foot">
-        ${person(p, `<span class="role-tag">${kind === 'admin' ? 'Admin' : 'Employee'}</span>`)}
+        ${person(p, `<span class="role-tag">${kind === 'admin' ? ADMIN_LABEL[adminLevel(p)] || 'Admin' : 'Employee'}</span>`)}
         <button class="icon-btn" data-action="signout" title="Sign out" aria-label="Sign out">${icon('logout')}</button>
       </div>
     </aside>
@@ -1744,10 +1757,14 @@ const settleChip = (e) => {
   const left = daysBetween(todayISO(), due);
   return `<span class="chip ${left < 0 ? 'red' : left <= 7 ? 'amber' : 'gray'} plain nowrap" title="F&F is settled ${SETTLE_DAYS} days after the last working day">Settle by ${fmtDMY(due)} · ${left < 0 ? `${-left}d overdue` : left === 0 ? 'today' : `${left}d left`}</span>`;
 };
-// Employee Master Data = active team members of type "employee". Admins (management) and Non-EMD people are kept apart.
-const isEmd = (p) => p.role === 'team' && (p.member_type || 'employee') === 'employee';
+// Admins are Super Admins (full control, management) or Base Admins (everything except admin access, e.g. HR).
+const adminLevel = (p) => (p?.role === 'admin' ? (p.admin_level === 'base' ? 'base' : 'super') : null);
+const ADMIN_LABEL = { super: 'Super Admin', base: 'Base Admin' };
+const amSuper = () => adminLevel(state.profile) === 'super';
+// Employee Master Data = active employees, including Base Admins. Super Admins (management, Non-EMD) are kept apart.
+const isEmd = (p) => (p.role === 'team' || adminLevel(p) === 'base') && (p.member_type || 'employee') === 'employee';
 const activeEmployees = () => state.admin.profiles.filter((p) => p.status === 'active' && isEmd(p)).sort((a, b) => a.full_name.localeCompare(b.full_name));
-// Everyone active (employees, management and Non-EMD) — for reporting-manager pickers
+// Everyone active (employees and Super Admins) — for reporting-manager pickers and the org structure
 const activePeople = () => state.admin.profiles.filter((p) => p.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name));
 const pctHTML = (pct) => pct === null ? '' : `<span class="${pct >= 0 ? 'delta-up' : 'delta-down'}">${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%</span>`;
 
@@ -1838,12 +1855,12 @@ function openOnboardDialog(mode, p = null) {
         <div class="section-title" style="margin:6px 0 0">Employment</div>` : ''}
         <div class="grid g2" style="gap:12px">
           <div class="field"><label>Date of joining<span class="req">*</span></label><input class="input" type="date" name="doj" value="${todayISO()}"></div>
-          <div class="field"><label>Employee ID</label><input class="input" name="eid" placeholder="e.g. 0012 — same as the attendance sheet"></div>
+          <div class="field ob-emp"><label>Employee ID</label><input class="input" name="eid" placeholder="e.g. 0012 — same as the attendance sheet"></div>
           <div class="field"><label>Designation</label><input class="input" name="designation" placeholder="e.g. Analyst"></div>
-          <div class="field"><label>Reporting manager</label><select class="input" name="manager">${managerOptions('', p?.id)}</select></div>
-          <div class="field"><label>Type</label><select class="input" name="member_type"><option value="employee">Employee — in Employee Master Data</option><option value="non_employee">Non-EMD — portal access only</option></select></div>
+          <div class="field ob-emp"><label>Reporting manager</label><select class="input" name="manager">${managerOptions('', p?.id)}</select></div>
+          ${amSuper() ? `<div class="field"><label>Type</label><select class="input" name="member_type"><option value="employee">Employee — in Employee Master Data</option><option value="super">Super Admin — management (Non-EMD)</option></select></div>` : ''}
         </div>
-        <div class="field"><label>Starting salary <span class="faint">(optional, monthly)</span></label>
+        <div class="field ob-emp"><label>Starting salary <span class="faint">(optional, monthly)</span></label>
           <div style="display:grid;grid-template-columns:1fr 1fr 1.3fr;gap:8px">${monthYearSelects('ob', now.getFullYear(), now.getMonth() + 1)}
           <input class="input mono" name="salary" inputmode="decimal" placeholder="₹ Amount"></div></div>
         <div id="ob-msg"></div>
@@ -1852,6 +1869,8 @@ function openOnboardDialog(mode, p = null) {
   });
   const el = dlg.el, form = $('#ob-form', el), msg = $('#ob-msg', el);
   $('#ob-gen', el)?.addEventListener('click', () => { form.elements.password.value = genPassword(); });
+  // Super Admins need no Employee ID, reporting manager or salary — just a designation
+  form.elements.member_type?.addEventListener('change', (e) => $$('.ob-emp', form).forEach((x) => x.classList.toggle('hidden', e.target.value === 'super')));
   form.elements.doj.addEventListener('change', () => {
     const d = parseISODate(form.elements.doj.value); if (!d) return;
     $('[data-m="ob"]', form).value = String(d.getMonth() + 1); $('[data-y="ob"]', form).value = String(d.getFullYear());
@@ -1869,6 +1888,8 @@ function openOnboardDialog(mode, p = null) {
       if (String(f.password || '').length < 8) return fail('The temporary password must be at least 8 characters.');
     }
     if (!f.doj) return fail('Date of joining is required.');
+    const asSuper = f.member_type === 'super';
+    if (asSuper) { f.eid = ''; f.manager = ''; f.salary = ''; }
     const eid = String(f.eid || '').trim();
     const clash = eid && state.admin.profiles.find((x) => x.id !== p?.id && normCode(x.employee_code) && normCode(x.employee_code) === normCode(eid));
     if (clash) return fail(`Employee ID ${esc(eid)} is already used by ${esc(clash.full_name)} (${esc(clash.employee_code)}).`);
@@ -1889,15 +1910,16 @@ function openOnboardDialog(mode, p = null) {
           p_user: userId, p_doj: f.doj, p_employee_code: eid || null, p_designation: String(f.designation || '').trim() || null,
           p_manager: f.manager || null, p_salary_month: salary ? monthStart(sy, Number(sm)) : null, p_salary: salary ? Number(salary) : null,
         });
-        if (f.member_type === 'non_employee') await api.rpc('admin_set_member_type', { p_user: userId, p_type: 'non_employee' });
+        if (asSuper) await api.rpc('admin_set_admin_level', { p_user: userId, p_level: 'super' });
       });
       dlg.close();
       if (adding) {
         const appUrl = location.origin + location.pathname;
         const share = `Altius HRMS: ${appUrl}\nEmail: ${email}\nTemporary password: ${f.password}`;
         const done = openModal({
-          title: 'Employee added', size: 'sm', subtitle: `${esc(String(f.full_name).trim())} is in Employee Master Data.`,
-          body: `<p class="muted" style="margin-bottom:10px">Share these sign-in details with them. On first sign-in they see the KYC form and can skip it.</p>
+          title: asSuper ? 'Super Admin added' : 'Employee added', size: 'sm',
+          subtitle: `${esc(String(f.full_name).trim())} ${asSuper ? 'is a Super Admin (management, Non-EMD).' : 'is in Employee Master Data.'}`,
+          body: `<p class="muted" style="margin-bottom:10px">Share these sign-in details with them. ${asSuper ? 'They sign in straight to the admin console.' : 'On first sign-in they see the KYC form and can skip it.'}</p>
             <pre class="share-box" id="share-box">${esc(share)}</pre>
             ${SEND_AUTH_EMAILS ? '<p class="faint" style="font-size:12px;margin-top:8px">If email confirmation is switched on in Supabase, they must click the link in the confirmation email before signing in.</p>' : ''}`,
           footer: `<button class="btn" id="copy-share">${icon('file', 'sm')}Copy</button><button class="btn btn-primary" data-close>Done</button>`,
@@ -2174,27 +2196,61 @@ function openBulkMenu() {
 }
 
 // Pick one person from a searchable list, then run an action on them
-function pickPersonDialog({ title, subtitle, people, confirmText, run, done }) {
+// Give admin access (Super Admins only): pick a person and the level
+function openGiveAdminDialog() {
+  const people = activePeople().filter((x) => x.role === 'team' && !x.fnf_completed_at);
   const dlg = openModal({
-    title, subtitle, size: 'sm',
-    body: `<div class="search" style="margin-bottom:10px">${icon('search')}<input class="input" id="pp-search" placeholder="Search…" style="width:100%"></div>
-      <div class="elig-list" id="pp-list">${people.map((e) => `<label class="elig-row" data-name="${esc((e.full_name + ' ' + (e.employee_code || '') + ' ' + e.email).toLowerCase())}">
-        <input type="radio" name="pp" value="${e.id}">${person(e, esc(e.employee_code || e.email))}</label>`).join('') || '<p class="muted">No one to pick.</p>'}</div>`,
-    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${esc(confirmText)}</button>`,
+    title: 'Give admin access', size: 'sm',
+    subtitle: 'Super Admin = full control (management, Non-EMD). Base Admin = everything except admin access (e.g. HR), stays in EMD.',
+    body: `<div class="grid" style="gap:6px;margin-bottom:12px">
+        <label class="check-inline"><input type="radio" name="ga-level" value="base" checked> <b>Base Admin</b> <span class="muted">— admin console except admin access; stays in EMD</span></label>
+        <label class="check-inline"><input type="radio" name="ga-level" value="super"> <b>Super Admin</b> <span class="muted">— full control; leaves EMD (Non-EMD)</span></label></div>
+      <div class="search" style="margin-bottom:10px">${icon('search')}<input class="input" id="ga-search" placeholder="Search…" style="width:100%"></div>
+      <div class="elig-list" id="ga-list" style="max-height:240px">${people.map((e) => `<label class="elig-row" data-name="${esc((e.full_name + ' ' + (e.employee_code || '') + ' ' + e.email).toLowerCase())}">
+        <input type="radio" name="ga" value="${e.id}">${person(e, esc(e.designation || e.employee_code || e.email))}</label>`).join('') || '<p class="muted">No one to pick.</p>'}</div>
+      <div class="field hidden" id="ga-desig-wrap" style="margin-top:12px"><label>Designation</label><input class="input" id="ga-desig" placeholder="e.g. Co-founder & CEO"></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('shield', 'sm')}Give access</button>`,
   });
-  $('#pp-search', dlg.el).addEventListener('input', (e) => { const t = e.target.value.trim().toLowerCase(); $$('.elig-row', dlg.el).forEach((r) => r.classList.toggle('hidden', !!t && !r.dataset.name.includes(t))); });
+  const el = dlg.el;
+  const level = () => $('input[name=ga-level]:checked', el).value;
+  const sync = () => {
+    $('#ga-desig-wrap', el).classList.toggle('hidden', level() !== 'super');
+    const p = byId($('input[name=ga]:checked', el)?.value || '');
+    if (p && !$('#ga-desig', el).dataset.touched) $('#ga-desig', el).value = p.designation || '';
+  };
+  $$('input[name=ga-level], input[name=ga]', el).forEach((x) => x.addEventListener('change', sync));
+  $('#ga-desig', el).addEventListener('input', (e) => { e.target.dataset.touched = '1'; });
+  $('#ga-search', el).addEventListener('input', (e) => { const t = e.target.value.trim().toLowerCase(); $$('.elig-row', el).forEach((r) => r.classList.toggle('hidden', !!t && !r.dataset.name.includes(t))); });
+  $('[data-ok]', el).addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const p = byId($('input[name=ga]:checked', el)?.value || '');
+    if (!p) return toast('Pick someone first.', 'error');
+    const lv = level(), desig = $('#ga-desig', el).value.trim();
+    try {
+      await withBusy(btn, 'Saving…', async () => {
+        await api.rpc('admin_set_admin_level', { p_user: p.id, p_level: lv });
+        if (lv === 'super' && desig !== (p.designation || '')) await api.rpc('admin_set_designation', { p_user: p.id, p_designation: desig });
+      });
+      dlg.close(); toast(`${p.full_name} is now a ${ADMIN_LABEL[lv]}.`); state.fin.loaded = false; await refreshAdmin();
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  });
+}
+function openDesignationDialog(p) {
+  const dlg = openModal({
+    title: `Designation — ${p.full_name}`, size: 'sm', subtitle: 'Super Admins need no Employee ID or reporting manager, only a designation. It shows in the Org Structure.',
+    body: `<div class="field"><label>Designation</label><input class="input" id="dg-val" value="${esc(p.designation || '')}" placeholder="e.g. Co-founder & CEO"></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Save</button>`,
+  });
+  $('#dg-val', dlg.el).focus();
   $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
-    const id = $('input[name=pp]:checked', dlg.el)?.value;
-    if (!id) return toast('Pick someone first.', 'error');
-    const p = byId(id);
-    try { await withBusy(ev.currentTarget, 'Saving…', () => run(p)); dlg.close(); toast(done(p)); state.fin.loaded = false; await refreshAdmin(); }
+    try { await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_set_designation', { p_user: p.id, p_designation: $('#dg-val', dlg.el).value })); dlg.close(); toast('Designation saved.'); await refreshAdmin(); }
     catch (err) { toast(friendlyError(err), 'error'); }
   });
 }
 // No reset emails: an admin sets a temporary password and passes it on; the person changes it after signing in.
 function openResetPasswordDialog(preset) {
   const me = state.user.id;
-  const people = state.admin.profiles.filter((p) => !p.rejected_at && p.id !== me && (p.email !== BASE_ADMIN_EMAIL))
+  const people = state.admin.profiles.filter((p) => !p.rejected_at && p.id !== me && p.email !== BASE_ADMIN_EMAIL && (amSuper() || p.role !== 'admin'))
     .sort((a, b) => a.full_name.localeCompare(b.full_name));
   const dlg = openModal({
     title: 'Reset password', subtitle: 'Set a temporary password, then give it to the person. They can change it from My Profile after signing in.', size: 'sm',
@@ -2274,10 +2330,59 @@ function mountChangeRequestActions() {
   }));
 }
 
+/* ---------- Org Structure ---------- */
+// Reporting tree: Super Admins (management) at the top, everyone under their reporting manager.
+async function pageOrg() {
+  await ensureAdmin();
+  const people = activePeople().filter((p) => !p.fnf_completed_at && !isRT(p));
+  const ids = new Set(people.map((p) => p.id));
+  const kids = new Map();
+  people.forEach((p) => { if (p.reporting_manager_id && ids.has(p.reporting_manager_id) && p.reporting_manager_id !== p.id) {
+    if (!kids.has(p.reporting_manager_id)) kids.set(p.reporting_manager_id, []); kids.get(p.reporting_manager_id).push(p); } });
+  const isRoot = (p) => !p.reporting_manager_id || !ids.has(p.reporting_manager_id) || p.reporting_manager_id === p.id;
+  const supers = people.filter((p) => adminLevel(p) === 'super');
+  const tops = supers.filter(isRoot);
+  const loose = people.filter((p) => isRoot(p) && adminLevel(p) !== 'super');
+  const seen = new Set();
+  const teamSize = (id, guard = new Set()) => { if (guard.has(id)) return 0; guard.add(id); return (kids.get(id) || []).reduce((n, k) => n + 1 + teamSize(k.id, guard), 0); };
+  const node = (p) => {
+    if (seen.has(p.id)) return ''; seen.add(p.id);
+    const lv = adminLevel(p), ch = kids.get(p.id) || [], n = teamSize(p.id);
+    const sub = [p.designation, lv === 'super' ? null : p.employee_code].filter(Boolean).map(esc).join(' · ') || '<span class="faint">No designation</span>';
+    const tag = lv === 'super' ? 'div' : 'a';
+    return `<li><${tag} class="org-node${lv === 'super' ? ' top' : ''}" ${tag === 'a' ? `href="#/emd/${p.id}"` : ''}>${person(p, sub)}
+      <span class="org-meta">${lv ? `<span class="chip ${lv === 'super' ? 'violet' : 'blue'} plain">${ADMIN_LABEL[lv]}</span>` : ''}${empState(p) === 'notice' ? '<span class="chip amber plain">On notice</span>' : ''}
+      ${n ? `<span class="chip gray plain" title="Everyone under them">${n} ${n === 1 ? 'person' : 'people'}</span>` : ''}</span></${tag}>
+      ${ch.length ? `<ul>${ch.sort((a, b) => a.full_name.localeCompare(b.full_name)).map(node).join('')}</ul>` : ''}</li>`;
+  };
+  const stat = (label, value, foot, ico, bg, fg) => `<div class="card stat"><div class="top"><span>${label}</span><span class="ico" style="background:${bg};color:${fg}">${icon(ico)}</span></div>
+    <div class="value">${value}</div><div class="foot">${foot}</div></div>`;
+  const topHTML = tops.map(node).join('');
+  const looseHTML = loose.map(node).join('');
+  const missed = people.filter((p) => !seen.has(p.id)); // only in a reporting loop (A → B → A)
+  const missedHTML = missed.map((p) => { seen.delete(p.id); return node(p); }).join('');
+  return {
+    title: 'Org Structure', crumbs: 'Who reports to whom — Super Admins at the top. Reporting managers are set in Employee Master Data.',
+    actions: amSuper() ? `<a class="btn btn-sm" href="#/access/admins">${icon('shield', 'sm')}Manage admins</a>` : '',
+    html: `
+      <div class="stats">
+        ${stat('Super Admins', supers.length, 'Management · Non-EMD', 'shield', 'var(--violet-soft)', 'var(--violet)')}
+        ${stat('People in the structure', people.length, 'Active, incl. on notice', 'users', 'var(--accent-soft)', 'var(--accent)')}
+        ${stat('No reporting manager', loose.length, loose.length ? 'Set one in Employee Master Data' : 'Everyone is placed', 'network', loose.length ? 'var(--amber-soft)' : 'var(--green-soft)', loose.length ? 'var(--amber)' : 'var(--green)')}
+      </div>
+      <div class="card"><div class="card-head"><div><h3>Management</h3><p>Super Admins and everyone reporting up to them</p></div></div>
+        <div class="card-body">${topHTML ? `<ul class="org-tree">${topHTML}</ul>` : '<p class="muted">No Super Admin is at the top yet.</p>'}</div></div>
+      ${looseHTML ? `<div class="card"><div class="card-head"><div><h3>Not placed yet</h3><p>No reporting manager — open them in EMD and pick one (a Super Admin can be picked too)</p></div></div>
+        <div class="card-body"><ul class="org-tree">${looseHTML}</ul></div></div>` : ''}
+      ${missedHTML ? `<div class="card"><div class="card-head"><div><h3>Reporting loop</h3><p>These people report to each other in a circle — fix one reporting manager in EMD</p></div></div>
+        <div class="card-body"><ul class="org-tree">${missedHTML}</ul></div></div>` : ''}`,
+  };
+}
+
 /* ---------- Access Control ---------- */
 async function pageAccess(r) {
   await ensureAdmin();
-  const tab = ['requests', 'kyc', 'awaiting', 'changes', 'admins', 'nonemd', 'rejected'].includes(r.id) ? r.id : 'requests';
+  const tab = r.id === 'nonemd' ? 'admins' : ['requests', 'kyc', 'awaiting', 'changes', 'admins', 'rejected'].includes(r.id) ? r.id : 'requests';
   const P = state.admin.profiles;
   const lists = {
     requests: P.filter((p) => p.status === 'pending').sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
@@ -2285,10 +2390,10 @@ async function pageAccess(r) {
     awaiting: P.filter(kycOutstanding).sort((a, b) => new Date(b.access_granted_at || b.created_at) - new Date(a.access_granted_at || a.created_at)),
     rejected: P.filter((p) => p.rejected_at).sort((a, b) => new Date(b.rejected_at) - new Date(a.rejected_at)),
     changes: (state.admin.changeRequests || []).filter((x) => x.status === 'pending'),
-    admins: P.filter((p) => p.role === 'admin' && p.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name)),
-    nonemd: P.filter((p) => p.status === 'active' && p.role === 'team' && p.member_type === 'non_employee').sort((a, b) => a.full_name.localeCompare(b.full_name)),
+    admins: P.filter((p) => p.role === 'admin' && p.status === 'active')
+      .sort((a, b) => (adminLevel(a) === adminLevel(b) ? a.full_name.localeCompare(b.full_name) : adminLevel(a) === 'super' ? -1 : 1)),
   };
-  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['awaiting', 'KYC not submitted'], ['changes', 'Change requests'], ['admins', 'Admins'], ['nonemd', 'Non-EMD'], ['rejected', 'Rejected']];
+  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['awaiting', 'KYC not submitted'], ['changes', 'Change requests'], ['admins', 'Admins'], ['rejected', 'Rejected']];
   const rows = lists[tab];
 
   let table;
@@ -2300,22 +2405,26 @@ async function pageAccess(r) {
       rejected: emptyState('x', 'No rejected requests', 'Sign-ups and KYC submissions you reject are kept here, and can be restored.'),
       changes: emptyState('check', 'No change requests waiting', 'When an employee asks to change their details, the request appears here. Nothing changes until you approve it.'),
       admins: emptyState('shield', 'No admins', ''),
-      nonemd: emptyState('users', 'No Non-EMD people', 'People who use the HRMS but are not employees (consultants, advisors…) — kept out of Employee Master Data, payroll and finance.'),
     }[tab];
   } else if (tab === 'changes') {
     table = changeRequestsHTML(rows);
   } else if (tab === 'admins') {
-    const me = state.user.id;
-    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Employee ID</th><th></th></tr></thead><tbody>
-      ${rows.map((p) => `<tr><td>${person(p, p.email === BASE_ADMIN_EMAIL ? 'Base admin' : 'Admin')}</td><td>${esc(p.email)}</td><td class="mono">${esc(p.employee_code || '—')}</td>
-        <td class="actions">${p.id === me ? '<span class="chip gray plain">You</span>' : p.email === BASE_ADMIN_EMAIL ? '<span class="chip gray plain">Can’t be revoked</span>'
-          : `<button class="btn btn-sm btn-danger" data-revoke="${p.id}">${icon('x', 'sm')}Revoke admin</button>`}</td></tr>`).join('')}
-      </tbody></table></div>`;
-  } else if (tab === 'nonemd') {
-    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Since</th><th></th></tr></thead><tbody>
-      ${rows.map((p) => `<tr><td>${person(p, esc(p.designation || 'Non-EMD'))}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
-        <td class="nowrap muted">${fmtDate(p.date_of_joining)}</td>
-        <td class="actions"><button class="btn btn-sm" data-to-emd="${p.id}">Move to EMD</button></td></tr>`).join('')}
+    const me = state.user.id, sup = amSuper();
+    const levelChip = (p) => `<span class="chip ${adminLevel(p) === 'super' ? 'violet' : 'blue'} plain nowrap">${ADMIN_LABEL[adminLevel(p)]}</span>`;
+    table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Level</th><th>Email</th><th>Designation</th><th>Employee ID</th><th></th></tr></thead><tbody>
+      ${rows.map((p) => {
+        const isSup = adminLevel(p) === 'super', owner = p.email === BASE_ADMIN_EMAIL;
+        let act = '';
+        if (p.id === me) act = '<span class="chip gray plain">You</span>';
+        else if (owner) act = '<span class="chip gray plain">Owner — always Super Admin</span>';
+        else if (sup) act = `<button class="btn btn-sm" data-level="${p.id}" data-to="${isSup ? 'base' : 'super'}" title="Change to ${ADMIN_LABEL[isSup ? 'base' : 'super']}">Make ${isSup ? 'Base' : 'Super'}</button>
+          <button class="btn btn-sm btn-danger" data-revoke="${p.id}" title="Remove admin access">${icon('x', 'sm')}Remove</button>`;
+        const editDesig = isSup && (sup || p.id === me) ? `<button class="icon-btn" data-desig="${p.id}" title="Edit designation">${icon('edit', 'sm')}</button>` : '';
+        return `<tr><td>${person(p, owner ? 'Owner' : isSup ? 'Management · Non-EMD' : 'In Employee Master Data')}</td><td>${levelChip(p)}</td><td>${esc(p.email)}</td>
+          <td class="nowrap">${esc(p.designation || '—')} ${editDesig}</td>
+          <td class="mono">${isSup ? '<span class="faint">Not needed</span>' : p.employee_code ? `<a href="#/emd/${p.id}">${esc(p.employee_code)}</a>` : `<a href="#/emd/${p.id}" class="faint">Assign in EMD</a>`}</td>
+          <td class="actions">${act}</td></tr>`;
+      }).join('')}
       </tbody></table></div>`;
   } else if (tab === 'requests') {
     table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Requested</th><th></th></tr></thead><tbody>
@@ -2358,10 +2467,9 @@ async function pageAccess(r) {
     actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm" id="reset-pw">${icon('lock', 'sm')}Reset password</button><button class="btn btn-sm" id="bulk-emp">${icon('upload', 'sm')}Upload Excel</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
     html: `
       <div><nav class="tabs tabs-wrap">${tabs.map(([k, l]) => `<a href="#/access/${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${lists[k].length}</span></a>`).join('')}</nav></div>
-      ${tab === 'admins' ? `<div class="alert alert-info">${icon('info')}<span>Admins are the management team. They use only the admin console (no employee portal) and are kept out of Employee Master Data and payroll.</span>
-        <button class="btn btn-sm btn-primary" id="give-admin" style="margin-left:auto">${icon('shield', 'sm')}Give admin access</button></div>` : ''}
-      ${tab === 'nonemd' ? `<div class="alert alert-info">${icon('info')}<span>Non-EMD people can sign in to the employee portal but are not employees: they are not in Employee Master Data, payroll or finance.</span>
-        <button class="btn btn-sm btn-primary" id="add-nonemd" style="margin-left:auto">${icon('plus', 'sm')}Move someone to Non-EMD</button></div>` : ''}
+      ${tab === 'admins' ? `<div class="alert alert-info">${icon('info')}<span><b>Super Admins</b> (management) control everything, including who is an admin. They are Non-EMD: no Employee ID or reporting manager, just a designation, and they head the Org Structure.
+        <b>Base Admins</b> (e.g. HR) use the whole admin console except admin access, and stay in Employee Master Data and payroll.${amSuper() ? '' : ' <b>Only a Super Admin can give, change or remove admin access.</b>'}</span>
+        ${amSuper() ? `<button class="btn btn-sm btn-primary" id="give-admin" style="margin-left:auto">${icon('shield', 'sm')}Give admin access</button>` : ''}</div>` : ''}
       <div class="card">${table}</div>
       ${tab === 'changes' && (state.admin.changeRequests || []).some((x) => x.status !== 'pending') ? `<div class="card"><div class="card-head"><div><h3>Decided</h3><p>Last 20 requests</p></div></div>
         ${changeRequestsHTML((state.admin.changeRequests || []).filter((x) => x.status !== 'pending').slice(0, 20), true)}</div>` : ''}`,
@@ -2375,25 +2483,21 @@ async function pageAccess(r) {
       mountChangeRequestActions();
       $$('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
         const p = byId(b.dataset.revoke);
-        if (!(await confirmDialog({ title: 'Revoke admin access?', message: `<b>${esc(p.full_name)}</b> becomes a normal user: the admin console closes for them and they use the employee portal.`, confirmText: 'Revoke', danger: true }))) return;
-        try { await withBusy(b, '', () => api.rpc('admin_set_admin', { p_user: p.id, p_admin: false })); toast(`${p.full_name} is no longer an admin.`); await refreshAdmin(); }
+        if (!(await confirmDialog({ title: 'Remove admin access?', message: `<b>${esc(p.full_name)}</b> becomes a normal employee: the admin console closes for them, they use the employee portal and appear in Employee Master Data.`, confirmText: 'Remove admin', danger: true }))) return;
+        try { await withBusy(b, '', () => api.rpc('admin_set_admin_level', { p_user: p.id, p_level: null })); toast(`${p.full_name} is no longer an admin.`); state.fin.loaded = false; await refreshAdmin(); }
         catch (err) { toast(friendlyError(err), 'error'); }
       }));
-      $$('[data-to-emd]').forEach((b) => b.addEventListener('click', async () => {
-        const p = byId(b.dataset.toEmd);
-        try { await withBusy(b, '', () => api.rpc('admin_set_member_type', { p_user: p.id, p_type: 'employee' })); toast(`${p.full_name} is now in Employee Master Data.`); await refreshAdmin(); }
+      $$('[data-level]').forEach((b) => b.addEventListener('click', async () => {
+        const p = byId(b.dataset.level), to = b.dataset.to;
+        const msg = to === 'super'
+          ? `<b>${esc(p.full_name)}</b> gets full control, including admin access. They leave Employee Master Data and payroll (Non-EMD).`
+          : `<b>${esc(p.full_name)}</b> keeps the admin console but can no longer give, change or remove admin access. They join Employee Master Data and payroll.`;
+        if (!(await confirmDialog({ title: `Make ${ADMIN_LABEL[to]}?`, message: msg, confirmText: `Make ${ADMIN_LABEL[to]}` }))) return;
+        try { await withBusy(b, '', () => api.rpc('admin_set_admin_level', { p_user: p.id, p_level: to })); toast(`${p.full_name} is now a ${ADMIN_LABEL[to]}.`); state.fin.loaded = false; await refreshAdmin(); }
         catch (err) { toast(friendlyError(err), 'error'); }
       }));
-      $('#give-admin')?.addEventListener('click', () => pickPersonDialog({
-        title: 'Give admin access', subtitle: 'They will use only the admin console and leave Employee Master Data.',
-        people: activePeople().filter((x) => x.role === 'team'), confirmText: 'Make admin',
-        run: (p) => api.rpc('admin_set_admin', { p_user: p.id, p_admin: true }), done: (p) => `${p.full_name} is now an admin.`,
-      }));
-      $('#add-nonemd')?.addEventListener('click', () => pickPersonDialog({
-        title: 'Move to Non-EMD', subtitle: 'They keep their portal access but leave Employee Master Data, payroll and finance.',
-        people: activeEmployees(), confirmText: 'Move to Non-EMD',
-        run: (p) => api.rpc('admin_set_member_type', { p_user: p.id, p_type: 'non_employee' }), done: (p) => `${p.full_name} moved to Non-EMD.`,
-      }));
+      $$('[data-desig]').forEach((b) => b.addEventListener('click', () => openDesignationDialog(byId(b.dataset.desig))));
+      $('#give-admin')?.addEventListener('click', openGiveAdminDialog);
       $$('[data-restore]').forEach((b) => b.addEventListener('click', async () => {
         const p = byId(b.dataset.restore);
         const ok = await confirmDialog({
@@ -2567,6 +2671,7 @@ async function pageEmd() {
     return `<tr data-href="#/emd/${e.id}">
       <td>${person(e, e.employee_code ? `${esc(e.employee_code)}${empState(e) === 'fnf' ? '' : ` <button class="link-btn" data-eid="${e.id}" title="Change Employee ID">${icon('edit', 'sm')}</button>`}`
           : empState(e) === 'fnf' ? 'No EID' : `<button class="btn btn-xs btn-accent" data-eid="${e.id}">${icon('plus', 'sm')}Assign Emp ID</button>`)}
+        ${adminLevel(e) === 'base' ? '<div class="chips-line"><span class="chip blue plain">Base Admin</span></div>' : ''}
         ${empState(e) !== 'active' || (e.role === 'team' && e.kyc_status !== 'approved' && empState(e) !== 'fnf') ? `<div class="chips-line">${empState(e) !== 'active' ? `${empChip(e)}${lwdChip(e)}${isRT(e) ? settleChip(e) : ''}` : ''}${e.role === 'team' && e.kyc_status !== 'approved' && empState(e) !== 'fnf' ? kycChip(e) : ''}</div>` : ''}</td>
       <td class="trunc" title="${esc(e.email)}">${esc(e.email)}</td>
       <td class="nowrap">${esc(e.phone || '—')}</td>
@@ -5124,7 +5229,7 @@ async function pageAdminAccount() {
   const p = state.profile;
   return {
     title: 'My Account', crumbs: 'Your sign-in details',
-    html: `<div class="card emp-head">${avatar(p, 'lg')}<div style="min-width:0"><h2>${esc(p.full_name)}</h2><div class="meta"><span>${esc(p.email)}</span><span>·</span><span>Admin</span></div></div></div>
+    html: `<div class="card emp-head">${avatar(p, 'lg')}<div style="min-width:0"><h2>${esc(p.full_name)}</h2><div class="meta"><span>${esc(p.email)}</span><span>·</span><span>${ADMIN_LABEL[adminLevel(p)] || 'Admin'}</span>${p.designation ? `<span>·</span><span>${esc(p.designation)}</span>` : ''}</div></div></div>
       ${changePasswordCardHTML('Choose a new password for your admin login.')}`,
     mount() { mountChangePassword(); },
   };
