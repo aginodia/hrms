@@ -6008,9 +6008,26 @@ async function openGrantLetters(allocationId) {
 }
 
 /* ---------- Settings → Storage & documents ---------- */
+// Every file path in the KYC bucket (admins can list it)
+async function listKycStorage() {
+  const top = await q(db.storage.from(BUCKET).list('', { limit: 1000 }));
+  const out = [];
+  for (const f of top || []) {
+    if (f.id) { out.push(f.name); continue; }
+    const inner = await q(db.storage.from(BUCKET).list(f.name, { limit: 1000 }));
+    for (const x of inner || []) if (x.id) out.push(`${f.name}/${x.name}`);
+  }
+  return out;
+}
 async function pageStorage() {
   await ensureAdmin();
-  const [drive, co, kyc, sign] = await Promise.all([driveSettings(true), companyInfo(true), q(db.from('kyc_submissions').select('*')).catch(() => []), signatureImage()]);
+  const [drive, co, kyc, sign, drafts, stored] = await Promise.all([driveSettings(true), companyInfo(true), q(db.from('kyc_submissions').select('*')).catch(() => []), signatureImage(),
+    q(db.from('kyc_drafts').select('data')).catch(() => []), listKycStorage().catch(() => null)]);
+  // Files still in Supabase storage: in use by a submitted KYC, in use by an unfinished draft, or not used at all
+  const usedPaths = new Set((kyc || []).flatMap((k) => DOCS.map((d) => k[d.col]).filter(Boolean)));
+  const draftText = JSON.stringify(drafts || []);
+  const unusedFiles = (stored || []).filter((f) => !usedPaths.has(f) && !draftText.includes(f));
+  const draftFiles = (stored || []).filter((f) => !usedPaths.has(f) && draftText.includes(f));
   const cols = DOCS.map((d) => d.col);
   const inSupabase = (kyc || []).reduce((s, k) => s + cols.filter((c) => k[c] && !isDrivePath(k[c])).length, 0);
   const inDrive = (kyc || []).reduce((s, k) => s + cols.filter((c) => isDrivePath(k[c])).length, 0);
@@ -6064,7 +6081,13 @@ async function pageStorage() {
       <div class="card"><div class="card-head"><div><h3>KYC documents</h3><p>${fmtNum(inDrive)} in Google Drive · ${fmtNum(inSupabase)} still in Supabase storage</p></div>
         <div class="right"><button class="btn btn-sm" id="kyc-move" ${drive.url && inSupabase && canEdit ? '' : 'disabled'}>${icon('upload', 'sm')}Move to Drive</button></div></div>
         <div class="card-body"><p class="muted" style="font-size:13px">New KYC uploads go straight to Drive once it is connected. <b>Move to Drive</b> copies the older files into each employee's KYC folder with the new names, points the HRMS at the Drive copy, and then deletes them from Supabase storage to free space.</p>
-        <p class="faint" style="font-size:12px;margin-top:6px" id="kyc-move-msg"></p></div></div>`,
+        <p class="faint" style="font-size:12px;margin-top:6px" id="kyc-move-msg"></p>
+        ${stored == null ? '' : `<div class="bar-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+          <span style="font-size:13px">${stored.length ? `<b>${stored.length}</b> file${stored.length === 1 ? '' : 's'} left in Supabase storage: ${[
+            unusedFiles.length ? `${unusedFiles.length} not used by anyone` : '',
+            draftFiles.length ? `${draftFiles.length} in unfinished KYC drafts (they move to Drive once the employee submits and you click Move to Drive)` : '',
+            stored.length - unusedFiles.length - draftFiles.length ? `${stored.length - unusedFiles.length - draftFiles.length} used by submitted KYC` : ''].filter(Boolean).join(' · ')}` : '<span style="color:var(--green)">Supabase storage is empty — all files are in Google Drive.</span>'}</span>
+          ${unusedFiles.length && canEdit ? `<button class="btn btn-sm btn-danger" id="kyc-clean">${icon('trash', 'sm')}Delete ${unusedFiles.length} unused file${unusedFiles.length === 1 ? '' : 's'}</button>` : ''}</div>`}</div></div>`,
     mount() {
       $('#drv-secret-copy')?.addEventListener('click', (ev) => withBusy(ev.currentTarget, '', async () => {
         try { const v = await api.rpc('admin_drive_secret'); $('#drv-secret').textContent = v; navigator.clipboard?.writeText(v); toast('Secret copied — paste it as DRIVE_SECRET'); }
@@ -6093,6 +6116,14 @@ async function pageStorage() {
         try { await q(db.from('app_settings').update({ value }).eq('key', 'company').select()); state.company = null; toast('Company details saved'); }
         catch (e) { toast(friendlyError(e), 'error'); }
       }));
+      $('#kyc-clean')?.addEventListener('click', async (ev) => {
+        if (!(await confirmDialog({ title: `Delete ${unusedFiles.length} unused file(s)?`, message: 'These files in Supabase storage are not used by any KYC or draft (for example uploads from deleted accounts or replaced uploads). They are deleted permanently.', confirmText: 'Delete', danger: true }))) return;
+        await withBusy(ev.currentTarget, 'Deleting…', async () => {
+          const { error } = await api.removeFiles(unusedFiles);
+          if (error) return toast(friendlyError(error), 'error');
+          toast(`${unusedFiles.length} unused file(s) deleted from Supabase storage`); render();
+        });
+      });
       $('#sig-up')?.addEventListener('click', () => {
         const input = document.createElement('input'); input.type = 'file'; input.accept = 'image/png,image/jpeg';
         input.addEventListener('change', async () => {
