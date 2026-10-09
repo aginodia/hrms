@@ -477,6 +477,21 @@
   .st-WO, .st-NA { background: var(--gray-soft); color: var(--muted); }
   .st-MP { background: var(--blue-soft); color: var(--blue); }
   .st-MPH { box-shadow: inset 0 0 0 1.5px #E9C27A; }
+  .st-H { background: var(--violet-soft); color: var(--violet); }
+  .st-WFH { background: var(--accent-soft); color: var(--accent); }
+  .cal-tag { font-size: 10px; font-weight: 600; color: var(--violet); margin-top: 2px; white-space: nowrap; }
+  .att td.q-day { box-shadow: inset 0 0 0 2px var(--red); }
+  tr.q-row > td { background: var(--red-soft); }
+  .q-list { display: grid; gap: 10px; }
+  .q-item { display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .q-item .grow { flex: 1; min-width: 220px; }
+  .cal-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .cal-form > .input[type=date] { width: 170px; }
+  .cal-form > .input:not([type=date]) { flex: 1; min-width: 200px; }
+  .cal-form .hm { display: flex; align-items: center; gap: 4px; }
+  .cal-form .hm .input { width: 64px; }
+  tr.muted td { color: var(--muted); }
+  .slip-days > summary { cursor: pointer; padding: 12px 20px; font-weight: 600; font-size: 13.5px; border-top: 1px solid var(--border); }
   .att-wrap { overflow-x: auto; }
   table.att { border-collapse: separate; border-spacing: 0; font-size: 12.5px; font-variant-numeric: tabular-nums; }
   .att th, .att td { min-width: 58px; padding: 7px 5px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); color: var(--text-2); }
@@ -659,6 +674,7 @@ const ICONS = {
   calendar: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/>',
   network: '<rect x="16" y="16" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="9" y="2" width="6" height="6" rx="1"/><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"/><path d="M12 12V8"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
   sparkle: '<path d="M12 3l1.9 5.8L20 10l-6.1 1.2L12 17l-1.9-5.8L4 10l6.1-1.2z"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
@@ -841,6 +857,7 @@ const api = {
     .eq('key', 'team_visibility').select()),
   allProfiles: () => q(db.from('profiles').select('*').order('created_at', { ascending: false })),
   allChangeRequests: () => q(db.from('change_requests').select('*').order('created_at', { ascending: false })),
+  openQueries: () => q(db.from('payroll_queries').select('id, run_id, employee_id, work_date').eq('status', 'open')),
   allSalaries: () => q(db.from('salary_history').select('employee_id, effective_month, amount').is('removed_at', null).order('effective_month')),
   kycFor: (id) => q(db.from('kyc_submissions').select('*').eq('employee_id', id).maybeSingle()),
   upload: (path, file) => q(db.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })),
@@ -1627,6 +1644,7 @@ function adminCounts() {
     awaiting: P.filter(kycOutstanding).length,
     active: P.filter((p) => p.status === 'active' && isEmd(p)).length,
     changes: (state.admin.changeRequests || []).filter((x) => x.status === 'pending').length,
+    queries: (state.admin.openQueries || []).length,
   };
 }
 
@@ -1642,7 +1660,7 @@ const NAV = {
       { key: 'emd', label: 'Employee Master Data', icon: 'users' },
       { key: 'org', label: 'Org Structure', icon: 'network' },
       { label: 'Finance' },
-      { key: 'payroll', label: 'Payroll', icon: 'wallet' },
+      { key: 'payroll', label: 'Payroll', icon: 'wallet', badge: c.queries || 0 },
       { key: 'variable', label: 'Variable', icon: 'trending' },
       { key: 'bonus', label: 'Bonus & Leave Encash', icon: 'gift' },
       { key: 'loans', label: 'Loans', icon: 'bank' },
@@ -1658,13 +1676,15 @@ const NAV = {
     { key: 'home', label: 'Home', icon: 'home' },
     { key: 'profile', label: 'My Profile', icon: 'user' },
     { key: 'pay', label: 'My Pay', icon: 'wallet' },
+    { key: 'calendar', label: 'Holidays', icon: 'calendar' },
+    { key: 'wfh', label: 'WFH', icon: 'laptop' },
     { key: 'kyc', label: 'My KYC', icon: 'fileCheck', badge: KYC_OPEN.includes(state.profile?.kyc_status || 'not_started') ? 1 : 0 },
   ],
 };
 const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops },
-  team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, kyc: pageTeamKyc },
+  team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, wfh: pageMyWfh, kyc: pageTeamKyc },
 };
 const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
 
@@ -1726,8 +1746,9 @@ const emptyState = (ico, title, text) => `<div class="empty"><span class="ico">$
    ===================================================================== */
 async function ensureAdmin(force = false) {
   if (state.admin.loaded && !force) return;
-  const [profiles, salaries, changeRequests] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => [])]);
-  state.admin = { loaded: true, profiles, salaries, changeRequests };
+  const [profiles, salaries, changeRequests, openQueries] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
+    api.openQueries().catch(() => [])]);
+  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries };
 }
 const byId = (id) => state.admin.profiles.find((p) => p.id === id);
 const salariesOf = (id) => state.admin.salaries
@@ -3078,13 +3099,14 @@ async function pageTeamAccess() {
    ===================================================================== */
 const DEFAULT_RULES = { weekday_full_minutes: 540, saturday_full_minutes: 300, sunday_paid_off: true };
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const ST_LABEL = { F: 'F', HD: 'HD', L: 'L', WO: 'WO', MP: 'MP', MPH: 'HD', NA: '—' };
+const ST_LABEL = { F: 'F', HD: 'HD', L: 'L', WO: 'WO', MP: 'MP', MPH: 'HD', NA: '—', H: 'H', WFH: 'WFH' };
 const ST_TITLE = {
   F: 'Full day', HD: 'Half day — worked less than the full-day hours', L: 'Leave — no punch in or out',
   WO: 'Weekly off (Sunday)', MP: 'Missed punch — counted as a full day', MPH: 'Half day — every 3rd missed punch',
+  H: 'Holiday — paid as a full day', WFH: 'Work from home — no punches, paid as a full day',
   NA: 'Before date of joining — not counted',
 };
-const SYSTEM_TO_FINAL = { F: 'F', MP: 'F', HD: 'HD', MPH: 'HD', L: 'L', WO: 'WO', NA: 'NA' };
+const SYSTEM_TO_FINAL = { F: 'F', MP: 'F', HD: 'HD', MPH: 'HD', L: 'L', WO: 'WO', NA: 'NA', H: 'H', WFH: 'WFH' };
 const XLSX_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
 
 state.payroll = { runs: null, runId: null, data: null, codeMap: null, rules: null };
@@ -3106,6 +3128,9 @@ const payrollApi = {
   adjustments: (runId) => fetchAll(() => db.from('attendance_adjustments')
     .select('emp_code, work_date, final_status').eq('run_id', runId).order('work_date')),
   results: (runId) => fetchAll(() => db.from('payroll_results').select('*').eq('run_id', runId).eq('included', true).order('emp_code')),
+  calendar: () => fetchAll(() => db.from('calendar_days').select('*').is('removed_at', null).order('day')),
+  wfh: () => fetchAll(() => db.from('wfh_days').select('*').neq('status', 'withdrawn').order('work_date', { ascending: false })),
+  queries: (runId) => fetchAll(() => db.from('payroll_queries').select('*').eq('run_id', runId).order('created_at')),
   codeMap: () => fetchAll(() => db.from('attendance_code_map').select('*').order('emp_code')),
   rules: async () => {
     const row = await q(db.from('app_settings').select('value').eq('key', 'attendance_rules').maybeSingle());
@@ -3129,15 +3154,28 @@ async function ensurePayroll({ reload = false } = {}) {
   if (!P.runs || reload) {
     [P.runs, P.codeMap, P.rules, P.pt] = await Promise.all([payrollApi.runs(), payrollApi.codeMap(), payrollApi.rules(), payrollApi.pt()]);
   }
+  // Calendar and WFH change from other screens (and from employees) — always fresh
+  [P.calendar, P.wfh] = await Promise.all([payrollApi.calendar(), payrollApi.wfh()]);
   if (!P.runs.some((r) => r.id === P.runId)) P.runId = P.runs[0]?.id || null;
   if (!P.runId) { P.data = null; return; }
   if (!P.data || P.data.runId !== P.runId || reload) {
-    const [punches, adjustments, results] = await Promise.all([
-      payrollApi.punches(P.runId), payrollApi.adjustments(P.runId), payrollApi.results(P.runId)]);
-    P.data = { runId: P.runId, punches, adjustments, results };
+    const [punches, adjustments, results, queries] = await Promise.all([
+      payrollApi.punches(P.runId), payrollApi.adjustments(P.runId), payrollApi.results(P.runId), payrollApi.queries(P.runId).catch(() => [])]);
+    P.data = { runId: P.runId, punches, adjustments, results, queries };
+  } else {
+    P.data.queries = await payrollApi.queries(P.runId).catch(() => P.data.queries);
   }
 }
 const currentRun = () => state.payroll.runs?.find((r) => r.id === state.payroll.runId) || null;
+async function refreshQueryBadge() { state.admin.openQueries = await api.openQueries().catch(() => state.admin.openQueries); }
+const calendarIndex = () => new Map((state.payroll.calendar || []).map((c) => [c.day, c]));
+// Financial year: 1 April – 31 March, named by the year it starts in
+const fyOf = (iso) => { const d = parseISODate(iso); return d.getMonth() >= 3 ? d.getFullYear() : d.getFullYear() - 1; };
+const fyRange = (y) => [`${y}-04-01`, `${y + 1}-03-31`];
+const fyLabel = (y) => `FY ${y}–${String(y + 1).slice(2)}`;
+const fmtHM = (m) => { m = Number(m); return `${Math.floor(m / 60)}h${m % 60 ? ` ${pad(m % 60)}m` : ''}`; };
+const QUERY_HOURS = 12;
+const queryUntil = (run) => (run?.pushed_at ? new Date(new Date(run.pushed_at).getTime() + QUERY_HOURS * 3600e3) : null);
 
 /* ---------- Attendance rules engine ---------- */
 const timeToMin = (t) => { if (!t) return null; const [h, m] = String(t).split(':').map(Number); return h * 60 + m; };
@@ -3150,7 +3188,8 @@ const stChip = (s, title) => `<span class="st st-${s}" title="${esc(title || ST_
    Rules: both punches and ≥ full-day hours → F; both but shorter → HD;
    one punch missing → missed punch (every 3rd one is a half day, the rest
    count as full days); no punches → L; Sunday → weekly off. */
-function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd, lwd = null) {
+// extras.cal: date → calendar entry (holiday / time relaxation); extras.wfh: date → recorded WFH entry
+function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd, lwd = null, extras = {}) {
   const byDate = new Map(rows.map((r) => [r.work_date, r]));
   // Staff added to the HRMS after they actually joined have a later joining date
   // in EMD than their first punch; their punches win.
@@ -3166,10 +3205,14 @@ function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd, lwd =
     const inM = timeToMin(r?.punch_in);
     const rawOut = timeToMin(r?.punch_out);
     const outM = inM != null && rawOut === inM ? null : rawOut; // the same time twice is a single punch
-    const need = wd === 6 ? rules.saturday_full_minutes : rules.weekday_full_minutes;
+    const cal = extras.cal?.get(iso) || null;
+    const wfh = extras.wfh?.get(iso) || null;
+    // A time-relaxation day has its own (shorter) full-day hours
+    const need = cal?.kind === 'relaxation' ? Number(cal.full_minutes) : wd === 6 ? rules.saturday_full_minutes : rules.weekday_full_minutes;
     let mins = null, sys, missNo = null;
     if ((doj && iso < doj) || (lwd && iso > lwd)) sys = 'NA'; // before joining / after the last working day
     else if (wd === 0) sys = 'WO';
+    else if (cal?.kind === 'holiday') sys = 'H'; // Monday–Saturday holiday: paid full day
     else if (inM != null && outM != null) {
       mins = outM - inM;
       if (mins < 0) mins += 1440; // overnight shift
@@ -3177,7 +3220,7 @@ function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd, lwd =
     } else if (inM != null || outM != null) {
       misses += 1; missNo = misses;
       sys = misses % 3 === 0 ? 'MPH' : 'MP';
-    } else sys = 'L';
+    } else sys = wfh ? 'WFH' : 'L'; // no punches: leave, unless WFH is recorded for the day
     const editable = sys === 'HD' || sys === 'L' || sys === 'MP' || sys === 'MPH' || sys === 'NA';
     const systemFinal = SYSTEM_TO_FINAL[sys];
     const adj = editable ? adjustments.get(iso) || null : null;
@@ -3185,18 +3228,19 @@ function computeAttendance(rows, monthIso, rules, adjustments, dojFromEmd, lwd =
       iso, d: i, wd, dayLabel: r?.day_label || DAY_NAMES[wd], in: r?.punch_in || null, out: outM == null ? null : r?.punch_out,
       inM, outM, mins, need, sys, missNo, editable, systemFinal, saved: adj, final: adj || systemFinal,
       missing: sys === 'MP' || sys === 'MPH' ? (inM == null ? 'IN' : 'OUT') : null,
-      lwd: iso === lwd, afterLwd: !!lwd && iso > lwd,
+      lwd: iso === lwd, afterLwd: !!lwd && iso > lwd, cal, wfh,
     });
   }
   days.dojIgnored = dojIgnored;
   days.punchAfterLwd = !!lwd && rows.some((r) => r.work_date > lwd && (r.punch_in || r.punch_out));
   return days;
 }
+// F counts every paid full day: worked full days plus holidays (H) and WFH, which are also counted on their own
 function tally(days, which) {
-  const c = { F: 0, HD: 0, L: 0, WO: 0 };
+  const c = { F: 0, HD: 0, L: 0, WO: 0, H: 0, WFH: 0 };
   for (const d of days) {
     const s = which === 'system' ? SYSTEM_TO_FINAL[d.sys] : d.final;
-    if (s in c) c[s] += 1;
+    if (s === 'H' || s === 'WFH') { c[s] += 1; c.F += 1; } else if (s in c) c[s] += 1;
   }
   return c;
 }
@@ -3255,13 +3299,27 @@ function payrollSheet() {
     if (!adjByCode.has(a.emp_code)) adjByCode.set(a.emp_code, new Map());
     adjByCode.get(a.emp_code).set(a.work_date, a.final_status);
   }
+  const cal = calendarIndex();
+  const wfhByEmp = new Map();
+  for (const w of P.wfh || []) {
+    if (w.status !== 'recorded') continue;
+    if (!wfhByEmp.has(w.employee_id)) wfhByEmp.set(w.employee_id, new Map());
+    wfhByEmp.get(w.employee_id).set(w.work_date, w);
+  }
+  const queriesByEmp = new Map();
+  for (const x of P.data.queries || []) {
+    if (!queriesByEmp.has(x.employee_id)) queriesByEmp.set(x.employee_id, []);
+    queriesByEmp.get(x.employee_id).push(x);
+  }
   const mapped = [], unmapped = [], exited = [], left = [];
   for (const g of groups) {
     if (leftCodes.has(g.code)) { left.push(g); continue; } // marked as left — not in payroll
     const emp = byId(map.get(g.code));
     if (emp?.fnf_completed_at) { exited.push({ g, emp }); continue; } // journey ended — not channelled
     if (!emp) { unmapped.push(g); continue; }
-    const days = computeAttendance(g.rows, run.month, P.rules, adjByCode.get(g.code) || new Map(), emp.date_of_joining, emp.exit_date);
+    const days = computeAttendance(g.rows, run.month, P.rules, adjByCode.get(g.code) || new Map(), emp.date_of_joining, emp.exit_date,
+      { cal, wfh: wfhByEmp.get(emp.id) });
+    const queries = queriesByEmp.get(emp.id) || [];
     const pre = tally(days, 'system');
     const post = tally(days, 'final');
     const sal = salaryForMonth(emp.id, run.month);
@@ -3274,7 +3332,7 @@ function payrollSheet() {
     if (check && !check.ok) notes.unshift(`EmpCode in the sheet is ${g.code}, but ${check.text.replace('ID mismatch — EMD has', 'the Employee ID in EMD is')}. Check the mapping.`);
     const pay = payFor(post, salary, P.rules);
     const pt = salary ? ptFor(salary) : 0;
-    mapped.push({ g, emp, days, pre, post, salary, notes, rt: isRT(emp), idOk: !check || check.ok, prePay: payFor(pre, salary, P.rules), ...pay, pt, net: Math.max(0, pay.payable - pt) });
+    mapped.push({ g, emp, days, pre, post, salary, notes, rt: isRT(emp), idOk: !check || check.ok, queries, openQueries: queries.filter((x) => x.status === 'open').length, prePay: payFor(pre, salary, P.rules), ...pay, pt, net: Math.max(0, pay.payable - pt) });
   }
   mapped.sort((a, b) => a.emp.full_name.localeCompare(b.emp.full_name));
   return { run, groups, mapped, unmapped, exited, left };
@@ -3522,7 +3580,8 @@ function showImportPreview(file, parsed) {
 
 /* ---------- Payroll page ---------- */
 function payrollTabs(active) {
-  const tabs = [['calc', '#/payroll', 'Salary Calculation'], ['mapping', '#/payroll/mapping', 'Mapping'], ['rules', '#/payroll/rules', 'Working Hours'], ['pt', '#/payroll/pt', 'Professional Tax']];
+  const tabs = [['calc', '#/payroll', 'Salary Calculation'], ['mapping', '#/payroll/mapping', 'Mapping'], ['holidays', '#/payroll/holidays', 'Holidays & Relaxation'],
+    ['wfh', '#/payroll/wfh', 'WFH'], ['rules', '#/payroll/rules', 'Working Hours'], ['pt', '#/payroll/pt', 'Professional Tax']];
   return `<div><nav class="tabs">${tabs.map(([k, href, l]) => `<a href="${href}" class="${k === active ? 'active' : ''}">${l}</a>`).join('')}</nav></div>`;
 }
 function payrollActions() {
@@ -3549,6 +3608,8 @@ async function pagePayroll(r) {
   if (r.id === 'mapping') return pagePayrollMapping();
   if (r.id === 'rules') return pagePayrollRules();
   if (r.id === 'pt') return pagePayrollPt();
+  if (r.id === 'holidays') return pagePayrollHolidays();
+  if (r.id === 'wfh') return pagePayrollWfh();
   return pagePayrollCalc();
 }
 
@@ -3573,6 +3634,7 @@ async function pagePayrollCalc() {
   const noSalary = mapped.filter((m) => m.salary == null);
   const rtAll = state.admin.profiles.filter(isRT).sort((a, b) => String(a.exit_date).localeCompare(String(b.exit_date)));
   const seg = state.payrollSeg === 'rt' ? 'rt' : 'active';
+  const openQ = mapped.filter((m) => m.openQueries);
   return {
     ...base,
     html: `${payrollTabs('calc')}
@@ -3584,15 +3646,18 @@ async function pagePayrollCalc() {
         <div class="card stat"><div class="top"><span>Total net payable</span><span class="ico" style="background:var(--green-soft);color:var(--green)">${icon('wallet')}</span></div>
           <div class="value" style="font-size:24px">${fmtINR(totalNet)}</div><div class="foot">${fmtINR(total)} earned − ${fmtINR(totalPt)} PT</div></div>
         <div class="card stat"><div class="top"><span>Payroll status</span><span class="ico" style="background:var(--violet-soft);color:var(--violet)">${icon('fileCheck')}</span></div>
-          <div class="value" style="font-size:18px">${run.processed_at ? (changed ? '<span class="chip amber">Changed since save</span>' : '<span class="chip green">Saved</span>') : '<span class="chip gray">Not saved</span>'}</div>
-          <div class="foot">${run.processed_at ? `Saved ${fmtRelative(run.processed_at)}` : 'Review, then save the payroll'}</div></div>
+          <div class="value" style="font-size:18px">${run.processed_at ? (changed ? '<span class="chip amber">Changed since save</span>' : run.pushed_at ? '<span class="chip green">Pushed to employees</span>' : '<span class="chip green">Saved</span>') : '<span class="chip gray">Not saved</span>'}</div>
+          <div class="foot">${run.pushed_at ? `Pushed ${fmtRelative(run.last_pushed_at || run.pushed_at)} · queries ${queryUntil(run) > new Date() ? `open until ${fmtDateTime(queryUntil(run))}` : 'closed'}`
+            : run.processed_at ? `Saved ${fmtRelative(run.processed_at)} · not pushed yet` : 'Review, then save & push the payroll'}</div></div>
       </div>
+      ${openQ.length ? `<div class="alert alert-error">${icon('alert')}<span><b>${openQ.reduce((n, m) => n + m.openQueries, 0)} open salary ${openQ.reduce((n, m) => n + m.openQueries, 0) === 1 ? 'query' : 'queries'}</b> from ${openQ.map((m) => `<a href="#/payroll/emp/${encodeURIComponent(m.g.code)}">${esc(m.emp.full_name)}</a>`).join(', ')} — highlighted below. Open the person, change the day if needed, mark the query, then <b>Save &amp; push</b> again.</span></div>` : ''}
       ${unmapped.length ? `<div class="alert alert-warn">${icon('alert')}<span><b>${unmapped.length} employee(s) in the sheet are not mapped</b> to Employee Master Data, so they are not in the calculation. <a href="#/payroll/mapping">Map them</a>, or mark people who have left as <b>Left / resigned</b>.</span></div>` : ''}
       ${noSalary.length ? `<div class="alert alert-warn">${icon('alert')}<span>No salary in Employee Master Data for: ${noSalary.map((m) => esc(m.emp.full_name)).join(', ')}. Their payable shows ₹0 and they are left out when saving.</span></div>` : ''}
       <div class="card">
         <div class="card-head"><div><h3>Salary calculation — ${fmtMonth(run.month)}</h3><p>${rulesSummary(P.rules)} · Daily salary = monthly ÷ 30 · Earned = (Full day${P.rules.sunday_paid_off ? ' + WO' : ''}) × daily + Half day × daily × 0.5 · Net = Earned − Professional Tax</p></div>
           <div class="right"><button class="btn btn-sm" id="export-payroll" ${mapped.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>
-          <button class="btn btn-sm btn-primary" id="save-payroll" ${mapped.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payroll</button></div></div>
+          <button class="btn btn-sm" id="save-payroll" ${mapped.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payroll</button>
+          <button class="btn btn-sm btn-primary" id="push-payroll" ${mapped.length ? '' : 'disabled'} title="Save, then publish each employee’s final day-wise sheet in their portal">${icon('upload', 'sm')}Save &amp; push</button></div></div>
         ${mapped.length ? '' : emptyState('users', 'No mapped employees yet', 'Map the sheet’s EmpCodes to employees in the <a href="#/payroll/mapping">Mapping</a> tab.')}
       </div>
       <div><nav class="tabs" id="pay-seg">
@@ -3610,16 +3675,39 @@ async function pagePayrollCalc() {
       }));
       $$('[data-fnf]').forEach((b) => b.addEventListener('click', () => completeFnf(byId(b.dataset.fnf))));
       $('#export-payroll')?.addEventListener('click', () => exportPayrollCsv(run, mapped));
+      const results = () => mapped.filter((m) => m.salary != null).map((m) => ({
+        employee_id: m.emp.id, emp_code: m.g.code, monthly_salary: m.salary, daily_salary: Number(m.daily.toFixed(4)),
+        pre_full: m.pre.F, pre_half: m.pre.HD, pre_leave: m.pre.L, pre_weekly_off: m.pre.WO,
+        post_full: m.post.F, post_half: m.post.HD, post_leave: m.post.L, post_weekly_off: m.post.WO, payable: m.payable,
+        pt: m.pt, net_payable: m.net,
+      }));
       $('#save-payroll')?.addEventListener('click', async (ev) => {
-        const results = mapped.filter((m) => m.salary != null).map((m) => ({
-          employee_id: m.emp.id, emp_code: m.g.code, monthly_salary: m.salary, daily_salary: Number(m.daily.toFixed(4)),
-          pre_full: m.pre.F, pre_half: m.pre.HD, pre_leave: m.pre.L, pre_weekly_off: m.pre.WO,
-          post_full: m.post.F, post_half: m.post.HD, post_leave: m.post.L, post_weekly_off: m.post.WO, payable: m.payable,
-          pt: m.pt, net_payable: m.net,
-        }));
+        const res = results();
         try {
-          await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_save_payroll', { p_run: run.id, p_results: results, p_rules: P.rules }));
-          toast(`Payroll for ${fmtMonth(run.month)} saved — ${results.length} employee(s), net ${fmtINR(results.reduce((s, x) => s + x.net_payable, 0))}.`);
+          await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_save_payroll', { p_run: run.id, p_results: res, p_rules: P.rules }));
+          toast(`Payroll for ${fmtMonth(run.month)} saved — ${res.length} employee(s), net ${fmtINR(res.reduce((s, x) => s + x.net_payable, 0))}.${run.pushed_at ? ' Push again so employees see the changes.' : ''}`);
+          await ensurePayroll({ reload: true });
+          render();
+        } catch (err) { toast(friendlyError(err), 'error'); }
+      });
+      $('#push-payroll')?.addEventListener('click', async (ev) => {
+        const btn = ev.currentTarget;
+        const res = results();
+        const until = run.pushed_at ? queryUntil(run) : new Date(Date.now() + QUERY_HOURS * 3600e3);
+        const ok = await confirmDialog({
+          title: run.pushed_at ? `Push ${fmtMonth(run.month)} again?` : `Save & push ${fmtMonth(run.month)}?`,
+          message: `The final day-wise salary sheet of <b>${res.length}</b> employee(s) is saved and shown in their portal, matched by Employee ID. They can’t edit it.
+            <br><br>Employees can ask about a <b>Leave</b> or <b>Half day</b> on a specific date until <b>${esc(fmtDateTime(until))}</b> (${QUERY_HOURS} hours from the first push)${run.pushed_at ? ' — pushing again does not reopen that window' : ''}. You can change days at any time.`,
+          confirmText: run.pushed_at ? 'Push again' : 'Save & push',
+        });
+        if (!ok) return;
+        const days = mapped.filter((m) => m.salary != null).map((m) => ({ employee_id: m.emp.id, days: m.days.map(daySnapshot) }));
+        try {
+          await withBusy(btn, 'Pushing…', async () => {
+            await api.rpc('admin_save_payroll', { p_run: run.id, p_results: res, p_rules: P.rules });
+            await api.rpc('admin_push_payroll', { p_run: run.id, p_days: days });
+          });
+          toast(`${fmtMonth(run.month)} pushed to ${days.length} employee(s).`);
           await ensurePayroll({ reload: true });
           render();
         } catch (err) { toast(friendlyError(err), 'error'); }
@@ -3628,6 +3716,11 @@ async function pagePayrollCalc() {
   };
 }
 
+// What an employee sees for one day of their published sheet
+const daySnapshot = (d) => ({
+  date: d.iso, day: d.dayLabel, in: d.inM == null ? null : fmtClock(d.in), out: d.outM == null ? null : fmtClock(d.out), mins: d.mins, need: d.need,
+  status: d.final, label: d.cal ? `${d.cal.description}${d.cal.kind === 'relaxation' ? ` — full day ${fmtHM(d.cal.full_minutes)}` : ''}` : d.final === 'WFH' ? `WFH${d.wfh?.note ? ` — ${d.wfh.note}` : ''}` : null,
+});
 function payrollSectionHTML(title, sub, list) {
   const cell = (c, k) => `<td class="num">${c[k]}</td>`;
   const t = list.reduce((a, m) => ({ earned: a.earned + m.payable, pt: a.pt + m.pt, net: a.net + m.net }), { earned: 0, pt: 0, net: 0 });
@@ -3641,8 +3734,9 @@ function payrollSectionHTML(title, sub, list) {
           <th rowspan="2" class="num">WO</th><th rowspan="2" class="num">Earned</th><th rowspan="2" class="num">PT</th><th rowspan="2" class="num">Net payable</th></tr>
         <tr><th class="num">F</th><th class="num">HD</th><th class="num">L</th><th class="num">F</th><th class="num">HD</th><th class="num">L</th></tr>
       </thead>
-      <tbody>${list.map((m) => `<tr data-href="#/payroll/emp/${encodeURIComponent(m.g.code)}">
+      <tbody>${list.map((m) => `<tr data-href="#/payroll/emp/${encodeURIComponent(m.g.code)}" class="${m.openQueries ? 'q-row' : ''}">
         <td><a href="#/payroll/emp/${encodeURIComponent(m.g.code)}" class="plain-link" title="Day-wise attendance">${person(m.emp, esc(m.emp.employee_code || 'No EID'))}</a>
+          ${m.openQueries ? `<div class="chips-line"><span class="chip red plain">${icon('alert', 'sm')} ${m.openQueries} open ${m.openQueries === 1 ? 'query' : 'queries'}</span></div>` : ''}
           ${empState(m.emp) === 'notice' ? `<div class="chips-line">${empChip(m.emp)}${lwdChip(m.emp)}</div>` : ''}
           ${m.notes.length ? `<div title="${esc(m.notes.join(' '))}" style="margin-top:4px"><span class="chip ${m.idOk ? 'amber' : 'red'} plain">${icon('alert', 'sm')} ${m.idOk ? 'Check' : 'ID mismatch'}</span></div>` : ''}</td>
         <td class="mono">${esc(m.g.code)}</td>
@@ -3678,8 +3772,8 @@ function rtSectionHTML(run, mapped, people) {
       <tbody>${people.map((p) => {
         const m = byEmp.get(p.id);
         const check = m ? `#/payroll/emp/${encodeURIComponent(m.g.code)}` : `#/emd/${p.id}`;
-        return `<tr data-href="${check}">
-        <td><a href="${check}" class="plain-link">${person(p, esc(p.employee_code || 'No EID'))}</a><div class="chips-line">${empChip(p)}</div></td>
+        return `<tr data-href="${check}" class="${m?.openQueries ? 'q-row' : ''}">
+        <td><a href="${check}" class="plain-link">${person(p, esc(p.employee_code || 'No EID'))}</a><div class="chips-line">${empChip(p)}${m?.openQueries ? `<span class="chip red plain">${m.openQueries} open ${m.openQueries === 1 ? 'query' : 'queries'}</span>` : ''}</div></td>
         <td class="nowrap">${lwdChip(p)}${inMonth(p.exit_date) ? '<div class="faint" style="font-size:11.5px;margin-top:3px">in this month</div>' : ''}</td>
         <td class="nowrap">${settleChip(p)}</td>
         ${m ? `<td class="num">${m.salary == null ? '<span class="chip amber plain">Not set</span>' : fmtINR(m.salary)}</td>
@@ -3701,7 +3795,7 @@ function openPayrollSummary() {
     const c = { FD: 0, HD: 0, HDPM: 0, L: 0 };
     for (const d of days) {
       const st = which === 'pre' ? SYSTEM_TO_FINAL[d.sys] : d.final;
-      if (st === 'F') c.FD += 1;
+      if (st === 'F' || st === 'H' || st === 'WFH') c.FD += 1;
       else if (st === 'L') c.L += 1;
       else if (st === 'HD') c[d.sys === 'MPH' ? 'HDPM' : 'HD'] += 1;
     }
@@ -3764,6 +3858,7 @@ async function pagePayrollEmployee(code) {
         <div><span class="st st-L">L</span><b>${c.L}</b><span>Leave</span></div>
         <div><span class="st st-WO">WO</span><b>${c.WO}</b><span>Weekly off</span></div>
       </div>
+      ${c.H || c.WFH ? `<p class="muted" style="font-size:12.5px;margin:8px 0 0">Full days include ${[c.H ? `${c.H} holiday${c.H === 1 ? '' : 's'}` : '', c.WFH ? `${c.WFH} WFH` : ''].filter(Boolean).join(' and ')}.</p>` : ''}
       <div class="pay-line ${emphasize ? 'strong' : ''}">${m.salary == null ? 'No salary in Employee Master Data'
         : `(${c.F}${P.rules.sunday_paid_off ? ` + ${c.WO}` : ''}) × ${fmtINR2(pay.daily)} + ${c.HD} × ${fmtINR2(pay.daily)} × 0.5 = <b>${fmtINR(pay.payable)}</b>${emphasize ? `<div style="margin-top:4px">${fmtINR(pay.payable)} − Professional Tax ${fmtINR(m.pt)} = <b>${fmtINR(Math.max(0, pay.payable - m.pt))}</b> net payable</div>` : ''}`}</div>
       </div></div>`;
@@ -3776,15 +3871,17 @@ async function pagePayrollEmployee(code) {
   };
   const gridHTML = () => {
     const days = daysNow();
-    const dc = (d) => `${d.wd === 0 ? 'sun' : ''} ${d.lwd ? 'lwd' : ''} ${d.afterLwd ? 'gone' : ''}`;
+    const qDays = new Set(m.queries.filter((x) => x.status === 'open').map((x) => x.work_date));
+    const dc = (d) => `${d.wd === 0 ? 'sun' : ''} ${d.lwd ? 'lwd' : ''} ${d.afterLwd ? 'gone' : ''} ${qDays.has(d.iso) ? 'q-day' : ''}`;
     const head = (label, fn, cls = '') => `<tr class="${cls}"><th class="lbl">${label}</th>${days.map((d) => `<td class="${dc(d)}">${fn(d)}</td>`).join('')}</tr>`;
     return `<table class="att">
-      <thead>${head('Date', (d) => `<b>${pad(d.d)}</b>${d.lwd ? '<div class="lwd-tag">LWD</div>' : ''}`, 'hdr')}${head('Day', (d) => esc(d.dayLabel), 'hdr sub')}</thead>
+      <thead>${head('Date', (d) => `<b>${pad(d.d)}</b>${d.lwd ? '<div class="lwd-tag">LWD</div>' : ''}${d.cal ? `<div class="cal-tag" title="${esc(d.cal.description)}">${d.cal.kind === 'holiday' ? 'HOLIDAY' : `⏱ ${fmtHM(d.cal.full_minutes)}`}</div>` : ''}`, 'hdr')}${head('Day', (d) => esc(d.dayLabel), 'hdr sub')}</thead>
       <tbody>
         ${head('IN', (d) => (d.inM == null ? '<span class="faint">—</span>' : fmtClock(d.in)))}
         ${head('OUT', (d) => (d.outM == null ? '<span class="faint">—</span>' : fmtClock(d.out)))}
         ${head('Worked', (d) => (d.mins == null ? '<span class="faint">—</span>' : `<span class="${d.mins < d.need ? 'short' : ''}">${fmtDuration(d.mins).replace(' ', '')}</span>`))}
-        ${head('System', (d) => stChip(d.sys, d.sys === 'MP' || d.sys === 'MPH' ? `${ST_TITLE[d.sys]} (missed ${d.missing}, miss #${d.missNo})` : d.sys === 'HD' ? `${ST_TITLE.HD}: ${fmtDuration(d.mins)} of ${fmtDuration(d.need)}` : ST_TITLE[d.sys]))}
+        ${head('System', (d) => stChip(d.sys, d.sys === 'MP' || d.sys === 'MPH' ? `${ST_TITLE[d.sys]} (missed ${d.missing}, miss #${d.missNo})` : d.sys === 'HD' ? `${ST_TITLE.HD}: ${fmtDuration(d.mins)} of ${fmtDuration(d.need)}${d.cal?.kind === 'relaxation' ? ` (time relaxation: ${d.cal.description})` : ''}`
+          : d.sys === 'H' ? `Holiday: ${d.cal.description} — paid full day` : d.sys === 'WFH' ? `WFH${d.wfh?.note ? `: ${d.wfh.note}` : ''} — paid full day. Reject it in Payroll → WFH to make it a leave.` : d.cal?.kind === 'relaxation' && d.sys === 'F' ? `Full day — time relaxation ${fmtHM(d.cal.full_minutes)} (${d.cal.description})` : ST_TITLE[d.sys]))}
         <tr class="final-row"><th class="lbl">Final<div class="faint" style="font-weight:400;font-size:11px">change HD / L / missed / —</div></th>${days.map((d) => `<td class="${dc(d)} ${d.editable && d.final !== d.systemFinal ? 'changed' : ''}">${d.editable
           ? `<select class="st-select st-${d.final}" data-day="${d.iso}">${(d.sys === 'NA' ? ['NA', 'F', 'HD', 'L'] : ['F', 'HD', 'L']).map((s) => `<option value="${s}" ${s === d.final ? 'selected' : ''}>${ST_LABEL[s]}</option>`).join('')}</select>`
           : stChip(d.final)}</td>`).join('')}</tr>
@@ -3825,10 +3922,11 @@ async function pagePayrollEmployee(code) {
         </div>
       </div>
       ${m.notes.map((n) => `<div class="alert alert-warn">${icon('alert')}<span>${esc(n)}</span></div>`).join('')}
+      ${queriesCardHTML(m, run)}
       <div id="att-summary">${summaryHTML()}</div>
       <div class="card">
         <div class="card-head"><div><h3>Day-wise attendance — ${fmtMonth(run.month)}</h3><p>System line is calculated from the punches. Change HD, L or missed-punch days in the Final line.</p></div>
-          <div class="right legend">${['F', 'HD', 'L', 'MP', 'WO'].map((s) => `${stChip(s)}<span>${{ F: 'Full', HD: 'Half', L: 'Leave', MP: 'Missed punch', WO: 'Weekly off' }[s]}</span>`).join('')}</div></div>
+          <div class="right legend">${['F', 'HD', 'L', 'MP', 'WO', 'H', 'WFH'].map((s) => `${stChip(s)}<span>${{ F: 'Full', HD: 'Half', L: 'Leave', MP: 'Missed punch', WO: 'Weekly off', H: 'Holiday', WFH: 'WFH' }[s]}</span>`).join('')}</div></div>
         <div class="att-wrap" id="att-grid">${gridHTML()}</div>
       </div>
       <div id="att-reports">${reportsHTML()}</div>
@@ -3838,6 +3936,7 @@ async function pagePayrollEmployee(code) {
         <button class="btn btn-sm btn-light" id="save-btn">${icon('check', 'sm')}Save changes</button>
       </div>`,
     mount() {
+      mountQueryActions();
       const lw = $('#att-grid td.lwd');
       if (lw) $('#att-grid').scrollLeft = Math.max(0, lw.offsetLeft - 360); // bring the last working day into view
       const redraw = () => {
@@ -3873,6 +3972,49 @@ async function pagePayrollEmployee(code) {
       });
     },
   };
+}
+
+// Salary queries an employee raised on their pushed sheet (date-specific, Leave / Half day only)
+const Q_TONE = { open: 'red', resolved: 'green', rejected: 'gray', withdrawn: 'gray' };
+const Q_LABEL = { open: 'Open', resolved: 'Resolved', rejected: 'Rejected', withdrawn: 'Withdrawn' };
+function queriesCardHTML(m, run) {
+  if (!m.queries.length) return '';
+  const open = m.queries.filter((x) => x.status === 'open').length;
+  return `<div class="card"><div class="card-head"><div><h3>Salary queries <span class="chip ${open ? 'red' : 'gray'} plain" style="margin-left:6px">${open} open</span></h3>
+      <p>Change the day in the Final line below and save, mark the query, then <b>Save &amp; push</b> on the Payroll page so ${esc(firstName(m.emp.full_name))} sees it.</p></div></div>
+    <div class="card-body"><div class="q-list">${m.queries.map((x) => `<div class="q-item">
+      <div class="grow"><b>${fmtDate(x.work_date)}</b> <span class="faint">${DAY_NAMES[parseISODate(x.work_date).getDay()]}</span> · ${stChip(x.current_status)} → asks for ${stChip(x.requested_status)}
+        <div style="margin-top:4px">“${esc(x.note)}”</div>
+        <div class="faint" style="font-size:12px;margin-top:2px">Asked ${fmtDateTime(x.created_at)}${x.admin_note ? ` · Your note: ${esc(x.admin_note)}` : ''}</div></div>
+      <span class="chip ${Q_TONE[x.status]} plain">${Q_LABEL[x.status]}</span>
+      ${x.status === 'open' ? `<button class="btn btn-sm btn-danger" data-q-reject="${x.id}">${icon('x', 'sm')}Reject</button><button class="btn btn-sm btn-success" data-q-resolve="${x.id}">${icon('check', 'sm')}Resolved</button>`
+        : x.status !== 'withdrawn' ? `<button class="btn btn-sm" data-q-reopen="${x.id}">Reopen</button>` : ''}
+    </div>`).join('')}</div></div></div>`;
+}
+function mountQueryActions() {
+  const decide = async (btn, id, status, note) => {
+    try {
+      await withBusy(btn, '', () => api.rpc('admin_decide_query', { p_id: id, p_status: status, p_note: note ?? null }));
+      state.payroll.data.queries = await payrollApi.queries(state.payroll.runId);
+      await refreshQueryBadge();
+      toast(status === 'resolved' ? 'Query marked resolved.' : status === 'rejected' ? 'Query rejected.' : 'Query reopened.');
+      render();
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  };
+  $$('[data-q-resolve]').forEach((b) => b.addEventListener('click', () => decide(b, b.dataset.qResolve, 'resolved')));
+  $$('[data-q-reopen]').forEach((b) => b.addEventListener('click', () => decide(b, b.dataset.qReopen, 'open')));
+  $$('[data-q-reject]').forEach((b) => b.addEventListener('click', () => {
+    const dlg = openModal({
+      title: 'Reject query', size: 'sm', subtitle: 'The employee sees this note in My Pay.',
+      body: `<div class="field"><label>Note for the employee<span class="req">*</span></label><textarea class="input" id="q-note" rows="3" placeholder="e.g. The OUT punch shows 3:05 pm"></textarea></div>`,
+      footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-danger" data-ok>Reject</button>`,
+    });
+    $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+      const note = $('#q-note', dlg.el).value.trim();
+      if (!note) return toast('Add a note for the employee.', 'error');
+      dlg.close(); await decide(b, b.dataset.qReject, 'rejected', note);
+    });
+  }));
 }
 
 /* ---------- Mapping: sheet EmpCode ↔ Employee Master Data ---------- */
@@ -3995,6 +4137,171 @@ async function pagePayrollMapping() {
 }
 
 /* ---------- Working hours (full-day rules) ---------- */
+/* ---------- Holidays & time relaxation (financial year 1 April – 31 March) ---------- */
+function fyOptions(selected, extra = []) {
+  const now = fyOf(todayISO());
+  const years = [...new Set([now - 1, now, now + 1, ...extra])].sort((a, b) => b - a);
+  return years.map((y) => `<option value="${y}" ${y === selected ? 'selected' : ''}>${fyLabel(y)} · 1 Apr ${y} – 31 Mar ${y + 1}</option>`).join('');
+}
+async function pagePayrollHolidays() {
+  const P = state.payroll;
+  const fy = state.calFy ?? fyOf(todayISO());
+  const [from, to] = fyRange(fy);
+  const all = P.calendar || [];
+  const inFy = all.filter((c) => c.day >= from && c.day <= to);
+  const hol = inFy.filter((c) => c.kind === 'holiday'), rel = inFy.filter((c) => c.kind === 'relaxation');
+  const dn = (iso) => DAY_NAMES[parseISODate(iso).getDay()];
+  const regular = (iso) => (parseISODate(iso).getDay() === 6 ? P.rules.saturday_full_minutes : P.rules.weekday_full_minutes);
+  const past = (iso) => iso < todayISO();
+  return {
+    title: 'Payroll', crumbs: 'Holiday and time-relaxation calendar — payroll follows it', actions: payrollActions(),
+    html: `${payrollTabs('holidays')}
+      <div class="alert alert-info">${icon('info')}<span><b>Holidays</b> from Monday to Saturday are paid as a <b>full day</b> (a Sunday holiday stays a weekly off).
+        On a <b>time relaxation</b> day the full day is the time set here instead of the usual ${fmtDuration(P.rules.weekday_full_minutes)} — e.g. 5h on Diwali: working 5 hours counts as a full day.
+        Employees see this calendar in their portal. If a month is already pushed, <b>Save &amp; push</b> it again after a change.</span></div>
+      <div class="card"><div class="card-head"><div><h3>Financial year</h3><p>${hol.length} holiday${hol.length === 1 ? '' : 's'} · ${rel.length} time relaxation${rel.length === 1 ? '' : 's'}</p></div>
+        <div class="right"><select class="input" id="cal-fy" style="height:34px;width:auto">${fyOptions(fy, all.map((c) => fyOf(c.day)))}</select></div></div></div>
+      <div class="card" id="hol-card"><div class="card-head"><div><h3>Holidays</h3><p>Date and description</p></div></div>
+        <div class="card-body">
+          <div class="cal-form"><input class="input" type="date" id="h-date" min="${from}" max="${to}" title="Date">
+            <input class="input" id="h-desc" placeholder="Description, e.g. Diwali" maxlength="80">
+            <button class="btn btn-primary" id="h-add">${icon('plus', 'sm')}Add holiday</button></div>
+        </div>
+        ${hol.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>Day</th><th>Description</th><th>Payroll</th><th></th></tr></thead><tbody>
+          ${hol.map((c) => `<tr class="${past(c.day) ? 'muted' : ''}"><td class="nowrap mono">${fmtDMY(c.day)}</td><td>${dn(c.day)}</td><td>${esc(c.description)}</td>
+            <td>${parseISODate(c.day).getDay() === 0 ? '<span class="chip gray plain">Sunday — weekly off anyway</span>' : '<span class="st st-H">H</span> paid full day'}</td>
+            <td class="actions"><button class="btn btn-sm btn-ghost" data-cal-remove="${c.id}" title="Remove">${icon('trash', 'sm')}</button></td></tr>`).join('')}
+          </tbody></table></div>` : `<div class="card-body" style="padding-top:0"><p class="muted" style="font-size:13px">No holidays in ${fyLabel(fy)} yet.</p></div>`}
+      </div>
+      <div class="card" id="rel-card"><div class="card-head"><div><h3>Time relaxation</h3><p>Days with a shorter full day — date, description and the full-day time</p></div></div>
+        <div class="card-body">
+          <div class="cal-form"><input class="input" type="date" id="r-date" min="${from}" max="${to}" title="Date">
+            <input class="input" id="r-desc" placeholder="Description, e.g. Diwali — early close" maxlength="80">
+            <div class="hm"><input class="input mono" id="r-h" type="number" min="0" max="23" placeholder="5" title="Hours"><span>h</span>
+              <input class="input mono" id="r-m" type="number" min="0" max="59" step="5" placeholder="00" title="Minutes"><span>m</span></div>
+            <button class="btn btn-primary" id="r-add">${icon('plus', 'sm')}Add relaxation</button></div>
+        </div>
+        ${rel.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>Day</th><th>Description</th><th class="num">Full day</th><th class="num">Usual</th><th></th></tr></thead><tbody>
+          ${rel.map((c) => `<tr class="${past(c.day) ? 'muted' : ''}"><td class="nowrap mono">${fmtDMY(c.day)}</td><td>${dn(c.day)}</td><td>${esc(c.description)}</td>
+            <td class="num nowrap"><b style="color:var(--text)">${fmtHM(c.full_minutes)}</b></td><td class="num nowrap faint">${parseISODate(c.day).getDay() === 0 ? 'Sunday' : fmtHM(regular(c.day))}</td>
+            <td class="actions"><button class="btn btn-sm btn-ghost" data-cal-remove="${c.id}" title="Remove">${icon('trash', 'sm')}</button></td></tr>`).join('')}
+          </tbody></table></div>` : `<div class="card-body" style="padding-top:0"><p class="muted" style="font-size:13px">No time relaxation in ${fyLabel(fy)} yet.</p></div>`}
+      </div>`,
+    mount() {
+      mountPayrollActions();
+      $('#cal-fy').addEventListener('change', (e) => { state.calFy = Number(e.target.value); render(); });
+      const reload = async () => { P.calendar = await payrollApi.calendar(); render(); };
+      const inRange = (d) => d && d >= from && d <= to;
+      $('#h-add').addEventListener('click', async (ev) => {
+        const d = $('#h-date').value, desc = $('#h-desc').value.trim();
+        if (!inRange(d)) return toast(`Pick a date in ${fyLabel(fy)} (01-04-${fy} to 31-03-${fy + 1}).`, 'error');
+        if (!desc) return toast('Add a description.', 'error');
+        try { await withBusy(ev.currentTarget, 'Adding…', () => api.rpc('admin_add_calendar_day', { p_kind: 'holiday', p_day: d, p_description: desc, p_minutes: null })); toast(`Holiday added: ${desc} (${fmtDMY(d)}).`); await reload(); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      });
+      $('#r-add').addEventListener('click', async (ev) => {
+        const d = $('#r-date').value, desc = $('#r-desc').value.trim();
+        const h = Number($('#r-h').value || 0), mm = Number($('#r-m').value || 0);
+        if (!inRange(d)) return toast(`Pick a date in ${fyLabel(fy)} (01-04-${fy} to 31-03-${fy + 1}).`, 'error');
+        if (!desc) return toast('Add a description.', 'error');
+        const mins = h * 60 + mm;
+        if (!(mins > 0) || h > 23 || mm > 59 || !Number.isInteger(h) || !Number.isInteger(mm)) return toast('Enter the full-day time in hours and minutes, e.g. 5 h 00 m.', 'error');
+        const usual = regular(d);
+        if (mins >= usual && parseISODate(d).getDay() !== 0) return toast(`A time relaxation must be shorter than the usual ${fmtHM(usual)} for that day.`, 'error');
+        try { await withBusy(ev.currentTarget, 'Adding…', () => api.rpc('admin_add_calendar_day', { p_kind: 'relaxation', p_day: d, p_description: desc, p_minutes: mins })); toast(`Time relaxation added: ${fmtHM(mins)} on ${fmtDMY(d)}.`); await reload(); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      });
+      $$('[data-cal-remove]').forEach((b) => b.addEventListener('click', async () => {
+        const c = all.find((x) => x.id === b.dataset.calRemove);
+        if (!(await confirmDialog({ title: `Remove ${c.kind === 'holiday' ? 'holiday' : 'time relaxation'}?`, message: `<b>${esc(c.description)}</b> on ${fmtDMY(c.day)} is taken out of the calendar and payroll. It stays in the activity log.`, confirmText: 'Remove', danger: true }))) return;
+        try { await withBusy(b, '', () => api.rpc('admin_remove_calendar_day', { p_id: c.id })); toast('Removed from the calendar.'); await reload(); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      }));
+    },
+  };
+}
+
+/* ---------- WFH: dates employees added; a WFH day with no punches is paid as a full day ---------- */
+async function pagePayrollWfh() {
+  const P = state.payroll;
+  const run = currentRun();
+  const all = P.wfh || [];
+  const months = [...new Set([...(run ? [run.month.slice(0, 7)] : []), todayISO().slice(0, 7), ...all.map((w) => w.work_date.slice(0, 7))])].sort().reverse();
+  const month = months.includes(state.wfhMonth) ? state.wfhMonth : run ? run.month.slice(0, 7) : todayISO().slice(0, 7);
+  const list = all.filter((w) => w.work_date.startsWith(month)).sort((a, b) => a.work_date.localeCompare(b.work_date) || (byId(a.employee_id)?.full_name || '').localeCompare(byId(b.employee_id)?.full_name || ''));
+  // How the day ends up in this month's attendance (only when the sheet for that month is loaded)
+  const effect = new Map();
+  if (run && run.month.startsWith(month)) {
+    for (const m of payrollSheet().mapped) for (const d of m.days) if (d.wfh) effect.set(`${m.emp.id}|${d.iso}`, d);
+  }
+  const effectText = (w) => {
+    if (w.status !== 'recorded') return '<span class="faint">Not counted</span>';
+    const d = effect.get(`${w.employee_id}|${w.work_date}`);
+    if (!d) return run && run.month.startsWith(month) ? '<span class="faint">Not in this sheet</span>' : '<span class="faint">Applied when the sheet is uploaded</span>';
+    if (d.sys === 'WFH') return `${stChip('WFH')} paid full day`;
+    return `${stChip(d.sys)} <span class="faint">${d.sys === 'NA' ? 'not counted' : 'has punches — counted from them'}</span>`;
+  };
+  const by = (w) => (w.added_by && w.added_by !== w.employee_id ? `Admin (${esc(byId(w.added_by)?.full_name || '—')})` : 'Employee');
+  const recorded = list.filter((w) => w.status === 'recorded').length;
+  return {
+    title: 'Payroll', crumbs: 'Work-from-home days added by employees', actions: payrollActions(),
+    html: `${payrollTabs('wfh')}
+      <div class="alert alert-info">${icon('info')}<span>Employees add WFH dates from their portal. On a WFH day with <b>no punches</b>, the sheet’s leave becomes <span class="st st-WFH">WFH</span> and is paid as a full day.
+        <b>Reject</b> a WFH day to make it a leave again. Employees can’t add or withdraw WFH once a month is pushed — you can, any time.</span></div>
+      <div class="card"><div class="card-head"><div><h3>WFH — ${fmtMonth(month + '-01')}</h3><p>${recorded} recorded${list.length - recorded ? ` · ${list.length - recorded} rejected` : ''}</p></div>
+        <div class="right"><select class="input" id="wfh-month" style="height:34px;width:auto">${months.map((x) => `<option value="${x}" ${x === month ? 'selected' : ''}>${fmtMonth(x + '-01')}</option>`).join('')}</select>
+          <button class="btn btn-sm btn-primary" id="wfh-add">${icon('plus', 'sm')}Add WFH</button></div></div>
+        ${list.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th>Date</th><th>Note</th><th>Added</th><th>In payroll</th><th>Status</th><th></th></tr></thead><tbody>
+          ${list.map((w) => { const e = byId(w.employee_id); return `<tr>
+            <td>${e ? person(e, esc(e.employee_code || 'No EID')) : '—'}</td>
+            <td class="nowrap"><b>${fmtDMY(w.work_date)}</b> <span class="faint">${DAY_NAMES[parseISODate(w.work_date).getDay()]}</span></td>
+            <td class="wrap">${esc(w.note || '') || '<span class="faint">—</span>'}${w.admin_note ? `<div class="faint" style="font-size:12px">Admin: ${esc(w.admin_note)}</div>` : ''}</td>
+            <td class="nowrap muted" title="${esc(fmtDateTime(w.created_at))}">${by(w)} · ${fmtRelative(w.created_at)}</td>
+            <td class="nowrap">${effectText(w)}</td>
+            <td><span class="chip ${w.status === 'recorded' ? 'green' : 'gray'} plain">${w.status === 'recorded' ? 'Recorded' : 'Rejected'}</span></td>
+            <td class="actions">${w.status === 'recorded' ? `<button class="btn btn-sm btn-danger" data-wfh-reject="${w.id}">${icon('x', 'sm')}Reject</button>` : `<button class="btn btn-sm" data-wfh-restore="${w.id}">Restore</button>`}</td></tr>`; }).join('')}
+          </tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">No WFH days in ${fmtMonth(month + '-01')}.</p></div>`}
+      </div>`,
+    mount() {
+      mountPayrollActions();
+      const reload = async (msg) => { P.wfh = await payrollApi.wfh(); toast(msg); render(); };
+      $('#wfh-month').addEventListener('change', (e) => { state.wfhMonth = e.target.value; render(); });
+      $$('[data-wfh-restore]').forEach((b) => b.addEventListener('click', async () => {
+        try { await withBusy(b, '', () => api.rpc('admin_set_wfh', { p_id: b.dataset.wfhRestore, p_status: 'recorded', p_note: null })); await reload('WFH restored.'); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      }));
+      $$('[data-wfh-reject]').forEach((b) => b.addEventListener('click', () => {
+        const w = all.find((x) => x.id === b.dataset.wfhReject);
+        const dlg = openModal({
+          title: 'Reject WFH', size: 'sm', subtitle: `${esc(byId(w.employee_id)?.full_name || '')} · ${fmtDMY(w.work_date)} — the day goes back to what the punches say (a leave if there are none).`,
+          body: `<div class="field"><label>Note <span class="faint">(optional, the employee sees it)</span></label><textarea class="input" id="wfh-note" rows="2"></textarea></div>`,
+          footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-danger" data-ok>Reject</button>`,
+        });
+        $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+          try { await withBusy(ev.currentTarget, 'Saving…', () => api.rpc('admin_set_wfh', { p_id: w.id, p_status: 'rejected', p_note: $('#wfh-note', dlg.el).value })); dlg.close(); await reload('WFH rejected.'); }
+          catch (err) { toast(friendlyError(err), 'error'); }
+        });
+      }));
+      $('#wfh-add').addEventListener('click', () => {
+        const dlg = openModal({
+          title: 'Add WFH', size: 'sm', subtitle: 'Record a work-from-home day for an employee.',
+          body: `<div class="grid" style="gap:12px">
+            <div class="field"><label>Employee</label><select class="input" id="wa-emp"><option value="">Choose…</option>${activeEmployees().map((e) => `<option value="${e.id}">${esc(e.full_name)}${e.employee_code ? ` · ${esc(e.employee_code)}` : ''}</option>`).join('')}</select></div>
+            <div class="field"><label>Date</label><input class="input" type="date" id="wa-date" value="${month}-01"></div>
+            <div class="field"><label>Note <span class="faint">(optional)</span></label><input class="input" id="wa-note" placeholder="e.g. Approved by manager"></div></div>`,
+          footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('plus', 'sm')}Add</button>`,
+        });
+        $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+          const emp = $('#wa-emp', dlg.el).value, d = $('#wa-date', dlg.el).value;
+          if (!emp || !d) return toast('Pick the employee and the date.', 'error');
+          try { await withBusy(ev.currentTarget, 'Adding…', () => api.rpc('admin_add_wfh', { p_employee: emp, p_date: d, p_note: $('#wa-note', dlg.el).value })); dlg.close(); state.wfhMonth = d.slice(0, 7); await reload('WFH added.'); }
+          catch (err) { toast(friendlyError(err), 'error'); }
+        });
+      });
+    },
+  };
+}
+
 async function pagePayrollRules() {
   const P = state.payroll;
   const r = P.rules;
@@ -5114,19 +5421,16 @@ function openChangeRequest(P) {
 
 // My Pay: monthly payroll, bonus & leave encashment, variable, loans
 async function pageMyPay() {
-  const P = await loadPortal();
+  const [P, slips] = await Promise.all([loadPortal(), api.rpc('my_payslips').catch(() => [])]);
+  state.slips = slips || [];
   const vis = P.visibility;
   const none = (t) => `<div class="card-body"><p class="muted" style="font-size:13px">${t}</p></div>`;
   const loanTot = (P.loans || []).reduce((s, l) => s + Number(l.remaining), 0);
   return {
-    title: 'My Pay', crumbs: 'Your pay and payouts as processed by HR',
+    title: 'My Pay', crumbs: 'Your salary sheets and payouts as published by HR',
     html: `
       ${!vis.pay && !vis.finance ? `<div class="card">${emptyState('lock', 'Not shared yet', 'HR has not made pay details visible in the portal.')}</div>` : ''}
-      ${vis.pay ? `<div class="card"><div class="card-head"><div><h3>Monthly pay</h3><p>From saved payroll — days are after HR’s adjustments</p></div></div>
-        ${(P.pay || []).length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th class="num">Monthly salary</th><th class="num">Full</th><th class="num">Half</th><th class="num">Leave</th><th class="num">Weekly off</th><th class="num">Earned</th><th class="num">PT</th><th class="num">Net pay</th></tr></thead><tbody>
-          ${P.pay.map((r) => `<tr><td class="nowrap">${fmtMonth(r.month)}</td><td class="num">${fmtINR(r.monthly_salary)}</td><td class="num">${r.full}</td><td class="num">${r.half}</td><td class="num">${r.leave}</td><td class="num">${r.weekly_off}</td>
-            <td class="num nowrap">${fmtINR(r.earned)}</td><td class="num nowrap">${Number(r.pt) ? `− ${fmtINR(r.pt)}` : '—'}</td><td class="num nowrap"><b style="color:var(--text)">${fmtINR(r.net)}</b></td></tr>`).join('')}
-          </tbody></table></div>` : none('No payroll has been saved for you yet.')}</div>` : ''}
+      ${vis.pay ? (slips.length ? slips.map(payslipCardHTML).join('') : `<div class="card"><div class="card-head"><div><h3>Salary sheets</h3><p>Published by HR each month</p></div></div>${none('No salary sheet has been published for you yet.')}</div>`) : ''}
       ${vis.finance ? `<div class="card"><div class="card-head"><div><h3>Bonus &amp; leave encashment</h3></div></div>
         ${(P.bonus || []).length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th class="num">Loan deduction</th><th class="num">Net</th></tr></thead><tbody>
           ${P.bonus.map((b) => `<tr><td class="nowrap">${fmtDMY(b.date)}</td><td>${esc(b.description)}</td><td class="num">${fmtINR(b.amount)}</td><td class="num">${Number(b.loan_deduction) ? fmtINR(b.loan_deduction) : '—'}</td><td class="num"><b style="color:var(--text)">${fmtINR(Number(b.amount) - Number(b.loan_deduction))}</b></td></tr>`).join('')}
@@ -5139,6 +5443,154 @@ async function pageMyPay() {
         ${(P.loans || []).length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Taken on</th><th class="num">Amount</th><th class="num">Remaining</th></tr></thead><tbody>
           ${P.loans.map((l) => `<tr><td class="nowrap">${fmtDMY(l.taken_on)}</td><td class="num">${fmtINR(l.amount)}</td><td class="num"><b style="color:${Number(l.remaining) > 0 ? 'var(--text)' : 'var(--green)'}">${Number(l.remaining) > 0 ? fmtINR(l.remaining) : 'Repaid'}</b></td></tr>`).join('')}
           </tbody></table></div>` : none('No loans.')}</div>` : ''}`,
+    mount() { mountPayslipActions(); },
+  };
+}
+
+// ---- Published salary sheet (read-only) with date-specific queries ----
+const DAY_WORD = { F: 'Full day', HD: 'Half day', L: 'Leave', WO: 'Weekly off', H: 'Holiday', WFH: 'WFH', NA: 'Not counted' };
+function payslipCardHTML(sl) {
+  const until = new Date(sl.query_until);
+  const open = until > new Date();
+  const left = Math.max(0, until - new Date());
+  const qByDate = new Map();
+  for (const x of sl.queries || []) { if (!qByDate.has(x.date) || x.status === 'open') qByDate.set(x.date, x); }
+  const days = sl.days || [];
+  const cnt = (k) => days.filter((d) => d.status === k).length;
+  const qCell = (d) => {
+    const x = qByDate.get(d.date);
+    if (x) return `<span class="chip ${Q_TONE[x.status]} plain" title="${esc(x.admin_note || x.note)}">Query ${Q_LABEL[x.status].toLowerCase()}</span>`;
+    return open && (d.status === 'L' || d.status === 'HD') ? `<button class="btn btn-xs" data-ask="${sl.run_id}|${d.date}|${d.status}">Ask</button>` : '';
+  };
+  return `<div class="card">
+    <div class="card-head"><div><h3>Salary sheet — ${fmtMonth(sl.month)}</h3><p>Published ${fmtDateTime(sl.last_pushed_at || sl.pushed_at)} · final, after HR’s adjustments</p></div>
+      <div class="right"><b class="nowrap" style="font-size:18px">${fmtINR(sl.net)}</b><span class="muted" style="font-size:12.5px">net pay</span></div></div>
+    <div class="card-body">
+      <div class="count-grid">
+        <div><span class="st st-F">F</span><b>${sl.full}</b><span>Full day${cnt('H') || cnt('WFH') ? ` (incl. ${[cnt('H') ? `${cnt('H')} holiday` : '', cnt('WFH') ? `${cnt('WFH')} WFH` : ''].filter(Boolean).join(', ')})` : ''}</span></div>
+        <div><span class="st st-HD">HD</span><b>${sl.half}</b><span>Half day</span></div>
+        <div><span class="st st-L">L</span><b>${sl.leave}</b><span>Leave</span></div>
+        <div><span class="st st-WO">WO</span><b>${sl.weekly_off}</b><span>Weekly off</span></div>
+      </div>
+      <div class="pay-line">Monthly salary ${fmtINR(sl.monthly_salary)} · Earned ${fmtINR(sl.earned)} − Professional Tax ${fmtINR(sl.pt)} = <b>${fmtINR(sl.net)}</b></div>
+      <div class="alert ${open ? 'alert-info' : ''}" style="margin-top:12px">${icon(open ? 'clock' : 'lock')}<span>${open
+        ? `Something wrong with a <b>Leave</b> or <b>Half day</b>? Click <b>Ask</b> on that date. Open until <b>${esc(fmtDateTime(until))}</b> (${Math.floor(left / 3600e3)}h ${pad(Math.floor((left % 3600e3) / 60e3))}m left).`
+        : `Queries for this month closed on ${esc(fmtDateTime(until))}. Contact HR for anything else.`}</span></div>
+    </div>
+    ${days.length ? `<details class="slip-days" ${open ? 'open' : ''}><summary>Day-wise sheet</summary><div class="table-wrap"><table class="table compact">
+      <thead><tr><th>Date</th><th>Day</th><th>IN</th><th>OUT</th><th>Worked</th><th>Status</th><th></th></tr></thead><tbody>
+      ${days.map((d) => `<tr><td class="nowrap mono">${fmtDMY(d.date)}</td><td>${esc(d.day || '')}</td><td class="mono">${d.in || '<span class="faint">—</span>'}</td><td class="mono">${d.out || '<span class="faint">—</span>'}</td>
+        <td class="nowrap">${d.mins == null ? '<span class="faint">—</span>' : fmtDuration(d.mins)}</td>
+        <td class="nowrap">${stChip(d.status, DAY_WORD[d.status])} <span class="muted" style="font-size:12.5px">${esc(d.label || DAY_WORD[d.status] || '')}</span></td>
+        <td class="actions">${qCell(d)}</td></tr>`).join('')}
+      </tbody></table></div></details>` : ''}
+    ${(sl.queries || []).length ? `<div class="card-body" style="border-top:1px solid var(--border)"><div class="section-title" style="margin:0 0 8px">Your queries</div><div class="q-list">${sl.queries.map((x) => `<div class="q-item">
+      <div class="grow"><b>${fmtDate(x.date)}</b> · ${stChip(x.current)} → ${stChip(x.requested)} <span class="muted">${esc(x.note)}</span>
+        ${x.admin_note ? `<div style="margin-top:4px;font-size:13px">HR: ${esc(x.admin_note)}</div>` : ''}</div>
+      <span class="chip ${Q_TONE[x.status]} plain">${Q_LABEL[x.status]}</span>
+      ${x.status === 'open' ? `<button class="btn btn-sm" data-q-withdraw="${x.id}">Withdraw</button>` : ''}</div>`).join('')}</div></div>` : ''}
+  </div>`;
+}
+function mountPayslipActions() {
+  $$('[data-ask]').forEach((b) => b.addEventListener('click', () => {
+    const [run, date, cur] = b.dataset.ask.split('|');
+    const opts = cur === 'L' ? [['F', 'Full day'], ['HD', 'Half day']] : [['F', 'Full day']];
+    const dlg = openModal({
+      title: `Ask about ${fmtDate(date)}`, size: 'sm', subtitle: `The sheet shows ${DAY_WORD[cur]}. HR reviews it and may change the day.`,
+      body: `<div class="grid" style="gap:12px">
+        <div class="field"><label>It should be</label><select class="input" id="aq-req">${opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Reason<span class="req">*</span></label><textarea class="input" id="aq-note" rows="3" placeholder="e.g. I was at a client meeting and forgot to punch out"></textarea></div></div>`,
+      footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>Send to HR</button>`,
+    });
+    $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+      const note = $('#aq-note', dlg.el).value.trim();
+      if (!note) return toast('Add a short reason.', 'error');
+      try { await withBusy(ev.currentTarget, 'Sending…', () => api.rpc('my_raise_query', { p_run: run, p_date: date, p_requested: $('#aq-req', dlg.el).value, p_note: note })); dlg.close(); toast('Sent to HR.'); render(); }
+      catch (err) { toast(friendlyError(err), 'error'); }
+    });
+  }));
+  $$('[data-q-withdraw]').forEach((b) => b.addEventListener('click', async () => {
+    try { await withBusy(b, '', () => api.rpc('my_withdraw_query', { p_id: b.dataset.qWithdraw })); toast('Query withdrawn.'); render(); }
+    catch (err) { toast(friendlyError(err), 'error'); }
+  }));
+}
+
+// ---- Holiday & time-relaxation calendar (read-only) ----
+async function pageMyCalendar() {
+  const all = await q(db.from('calendar_days').select('day, kind, description, full_minutes').is('removed_at', null).order('day'));
+  const fy = state.calFy ?? fyOf(todayISO());
+  const [from, to] = fyRange(fy);
+  const inFy = all.filter((c) => c.day >= from && c.day <= to);
+  const today = todayISO();
+  const next = inFy.find((c) => c.day >= today);
+  const rows = (list, rel) => list.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>Day</th><th>Description</th>${rel ? '<th class="num">Full day</th>' : ''}</tr></thead><tbody>
+    ${list.map((c) => `<tr class="${c.day < today ? 'muted' : ''}"><td class="nowrap mono">${fmtDMY(c.day)}${c === next ? ' <span class="chip violet plain">Next</span>' : ''}</td><td>${DAY_NAMES[parseISODate(c.day).getDay()]}</td><td>${esc(c.description)}</td>${rel ? `<td class="num nowrap"><b style="color:var(--text)">${fmtHM(c.full_minutes)}</b></td>` : ''}</tr>`).join('')}
+    </tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Nothing in ${fyLabel(fy)} yet.</p></div>`;
+  return {
+    title: 'Holidays', crumbs: `Holiday and time-relaxation calendar · ${fyLabel(fy)} (1 April – 31 March)`,
+    html: `
+      <div class="card"><div class="card-head"><div><h3>Financial year</h3><p>Set by HR. Holidays from Monday to Saturday are paid as full days; on a time-relaxation day the full day is shorter.</p></div>
+        <div class="right"><select class="input" id="cal-fy" style="height:34px;width:auto">${fyOptions(fy, all.map((c) => fyOf(c.day)))}</select></div></div></div>
+      <div class="card"><div class="card-head"><div><h3>Holidays</h3></div></div>${rows(inFy.filter((c) => c.kind === 'holiday'), false)}</div>
+      <div class="card"><div class="card-head"><div><h3>Time relaxation</h3><p>Working the time shown counts as a full day</p></div></div>${rows(inFy.filter((c) => c.kind === 'relaxation'), true)}</div>`,
+    mount() { $('#cal-fy').addEventListener('change', (e) => { state.calFy = Number(e.target.value); render(); }); },
+  };
+}
+
+// ---- Work from home ----
+async function pageMyWfh() {
+  const [list, cal, slips] = await Promise.all([
+    q(db.from('wfh_days').select('*').eq('employee_id', state.user.id).order('work_date', { ascending: false })),
+    q(db.from('calendar_days').select('day, kind, description').is('removed_at', null)),
+    api.rpc('my_payslips').catch(() => [])]);
+  const holidays = new Map(cal.filter((c) => c.kind === 'holiday').map((c) => [c.day, c.description]));
+  const pushed = new Set((slips || []).map((sl) => sl.month.slice(0, 7)));
+  const st = { recorded: ['green', 'Recorded'], rejected: ['red', 'Rejected by HR'], withdrawn: ['gray', 'Withdrawn'] };
+  return {
+    title: 'Work from home', crumbs: 'Add the days you work from home — a WFH day with no punches is paid as a full day',
+    html: `
+      <div class="card"><div class="card-head"><div><h3>Add WFH</h3><p>Pick one date, or a range — Sundays and holidays are skipped. You can’t add or withdraw once that month’s salary is published.</p></div></div>
+        <div class="card-body"><div class="cal-form">
+          <label class="muted" style="font-size:12.5px">From</label><input class="input" type="date" id="wf-from" value="${todayISO()}">
+          <label class="muted" style="font-size:12.5px">To</label><input class="input" type="date" id="wf-to" title="Optional — leave empty for one day">
+          <input class="input" id="wf-note" placeholder="Note for HR (optional)" maxlength="160">
+          <button class="btn btn-primary" id="wf-add">${icon('plus', 'sm')}Add WFH</button></div>
+          <div class="hint" id="wf-preview" style="margin-top:8px"></div></div></div>
+      <div class="card"><div class="card-head"><div><h3>Your WFH days</h3><p>${list.filter((w) => w.status === 'recorded').length} recorded</p></div></div>
+        ${list.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>Day</th><th>Note</th><th>Status</th><th></th></tr></thead><tbody>
+          ${list.map((w) => `<tr><td class="nowrap mono">${fmtDMY(w.work_date)}</td><td>${DAY_NAMES[parseISODate(w.work_date).getDay()]}</td>
+            <td class="wrap">${esc(w.note || '') || '<span class="faint">—</span>'}${w.added_by && w.added_by !== w.employee_id ? ' <span class="faint">(added by HR)</span>' : ''}${w.admin_note ? `<div style="font-size:12.5px">HR: ${esc(w.admin_note)}</div>` : ''}</td>
+            <td><span class="chip ${st[w.status][0]} plain">${st[w.status][1]}</span></td>
+            <td class="actions">${w.status === 'recorded' && !pushed.has(w.work_date.slice(0, 7)) ? `<button class="btn btn-sm" data-wf-withdraw="${w.id}">Withdraw</button>` : ''}</td></tr>`).join('')}
+          </tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">No WFH days yet.</p></div>`}</div>`,
+    mount() {
+      const datesFor = () => {
+        const a = $('#wf-from').value, b = $('#wf-to').value || a;
+        if (!a) return [];
+        const out = []; let d = parseISODate(a); const end = parseISODate(b);
+        if (!end || end < d) return null;
+        for (let n = 0; d <= end && n < 62; n++, d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)) {
+          const iso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+          if (d.getDay() !== 0 && !holidays.has(iso)) out.push(iso);
+        }
+        return out;
+      };
+      const preview = () => {
+        const ds = datesFor();
+        $('#wf-preview').textContent = ds == null ? '“To” is before “From”.' : ds.length ? `${ds.length} day${ds.length === 1 ? '' : 's'}: ${ds.map(fmtDMY).join(', ')}` : 'No working days in that range.';
+      };
+      $('#wf-from').addEventListener('change', preview); $('#wf-to').addEventListener('change', preview); preview();
+      $('#wf-add').addEventListener('click', async (ev) => {
+        const ds = datesFor();
+        if (!ds || !ds.length) return toast('Pick the WFH date(s).', 'error');
+        try { const n = await withBusy(ev.currentTarget, 'Adding…', () => api.rpc('my_add_wfh', { p_dates: ds, p_note: $('#wf-note').value })); toast(n ? `${n} WFH day${n === 1 ? '' : 's'} added.` : 'Those days were already added.'); render(); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      });
+      $$('[data-wf-withdraw]').forEach((b) => b.addEventListener('click', async () => {
+        try { await withBusy(b, '', () => api.rpc('my_withdraw_wfh', { p_id: b.dataset.wfWithdraw })); toast('WFH withdrawn.'); render(); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      }));
+    },
   };
 }
 

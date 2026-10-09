@@ -200,6 +200,31 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 * Click anyone in the tree to open them in EMD.
 * People who have resigned or been terminated, and anyone whose F&F is done, are left out.
 
+**Holidays & time relaxation** (Payroll → Holidays & Relaxation). Dates are added by hand for each financial year (1 April – 31 March).
+* **Holidays:** Date and Description. A holiday from Monday to Saturday is paid as a full day (`H`). A Sunday holiday stays a weekly off.
+* **Time relaxation:** Date, Description, Hours and Minutes.
+  * On that day, working the time you set counts as a full day. Example: Diwali at 5h instead of 8h30, so 5 hours worked is a full day.
+  * The time must be shorter than the usual full day.
+* **Rules:** one entry per date, and removing an entry keeps it in the activity log.
+* **Employees** see the calendar read-only under **Holidays** in the portal.
+
+**WFH.**
+* **Employees** add work-from-home dates in the portal under **WFH**. They can pick a single date or a range; Sundays and holidays are skipped.
+* **Payroll:** on a WFH day with no punches, the sheet's leave becomes `WFH` and is paid as a full day.
+* **Admins** see every WFH day under Payroll → WFH, together with how it was counted. They can **Reject** one (the day goes back to what the punches say) or **Add WFH** for someone.
+* **Lock:** once a month is pushed, employees can no longer add or withdraw WFH for it. Admins can, at any time.
+
+**Save & push, and salary queries.**
+* **Save & push** (Payroll → Salary Calculation) saves the payroll and publishes each employee's final day-wise sheet in their **My Pay**, matched by Employee ID.
+  * Employees can't edit the sheet.
+  * The portal shows only pushed months.
+  * Pushing again updates the sheets.
+* **Queries:** for **12 hours from the first push**, an employee can click **Ask** on a **Leave** or **Half day** and say what it should be, with a reason. Full days can't be questioned, and there is one open query per date. After 12 hours the Ask buttons close.
+* **Admins aren't time-limited.**
+  * Open queries show as a badge on Payroll and an alert on the Salary Calculation page, and the person's row is highlighted.
+  * On the day-wise page the queried dates are outlined. The admin changes the day in the Final line and saves, marks the query **Resolved**, or **Rejects** it with a note.
+  * Then **Save & push** again so the employee sees the change.
+
 **KYC: Save vs Skip.** The KYC form has **Save & finish later**, which stores whatever has been filled in, even if it's only the emergency contact. It isn't submitted, and the form reopens with those details. **Skip** stores nothing from that visit: anything typed and any files uploaded during it are discarded. Admins see each employee's KYC status on their EMD page, with **Review — approve or send back** once it's submitted, as well as in Access Control → KYC Review.
 
 **Change requests.** Once KYC is submitted, employees can't edit their details directly. In **My Profile → Request a change** they ask for a new name, phone, date of birth, bank account / IFSC or emergency contact. **Nothing changes until an admin approves it** in Access Control → **Change requests**. That tab shows each detail's current and requested value, with **Approve** or **Reject** (a reason is required to reject). The employee sees the outcome, and can withdraw a request while it's still waiting. Only one request can be waiting at a time.
@@ -317,6 +342,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261015000000_calendar_wfh_payroll_push.sql` | Holiday & time-relaxation calendar (`calendar_days`), WFH (`wfh_days`), Save & push (`payroll_runs.pushed_at`, `payroll_results.days`, `admin_push_payroll`), salary queries with the 12-hour window (`payroll_queries`), `my_payslips()`; the portal's pay list shows pushed months only. |
 | `supabase/migrations/20261014000000_admin_levels_org.sql` | Super Admin / Base Admin (`admin_level`, `is_super_admin`, `admin_set_admin_level`, `admin_set_designation`), the guard trigger on `profiles`, Non-EMD only for Super Admins. |
 | `supabase/migrations/20261013000000_no_auth_emails.sql` | Sign-in without emails: giving access confirms the account, admins set temporary passwords (`admin_set_password`), and accounts already approved or waiting are confirmed once. |
 | `supabase/migrations/20261012000000_roles_nonemd_kyc_drafts_change_requests.sql` | Admin give/revoke, Non-EMD (member type), KYC drafts (Save vs Skip), change requests with admin approval, and `my_portal()` for the employee portal. Re-runnable. |
