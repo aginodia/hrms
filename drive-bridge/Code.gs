@@ -98,6 +98,15 @@ var ACTIONS = {
   },
 };
 
+// Run this once from the editor (select "setup" → Run): Google then asks for the Drive and
+// "connect to an external service" permissions, and it checks the three script properties.
+function setup() {
+  var folder = root_();
+  var r = UrlFetchApp.fetch(cfg_('SUPABASE_URL').replace(/\/$/, '') + '/auth/v1/health', { headers: { apikey: cfg_('SUPABASE_ANON_KEY') }, muteHttpExceptions: true });
+  Logger.log('Drive folder: ' + folder.getName() + ' — OK');
+  Logger.log('Supabase: ' + (r.getResponseCode() === 200 ? 'OK' : 'answered ' + r.getResponseCode() + ' — check SUPABASE_URL / SUPABASE_ANON_KEY'));
+}
+
 function cfg_(k) {
   var v = PropertiesService.getScriptProperties().getProperty(k);
   if (!v) throw new Error('The Drive bridge is missing the script property ' + k);

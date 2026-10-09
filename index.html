@@ -5948,6 +5948,7 @@ async function pageStorage() {
           <li>Open <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> → <b>New project</b>, name it <b>Altius HRMS Drive bridge</b>, delete what is in <span class="mono">Code.gs</span> and paste the bridge code: <button class="btn btn-xs" id="drv-copy-code">${icon('copy', 'sm')}Copy bridge code</button></li>
           <li>⚙ <b>Project Settings</b> → <b>Script properties</b> → add these three:
             ${copyRow('SUPABASE_URL', SUPABASE_URL, 'url')}${copyRow('SUPABASE_ANON_KEY', SUPABASE_ANON_KEY, 'key')}<div class="mono" style="font-size:12px"><b>ROOT_FOLDER_ID</b> = the folder id from step 1</div></li>
+          <li>Back in the editor, pick <b>setup</b> in the function list next to ▷ Run and click <b>Run</b>. Google asks for permission (Review permissions → your account → Advanced → Go to the project → Allow). The log should say the folder and Supabase are OK.</li>
           <li><b>Deploy</b> → <b>New deployment</b> → type <b>Web app</b> → Execute as <b>Me</b>, Who has access <b>Anyone</b> → <b>Deploy</b>. Allow access when Google asks (Advanced → Go to the project).</li>
           <li>Copy the <b>Web app URL</b>, paste it above, click <b>Save</b>, then <b>Test connection</b>.</li>
         </ol><p class="faint" style="font-size:12px">“Anyone” only lets the HRMS reach the script — every request must carry a valid HRMS sign-in, employees can only add their own KYC and open their own files, and only admins can save or open anything else. When you change the code later, use Deploy → Manage deployments → edit → New version so the URL stays the same.</p></div></details>
@@ -7269,6 +7270,15 @@ var ACTIONS = {
     return {};
   },
 };
+
+// Run this once from the editor (select "setup" → Run): Google then asks for the Drive and
+// "connect to an external service" permissions, and it checks the three script properties.
+function setup() {
+  var folder = root_();
+  var r = UrlFetchApp.fetch(cfg_('SUPABASE_URL').replace(/\/$/, '') + '/auth/v1/health', { headers: { apikey: cfg_('SUPABASE_ANON_KEY') }, muteHttpExceptions: true });
+  Logger.log('Drive folder: ' + folder.getName() + ' — OK');
+  Logger.log('Supabase: ' + (r.getResponseCode() === 200 ? 'OK' : 'answered ' + r.getResponseCode() + ' — check SUPABASE_URL / SUPABASE_ANON_KEY'));
+}
 
 function cfg_(k) {
   var v = PropertiesService.getScriptProperties().getProperty(k);
