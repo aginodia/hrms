@@ -5659,14 +5659,16 @@ const ALTIUS_LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAeAAAADhCAIAA
 // Our company details on letters and slips (Settings → Storage & documents can change them)
 const COMPANY_DEFAULT = {
   name: 'Altius Investech Private Limited', cin: 'U74900WB2016PTC210376',
-  address: '501 Merlin Infinite DN-51, Sector V, Bidhannagar, Kolkata - 700091',
+  corporate_address: '501 Merlin Infinite DN-51, Sector V, Bidhannagar, Kolkata - 700091', registered_address: '',
   email: 'ops@altiusinvestech.com', phone: '+91 90385 17269', website: 'https://altiusinvestech.com/',
   signatory_name: '', signatory_title: 'Authorized Signatory',
 };
 async function companyInfo(force = false) {
   if (state.company && !force) return state.company;
   const row = await q(db.from('app_settings').select('value').eq('key', 'company').maybeSingle()).catch(() => null);
-  const saved = row?.value || {};
+  const saved = { ...(row?.value || {}) };
+  // Earlier versions had one "address" field, entered as the registered office
+  if (saved.registered_address == null && saved.address && !saved.corporate_address) saved.registered_address = saved.address;
   state.company = Object.fromEntries(Object.keys(COMPANY_DEFAULT).map((k) => [k, String(saved[k] ?? '').trim() || COMPANY_DEFAULT[k]]));
   return state.company;
 }
@@ -5712,12 +5714,13 @@ function pdfDecorate(doc, co) {
     doc.setTextColor(0, 0, 0);
     doc.setFont('times', 'bold'); doc.setFontSize(17); doc.text(co.name, PDF.L - 6, 16);
     doc.setFont('times', 'normal'); doc.setFontSize(10.5); doc.text(`CIN: ${co.cin}`, PDF.L - 6, 21.5);
+    if (co.registered_address && co.registered_address !== co.corporate_address) { doc.setFontSize(9); doc.text(`Registered Office: ${co.registered_address}`, PDF.L - 6, 26); }
     try { doc.addImage(ALTIUS_LOGO, 'PNG', PDF.R - 33, 8, 40, 18.75); } catch (e) { /* logo is optional */ }
     doc.setDrawColor(...PDF.blue); doc.setLineWidth(0.5); doc.line(PDF.L - 6, 275, PDF.R + 6, 275);
     doc.setFontSize(8.6); doc.setFont('helvetica', 'bold');
     doc.text('Corporate Address:', PDF.L - 2, 280);
     const labelW = doc.getTextWidth('Corporate Address: ');
-    doc.setFont('helvetica', 'normal'); doc.text(co.address, PDF.L - 2 + labelW, 280);
+    doc.setFont('helvetica', 'normal'); doc.text(co.corporate_address, PDF.L - 2 + labelW, 280);
     doc.text('Email: ', PDF.L - 2, 284.2);
     let x = PDF.L - 2 + doc.getTextWidth('Email: ');
     doc.setTextColor(5, 99, 193); doc.text(co.email, x, 284.2); doc.setDrawColor(5, 99, 193); doc.setLineWidth(0.15); doc.line(x, 284.6, x + doc.getTextWidth(co.email), 284.6);
@@ -5911,7 +5914,7 @@ async function openSalarySlips(run, results) {
     <td class="num">${fmtINR(s.net)}</td><td data-st="${i}">${d ? `<span class="chip green plain">In Drive</span> <span class="faint" style="font-size:11.5px">${fmtRelative(d.created_at)}</span>` : '<span class="faint">—</span>'}</td>
     <td class="actions"><button class="btn btn-sm" data-dl="${i}">${icon('download', 'sm')}PDF</button></td></tr>`; };
   const { el } = openModal({ title: `Salary slips — ${fmtMonth(run.month)}`, subtitle: `${slips.length} employee(s) from the saved payroll`, size: 'lg',
-    body: `${!co.address ? `<div class="alert alert-warn" style="margin-bottom:10px">${icon('alert')}<span>The company address is empty — add it in <a href="#/storage">Settings → Storage &amp; documents</a> so it prints on the slips.</span></div>` : ''}
+    body: `
       ${on ? '' : `<div class="alert alert-info" style="margin-bottom:10px">${icon('info')}<span>Google Drive is not connected, so slips can only be downloaded. Connect it in <a href="#/storage">Storage &amp; documents</a> to save them in Drive (Salary slips / ${month}).</span></div>`}
       <div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th class="num">Net pay</th><th>Drive</th><th></th></tr></thead><tbody>${slips.map(row).join('')}</tbody></table></div>
       <p class="faint" style="font-size:12px;margin-top:8px" id="slip-progress"></p>`,
@@ -6045,7 +6048,8 @@ async function pageStorage() {
         <div class="card-body"><div class="grid g2" style="gap:10px">
           <div class="field"><label>Company name</label><input class="input" id="co-name" value="${esc(co.name)}" ${canEdit ? '' : 'disabled'}></div>
           <div class="field"><label>CIN</label><input class="input" id="co-cin" value="${esc(co.cin)}" ${canEdit ? '' : 'disabled'}></div>
-          <div class="field" style="grid-column:1/-1"><label>Corporate address (footer of every page)</label><input class="input" id="co-address" value="${esc(co.address)}" ${canEdit ? '' : 'disabled'}></div>
+          <div class="field" style="grid-column:1/-1"><label>Corporate address (footer of every page)</label><input class="input" id="co-address" value="${esc(co.corporate_address)}" ${canEdit ? '' : 'disabled'}></div>
+          <div class="field" style="grid-column:1/-1"><label>Registered office (printed under the CIN; optional)</label><input class="input" id="co-reg" value="${esc(co.registered_address)}" ${canEdit ? '' : 'disabled'}></div>
           <div class="field"><label>Email</label><input class="input" id="co-email" value="${esc(co.email)}" ${canEdit ? '' : 'disabled'}></div>
           <div class="field"><label>Contact number</label><input class="input" id="co-phone" value="${esc(co.phone)}" ${canEdit ? '' : 'disabled'}></div>
           <div class="field"><label>Website</label><input class="input" id="co-web" value="${esc(co.website)}" ${canEdit ? '' : 'disabled'}></div>
@@ -6083,7 +6087,7 @@ async function pageStorage() {
         finally { state.drive = saved; }
       }));
       $('#co-save')?.addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
-        const value = { name: $('#co-name').value.trim(), cin: $('#co-cin').value.trim(), address: $('#co-address').value.trim(),
+        const value = { name: $('#co-name').value.trim(), cin: $('#co-cin').value.trim(), corporate_address: $('#co-address').value.trim(), registered_address: $('#co-reg').value.trim(),
           email: $('#co-email').value.trim(), phone: $('#co-phone').value.trim(), website: $('#co-web').value.trim(),
           signatory_name: $('#co-sign').value.trim(), signatory_title: $('#co-title').value.trim() };
         try { await q(db.from('app_settings').update({ value }).eq('key', 'company').select()); state.company = null; toast('Company details saved'); }
