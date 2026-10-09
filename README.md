@@ -200,7 +200,7 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 * Click anyone in the tree to open them in EMD.
 * People who have resigned or been terminated, and anyone whose F&F is done, are left out.
 
-**Holidays & time relaxation** (Payroll → Holidays & Relaxation). Dates are added by hand for each financial year (1 April – 31 March).
+**Holidays & time relaxation** (admin menu → Attendance → Holidays). Dates are added by hand for each financial year (1 April – 31 March).
 * **Holidays:** Date and Description. A holiday from Monday to Saturday is paid as a full day (`H`). A Sunday holiday stays a weekly off.
 * **Time relaxation:** Date, Description, Hours and Minutes.
   * On that day, working the time you set counts as a full day. Example: Diwali at 5h instead of 8h30, so 5 hours worked is a full day.
@@ -208,11 +208,23 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 * **Rules:** one entry per date, and removing an entry keeps it in the activity log.
 * **Employees** see the calendar read-only under **Holidays** in the portal.
 
-**WFH.**
-* **Employees** add work-from-home dates in the portal under **WFH**. They can pick a single date or a range; Sundays and holidays are skipped.
-* **Payroll:** on a WFH day with no punches, the sheet's leave becomes `WFH` and is paid as a full day.
-* **Admins** see every WFH day under Payroll → WFH, together with how it was counted. They can **Reject** one (the day goes back to what the punches say) or **Add WFH** for someone.
-* **Lock:** once a month is pushed, employees can no longer add or withdraw WFH for it. Admins can, at any time.
+**WFH** (admin menu → Attendance → WFH).
+* **Employees** add WFH dates in the portal under **WFH**, either a single date or a range. Sundays and holidays are skipped.
+  * Past dates are allowed only within the **current month**: a WFH day from a week ago can be added later, but not one from an earlier month.
+  * Once a month is pushed it is locked for employees.
+* **Admins** can pick **WFH** in the Final line of day-wise attendance, next to F / HD / L. That records the WFH in the WFH list, marked as added by an admin.
+  * Picking another value on a WFH day rejects the WFH and saves that value instead.
+* **How payroll counts it:** an employee's own WFH replaces a day with no punches. A WFH added or confirmed by an admin always counts. Both are paid as a full day.
+* **The WFH page** lists every entry and how it was counted. Admins can **Reject** / **Restore** an entry or **Add WFH** for someone.
+
+**Leaves register** (admin menu → Attendance → Leaves).
+* Record leaves day by day: type the **Employee ID or name**, pick a date or a range, choose **Full day** or **Half day**, and add a note if needed.
+* Sundays and holidays are skipped. Adding a leave on a date that already has one changes it to the new type.
+* **Synced to payroll:** a full-day leave makes the day **L** and a half-day leave makes it **HD**. The day can still be changed in day-wise attendance.
+* **Day-wise page:** its Leaves card shows which no-punch days are in the register.
+* **The page** lists the month's leaves with a remove button, and a folded **By employee** summary of total leave days.
+
+**Day-wise attendance:** **Save changes** takes you back to the Payroll page, ready for the next person. The four summary cards (Half days, Missed punches, Leaves, Admin changes) start folded; click one to open it.
 
 **Save & push, and salary queries.**
 * **Save & push** (Payroll → Salary Calculation) saves the payroll and publishes each employee's final day-wise sheet in their **My Pay**, matched by Employee ID.
@@ -342,6 +354,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261016000000_leaves_register_wfh_month.sql` | Leaves register (`leave_records`, `admin_add_leaves`, `admin_remove_leave`); employee WFH back-dating limited to the current month. |
 | `supabase/migrations/20261015000000_calendar_wfh_payroll_push.sql` | Holiday & time-relaxation calendar (`calendar_days`), WFH (`wfh_days`), Save & push (`payroll_runs.pushed_at`, `payroll_results.days`, `admin_push_payroll`), salary queries with the 12-hour window (`payroll_queries`), `my_payslips()`; the portal's pay list shows pushed months only. |
 | `supabase/migrations/20261014000000_admin_levels_org.sql` | Super Admin / Base Admin (`admin_level`, `is_super_admin`, `admin_set_admin_level`, `admin_set_designation`), the guard trigger on `profiles`, Non-EMD only for Super Admins. |
 | `supabase/migrations/20261013000000_no_auth_emails.sql` | Sign-in without emails: giving access confirms the account, admins set temporary passwords (`admin_set_password`), and accounts already approved or waiting are confirmed once. |
