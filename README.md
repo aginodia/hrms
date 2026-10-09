@@ -237,6 +237,22 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
   * On the day-wise page the queried dates are outlined. The admin changes the day in the Final line and saves, marks the query **Resolved**, or **Rejects** it with a note.
   * Then **Save & push** again so the employee sees the change.
 
+**Rules & formulas** (admin menu → Settings). The salary formula, day statuses, holiday / relaxation, leave, WFH, push and query rules, mapping, exits, admin levels and portal rules are all on this one page. Other pages no longer repeat them; they show a small **Rules** link that opens the matching section.
+
+**Layout and behaviour**
+* **Sidebar:** the menu scrolls on its own, and keeps its position and the current page in view as you move between pages.
+* **Sign out** asks first, with **Stay** / **Sign out** buttons.
+* **Payroll table:**
+  * One line per person, with the EmpCode shown once.
+  * The Pre-adjustment columns are tinted blue and the Post-adjustment columns green. The pre and post cards on the day-wise page have the same colours.
+  * The mapping flag (ID mismatch) is shown only in the Mapping tab.
+* **Summary popup:** includes each person's final net pay and the section totals, with tighter rows.
+* **WFH page:** split into **By employee** and **By admin**. The WFH menu item shows a badge with the number of WFH days employees added since you last opened the page.
+* **Salary queries resolve automatically** when the queried day has been changed and you save on the day-wise page, click Save payroll, or Save & push.
+  * When a month's attendance is re-uploaded, its open queries move to the new upload and are checked the same way.
+* **Resigned & Terminated:** these employees can't raise salary queries or add WFH.
+* **Employee portal:** a section that changed since the person last opened it shows **New** in their menu, and "Updated since your last visit" at the top of the page. This covers My Pay, WFH, Holidays, My Profile and My KYC.
+
 **KYC: Save vs Skip.** The KYC form has **Save & finish later**, which stores whatever has been filled in, even if it's only the emergency contact. It isn't submitted, and the form reopens with those details. **Skip** stores nothing from that visit: anything typed and any files uploaded during it are discarded. Admins see each employee's KYC status on their EMD page, with **Review — approve or send back** once it's submitted, as well as in Access Control → KYC Review.
 
 **Change requests.** Once KYC is submitted, employees can't edit their details directly. In **My Profile → Request a change** they ask for a new name, phone, date of birth, bank account / IFSC or emergency contact. **Nothing changes until an admin approves it** in Access Control → **Change requests**. That tab shows each detail's current and requested value, with **Approve** or **Reject** (a reason is required to reject). The employee sees the outcome, and can withdraw a request while it's still waiting. Only one request can be waiting at a time.
@@ -354,6 +370,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261017000000_query_autoresolve_left_updates.sql` | Queries resolve automatically on push when their day changed (and carry over after a re-upload), no queries / WFH after leaving, `my_updates()` for the portal's New markers. |
 | `supabase/migrations/20261016000000_leaves_register_wfh_month.sql` | Leaves register (`leave_records`, `admin_add_leaves`, `admin_remove_leave`); employee WFH back-dating limited to the current month. |
 | `supabase/migrations/20261015000000_calendar_wfh_payroll_push.sql` | Holiday & time-relaxation calendar (`calendar_days`), WFH (`wfh_days`), Save & push (`payroll_runs.pushed_at`, `payroll_results.days`, `admin_push_payroll`), salary queries with the 12-hour window (`payroll_queries`), `my_payslips()`; the portal's pay list shows pushed months only. |
 | `supabase/migrations/20261014000000_admin_levels_org.sql` | Super Admin / Base Admin (`admin_level`, `is_super_admin`, `admin_set_admin_level`, `admin_set_designation`), the guard trigger on `profiles`, Non-EMD only for Super Admins. |
