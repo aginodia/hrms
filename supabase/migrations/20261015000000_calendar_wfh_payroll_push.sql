@@ -43,9 +43,12 @@ create table if not exists public.calendar_days (
 create unique index if not exists calendar_days_day_uq on public.calendar_days (day) where removed_at is null;
 
 alter table public.calendar_days enable row level security;
-drop policy if exists calendar_days_select on public.calendar_days;
-create policy calendar_days_select on public.calendar_days for select to authenticated
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'calendar_days' and policyname = 'calendar_days_select') then
+    create policy calendar_days_select on public.calendar_days for select to authenticated
   using (removed_at is null or public.is_admin());
+  end if;
+end $$;
 grant select on public.calendar_days to authenticated;
 
 create or replace function public.admin_add_calendar_day(p_kind text, p_day date, p_description text, p_minutes integer default null)
@@ -106,9 +109,12 @@ create unique index if not exists wfh_days_uq on public.wfh_days (employee_id, w
 create index if not exists wfh_days_date_idx on public.wfh_days (work_date);
 
 alter table public.wfh_days enable row level security;
-drop policy if exists wfh_days_select on public.wfh_days;
-create policy wfh_days_select on public.wfh_days for select to authenticated
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'wfh_days' and policyname = 'wfh_days_select') then
+    create policy wfh_days_select on public.wfh_days for select to authenticated
   using (employee_id = auth.uid() or public.is_admin());
+  end if;
+end $$;
 grant select on public.wfh_days to authenticated;
 
 -- Has the salary for this date's month already been published?
@@ -235,9 +241,12 @@ create unique index if not exists payroll_queries_open_uq on public.payroll_quer
 create index if not exists payroll_queries_run_idx on public.payroll_queries (run_id, status);
 
 alter table public.payroll_queries enable row level security;
-drop policy if exists payroll_queries_select on public.payroll_queries;
-create policy payroll_queries_select on public.payroll_queries for select to authenticated
+do $$ begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'payroll_queries' and policyname = 'payroll_queries_select') then
+    create policy payroll_queries_select on public.payroll_queries for select to authenticated
   using (employee_id = auth.uid() or public.is_admin());
+  end if;
+end $$;
 grant select on public.payroll_queries to authenticated;
 
 create or replace function public.my_raise_query(p_run uuid, p_date date, p_requested text, p_note text)
