@@ -356,6 +356,16 @@ Each line is filled in automatically, with the employee's **current salary** as 
 * **Uploaded sheets** (attendance, variable, ESOP, bulk employees) are copied to Uploads / *section* / *YYYY-MM*. The employees sheet can hold temporary passwords — keep the Drive folder shared only with HR.
 * Until Drive is connected, KYC keeps using Supabase storage and slips / letters can still be downloaded.
 
+**Exit (Resigned / Terminated).** As soon as an employee is marked Resigned or Terminated their portal access is revoked: the portal shows only **My exit**, and the database stops returning their other data (row-level security and the portal calls check `_i_have_left()`; only `my_exit()` answers). My exit shows:
+* **Relieving letter** and **Experience letter** — issued by an admin from EMD → the employee → **Exit documents** (download a PDF, or **Issue**, which saves it in Drive under Exit documents / *Name - ID*).
+* **Salary slips of the last 6 months** (fewer if fewer were published).
+* **F&F**: "by *date* — 60 days from your last working day" until it is done. **Complete F&F** now asks for the statement lines (earnings / deductions, e.g. last month's salary, leave encashment, loan recovery — prefilled with the loan still owed), the settlement date and a note; the F&F statement PDF is saved to Drive automatically and shown in My exit.
+* After F&F the person can sign in for **3 more days** (a banner shows the exact time); after that they are signed out and the sign-in page says **"No access found"**. Everything stays in the HRMS.
+
+**Downloads.** Document buttons download straight to the Downloads folder with a proper file name (e.g. *Neha Jain - PAN.pdf*) instead of opening a tab.
+
+**Speed.** Moving between pages repaints only the page (not the whole screen), shows a thin loading bar, loads data in parallel, and reuses what was just loaded for a short while (any change made in the HRMS refreshes it). In the database, access checks in the row-level policies run once per query instead of once per row.
+
 **Monthly Expense.** The team submits expenses through a Google Form. In the form, go to **Responses → Link to Sheets**, then share that responses sheet as **Anyone with the link: Viewer**. Paste the sheet's link on the Monthly Expense page and click **Sync**. The columns (Employee ID, Amount, Timestamp, Name, Expense date, Category, Description, Bill) are detected automatically and can be changed. Each response is matched to an employee by **Employee ID**, using the same rule as Payroll mapping. Responses that don't match are listed and flagged. **Detailed info** shows an employee's claims month by month, with bill links. Syncing again adds new responses and never duplicates old ones.
 
 **ESOPs.** The allocation comes from the ESOP Excel (the `Esop_Historical.xlsx` layout; **Template** downloads a blank copy):
@@ -393,6 +403,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261019000000_drive_docs_payslips_esop_weekly.sql` | Pay record (`my_payslips` sends the day-wise sheet only in the 12-hour window, plus slip details), `hr_documents` (Drive links of slips and grant letters), `admin_record_document`, ESOP exercise price (`admin_set_esop_price`), `admin_set_kyc_paths`, `drive` / `company` settings. |
 | `supabase/migrations/20261020000000_drive_ticket.sql` | Signed passes for the Drive bridge: `app_secrets` (not readable through the API), `drive_ticket()`, `admin_drive_secret()` for Super Admins. |
 | `supabase/migrations/20261021000000_doc_assets.sql` | `doc_assets` (the signatory signature, admins only) and `admin_set_doc_asset`; signatory title defaults to Authorized Signatory. |
+| `supabase/migrations/20261022000000_exit_flow_faster_rls.sql` | Exit flow (`my_exit`, `exit_documents`, `fnf_settlements`, `admin_complete_fnf` with statement lines, `admin_record_exit_doc`, 3-day access after F&F, portal calls closed after leaving) and faster row-level policies. |
 | `drive-bridge/Code.gs` | Google Apps Script web app that stores HRMS files in Google Drive after checking the HRMS sign-in. |
 | `supabase/migrations/20261018000000_esop.sql` | ESOPs: allocations, grants, vesting tranches and exercises (`esop_*` tables), pool setting, `admin_import_esop`, `admin_map_esop_member`, `admin_add_esop_exercise`, `my_esops()`. |
 | `supabase/migrations/20261017000000_query_autoresolve_left_updates.sql` | Queries resolve automatically on push when their day changed (and carry over after a re-upload), no queries / WFH after leaving, `my_updates()` for the portal's New markers. |

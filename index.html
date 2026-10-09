@@ -470,6 +470,13 @@
   .toast svg.i { width: 16px; height: 16px; }
   .loading { display: grid; place-items: center; min-height: 240px; color: var(--muted); gap: 10px; }
   .loading.full { min-height: 100vh; }
+  .exit-fnf { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .exit-fnf .big { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 2px 0; color: var(--text); }
+  #route-bar { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: var(--accent); z-index: 60; opacity: 0; pointer-events: none; }
+  #route-bar.on { opacity: 1; animation: routebar 1.6s ease-out forwards; }
+  @keyframes routebar { 0% { width: 0; } 30% { width: 45%; } 100% { width: 88%; } }
+  .content { transition: opacity .15s; }
+  .content.is-loading { opacity: .55; pointer-events: none; }
   .skeleton { background: linear-gradient(90deg, #EEF0F3 25%, #F6F7F9 37%, #EEF0F3 63%); background-size: 400% 100%; animation: shimmer 1.3s ease infinite; border-radius: 8px; }
   @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 
@@ -938,22 +945,51 @@ const api = {
   upload: (path, file) => q(db.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })),
   removeFiles: (paths) => { const p = paths.filter((x) => !isDrivePath(x)); return p.length ? db.storage.from(BUCKET).remove(p) : Promise.resolve({ data: [] }); },
   signedUrl: async (path) => (await q(db.storage.from(BUCKET).createSignedUrl(path, 600))).signedUrl,
-  rpc: (fn, args) => q(db.rpc(fn, args)),
+  rpc: (fn, args) => {
+    if (READ_RPCS.has(fn) && !args) {
+      const hit = rpcCache.get(fn);
+      if (hit && Date.now() - hit.at < 45000) return hit.p;
+      const p = q(db.rpc(fn));
+      rpcCache.set(fn, { at: Date.now(), p });
+      p.catch(() => rpcCache.delete(fn));
+      return p;
+    }
+    if (!QUIET_RPCS.has(fn)) { rpcCache.clear(); dataVersion += 1; if (state.payroll) state.payroll.sideAt = 0; }
+    return q(db.rpc(fn, args));
+  },
 };
+// Portal reads reused for 45 seconds while moving between pages (any change made in the HRMS clears them)
+const READ_RPCS = new Set(['my_portal', 'my_payslips', 'my_esops', 'my_exit', 'my_updates']);
+const QUIET_RPCS = new Set(['drive_ticket', 'admin_drive_secret']);
+const rpcCache = new Map();
+let dataVersion = 0; // goes up after every change made through the HRMS
+// Reuse an admin page's data for a short while when nothing has changed since
+function cachedLoad(key, ttl, loader) {
+  const hit = state.pageCache?.[key];
+  if (hit && hit.v === dataVersion && Date.now() - hit.at < ttl) return hit.p;
+  const p = loader();
+  state.pageCache = { ...(state.pageCache || {}), [key]: { v: dataVersion, at: Date.now(), p } };
+  p.catch(() => { if (state.pageCache?.[key]?.p === p) delete state.pageCache[key]; });
+  return p;
+}
 
-/* Opens a private KYC document in a new tab via a short-lived signed URL.
-   The tab is opened synchronously so popup blockers allow it. */
-async function openDocument(path) {
+/* Downloads a private document straight to the Downloads folder (no new tab): Drive files through the
+   bridge, older files through a short-lived Supabase link. */
+async function openDocument(path, name) {
   if (!path) return;
-  const w = window.open('', '_blank');
-  if (w) w.document.write('<p style="font:14px system-ui;color:#6B7280;padding:24px">Opening document…</p>');
+  const done = toastBusy('Downloading…');
   try {
-    const url = isDrivePath(path) ? URL.createObjectURL((await driveDownload(driveIdOf(path))).blob) : await api.signedUrl(path);
-    if (w) { w.opener = null; w.location.replace(url); } else { window.location.href = url; }
-  } catch (e) {
-    if (w) w.close();
-    toast(friendlyError(e), 'error');
-  }
+    if (isDrivePath(path)) {
+      const f = await driveDownload(driveIdOf(path));
+      saveBlob(f.blob, f.name || name || 'document');
+    } else {
+      const res = await fetch(await api.signedUrl(path));
+      if (!res.ok) throw new Error('The file could not be downloaded.');
+      const ext = (path.split('.').pop() || 'pdf').toLowerCase();
+      saveBlob(await res.blob(), name ? `${name}.${ext}` : fileNameFromPath(path));
+    }
+  } catch (e) { toast(friendlyError(e), 'error'); }
+  finally { done(); }
 }
 
 /* ---------------------------------------------------------------------
@@ -1000,6 +1036,8 @@ function render() {
   const p = state.profile;
   if (!p) return renderNoProfile();
   if (p.role === 'admin' && p.status === 'active') return renderShell('admin');
+  // Resigned / Terminated: only the exit page; 3 days after F&F access ends
+  if (hasLeft(p)) return accessEnded(p) ? endAccess() : renderShell('exit');
   switch (p.status) {
     case 'pending':       return renderWaiting('pending');
     case 'kyc_pending':   return renderKycForm();
@@ -1056,6 +1094,7 @@ function resetSessionState() {
   state.emdSearch = '';
   state.admin = { loaded: false, profiles: [], salaries: [] };
   state.drive = null; state.company = null; state.esop = null; state.driveTicket = null;
+  rpcCache.clear(); state.pageCache = null;
 }
 
 // Signs out of this device. The local session is always cleared, even if
@@ -1090,7 +1129,7 @@ async function signOut() {
 const actions = {
   signout: () => signOut(),
   reload: () => { state.loadingUser = null; loadSelfAndRoute(); },
-  'open-doc': (el) => openDocument(el.dataset.path),
+  'open-doc': (el) => openDocument(el.dataset.path, el.dataset.name),
   'toggle-nav': () => $('.shell')?.classList.toggle('nav-open'),
   'close-nav': () => $('.shell')?.classList.remove('nav-open'),
   'auth-view': (el) => { state.authView = el.dataset.view; renderAuth(); },
@@ -1124,7 +1163,7 @@ function renderAuth(view) {
           <button type="button" class="link-btn" style="font-size:12.5px" data-action="auth-view" data-view="forgot">Forgot password?</button></div>
           ${passwordField('password', 'Your password', 'current-password')}
         </div>
-        <div class="form-msg"></div>
+        <div class="form-msg">${state.authNotice ? `<div class="alert alert-error">${icon('lock')}<span>${esc(state.authNotice)}</span></div>` : ''}</div>
         <button class="btn btn-primary btn-block" type="submit">Sign in</button>
       </form>
       <p class="auth-switch">New to Altius? <button class="link-btn" data-action="auth-view" data-view="signup">Create an account</button></p>`,
@@ -1221,7 +1260,7 @@ function renderAuth(view) {
     b.innerHTML = icon(show ? 'eyeOff' : 'eye');
   }));
   const form = $('#auth-form');
-  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); handleAuthSubmit(v, form); });
+  if (form) form.addEventListener('submit', (e) => { e.preventDefault(); state.authNotice = null; handleAuthSubmit(v, form); });
   $('#auth-form input')?.focus();
   if (v === 'otp') mountOtpView();
   if (v === 'forgot-code') mountResetCodeView();
@@ -1496,7 +1535,7 @@ async function renderKycForm() {
       <div class="head"><b>${esc(d.label)}</b><span class="tag ${d.required ? 'req' : ''}">${d.required ? 'Required' : 'Optional'}</span></div>
       ${f ? `
         <div class="file"><span class="ico">${icon('fileCheck')}</span><div style="min-width:0"><div class="fname" title="${esc(f.name)}">${esc(f.name)}</div><div class="fsub">Uploaded</div></div></div>
-        <div class="acts"><button type="button" class="btn btn-sm" data-action="open-doc" data-path="${esc(f.path)}">${icon('eye', 'sm')}View</button>
+        <div class="acts"><button type="button" class="btn btn-sm" data-action="open-doc" data-path="${esc(f.path)}" data-name="${esc(`${state.profile?.full_name || 'My'} - ${d.label}`)}">${icon('download', 'sm')}Download</button>
         <button type="button" class="btn btn-sm" data-pick="${d.key}">${icon('upload', 'sm')}Replace</button>
         ${!d.required ? `<button type="button" class="btn btn-sm btn-ghost" data-clear="${d.key}" title="Remove">${icon('trash', 'sm')}</button>` : ''}</div>`
       : `<div class="drop" data-pick="${d.key}" role="button" tabindex="0">${icon('upload')}<b>Click to upload</b><span>PDF or JPG · up to ${MAX_FILE_MB} MB</span>${d.hint ? `<span class="faint">${esc(d.hint)}</span>` : ''}</div>`}
@@ -1772,13 +1811,15 @@ const NAV = {
     { key: 'esop', label: 'My ESOPs', icon: 'pie' },
     { key: 'kyc', label: 'My KYC', icon: 'fileCheck', badge: newBadge('kyc') || (KYC_OPEN.includes(state.profile?.kyc_status || 'not_started') ? 1 : 0) },
   ],
+  exit: () => [{ label: 'Menu' }, { key: 'exit', label: 'My exit', icon: 'file' }],
 };
 const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, rules: pageRules, leaves: pageLeaves, wfh: pageAdminWfh, holidays: pageHolidays, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops, storage: pageStorage },
   team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, wfh: pageMyWfh, esop: pageMyEsop, kyc: pageTeamKyc },
+  exit: { exit: pageMyExit },
 };
-const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
+const DEFAULT_PAGE = { admin: 'dashboard', team: 'home', exit: 'exit' };
 
 function paintShell(kind, active, view) {
   const p = state.profile;
@@ -1789,13 +1830,29 @@ function paintShell(kind, active, view) {
   const body = view
     ? view.html
     : `<div class="card"><div class="card-body grid" style="gap:12px">${'<div class="skeleton" style="height:16px"></div>'.repeat(5)}</div></div>`;
+  const titleHTML = `<h1>${esc(view?.title || '')}</h1>${view?.crumbs ? `<div class="crumbs">${view.crumbs}</div>` : ''}`;
+  const shell = $('.shell');
+  if (shell && shell.dataset.kind === kind && shell.dataset.uid === p.id) {
+    // Already on screen: swap only the sidebar links (when they changed), the title and the page
+    const nav = $('.sidebar .nav');
+    if (nav._html !== navHTML) { nav.innerHTML = navHTML; nav._html = navHTML; nav.scrollTop = navScroll; bindNavLinks(); }
+    $('#top-title').innerHTML = titleHTML;
+    $('#top-actions').innerHTML = view?.actions || '';
+    const content = $('.content');
+    content.classList.remove('is-loading');
+    content.innerHTML = body;
+    if (shell.dataset.page !== active) { window.scrollTo(0, 0); shell.dataset.page = active; }
+    $('#route-bar')?.classList.remove('on');
+    return;
+  }
   $('#app').innerHTML = `
-  <div class="shell">
+  <div class="shell" data-kind="${kind}" data-uid="${esc(p.id)}" data-page="${esc(active)}">
+    <div id="route-bar"></div>
     <aside class="sidebar">
       <div class="brand">${LOGO}<div>Altius HRMS<small>${kind === 'admin' ? 'Admin console' : 'Employee portal'}</small></div></div>
       <nav class="nav">${navHTML}</nav>
       <div class="side-foot">
-        ${person(p, `<span class="role-tag">${kind === 'admin' ? ADMIN_LABEL[adminLevel(p)] || 'Admin' : 'Employee'}</span>`)}
+        ${person(p, `<span class="role-tag">${kind === 'admin' ? ADMIN_LABEL[adminLevel(p)] || 'Admin' : kind === 'exit' ? 'Former employee' : 'Employee'}</span>`)}
         <button class="icon-btn" data-action="signout" title="Sign out" aria-label="Sign out">${icon('logout')}</button>
       </div>
     </aside>
@@ -1803,18 +1860,30 @@ function paintShell(kind, active, view) {
     <main class="main">
       <header class="topbar">
         <button class="icon-btn menu-btn" data-action="toggle-nav" aria-label="Menu">${icon('menu')}</button>
-        <div style="min-width:0"><h1>${esc(view?.title || '')}</h1>${view?.crumbs ? `<div class="crumbs">${view.crumbs}</div>` : ''}</div>
-        <div class="actions">${view?.actions || ''}</div>
+        <div style="min-width:0" id="top-title">${titleHTML}</div>
+        <div class="actions" id="top-actions">${view?.actions || ''}</div>
         <div class="top-user" title="${esc(p.full_name)} · ${esc(p.email)}">${avatar(p)}
           <button class="btn btn-sm" data-action="signout">${icon('logout', 'sm')}<span>Sign out</span></button></div>
       </header>
       <section class="content">${body}</section>
     </main>
   </div>`;
-  $$('.nav a').forEach((a) => a.addEventListener('click', () => $('.shell')?.classList.remove('nav-open')));
+  bindNavLinks();
   // keep the sidebar where it was, and make sure the current page is in view
   const nav = $('.sidebar .nav');
-  if (nav) { nav.scrollTop = navScroll; $('.nav a.active')?.scrollIntoView({ block: 'nearest' }); }
+  if (nav) { nav._html = navHTML; nav.scrollTop = navScroll; $('.nav a.active')?.scrollIntoView({ block: 'nearest' }); }
+}
+function bindNavLinks() {
+  $$('.nav a').forEach((a) => a.addEventListener('click', () => {
+    $('.shell')?.classList.remove('nav-open');
+    // instant feedback: highlight the link straight away
+    $$('.nav a.active').forEach((x) => x.classList.remove('active')); a.classList.add('active');
+  }));
+}
+// While a page loads: a thin bar at the top, and the old page fades if it takes a moment
+function routeLoading(seq) {
+  const bar = $('#route-bar'); if (bar) { bar.classList.remove('on'); void bar.offsetWidth; bar.classList.add('on'); }
+  setTimeout(() => { if (seq === renderSeq && $('#route-bar')?.classList.contains('on')) $('.content')?.classList.add('is-loading'); }, 180);
 }
 
 // "Updated" markers: what changed in each portal section since the person last opened it (kept per user in this browser)
@@ -1838,12 +1907,12 @@ async function renderShell(kind) {
   const seq = ++renderSeq;
   const r = parseRoute();
   const page = PAGES[kind][r.page];
-  if (kind === 'team' && page) await refreshUpdates(r.page);
   if (!page) { history.replaceState(null, '', `#/${DEFAULT_PAGE[kind]}`); lastHash = location.hash; return renderShell(kind); }
   if (kind === 'admin' && !state.admin.loaded) paintShell(kind, r.page, null);
   else if (!$('.shell')) paintShell(kind, r.page, null);
+  else routeLoading(seq);
   try {
-    const view = await page(r);
+    const [view] = await Promise.all([page(r), kind === 'team' ? refreshUpdates(r.page) : null]);
     if (seq !== renderSeq) return;
     if (kind === 'team' && state.pageUpdated) view.crumbs = `<span class="chip blue plain">Updated since your last visit</span> ${view.crumbs || ''}`;
     if (kind === 'admin' && r.page === 'wfh') { const seen = getSeen() || {}; seen.adminWfh = new Date().toISOString(); setSeen(seen); }
@@ -2696,12 +2765,13 @@ function monthYearSelects(name, y, m) {
           <select class="input" data-y="${name}">${years.map((yr) => `<option ${yr === y ? 'selected' : ''}>${yr}</option>`).join('')}</select>`;
 }
 
-function docListHTML(kyc) {
+function docListHTML(kyc, who) {
+  const person = who || (kyc?.employee_id && state.admin?.profiles?.length ? byId(kyc.employee_id)?.full_name : '') || state.profile?.full_name || '';
   return `<div class="doc-list">${DOCS.map((d) => {
     const path = kyc?.[d.col];
     return `<div class="doc ${path ? '' : 'missing'}"><span class="ico">${icon(path ? 'file' : 'x')}</span>
-      <div class="meta"><b>${esc(d.label)}</b><span>${path ? esc(fileNameFromPath(path)) : d.required ? 'Missing' : 'Not provided (optional)'}</span></div>
-      ${path ? `<button class="btn btn-sm" data-action="open-doc" data-path="${esc(path)}">${icon('external', 'sm')}View</button>` : ''}</div>`;
+      <div class="meta"><b>${esc(d.label)}</b><span>${path ? esc(isDrivePath(path) ? 'In Google Drive' : fileNameFromPath(path)) : d.required ? 'Missing' : 'Not provided (optional)'}</span></div>
+      ${path ? `<button class="btn btn-sm" data-action="open-doc" data-path="${esc(path)}" data-name="${esc(`${person ? `${person} - ` : ''}${d.label}`)}">${icon('download', 'sm')}Download</button>` : ''}</div>`;
   }).join('')}</div>`;
 }
 
@@ -2893,10 +2963,10 @@ function employmentStatusCard(e) {
     body = row(`${empChip(e)}${lwdChip(e)}<span class="muted" style="font-size:13px">Resigned on ${fmtDMY(e.resignation_date)} · notice of ${daysBetween(e.resignation_date, e.exit_date)} days · ${left > 0 ? `${left} day(s) to go` : left === 0 ? 'last day today' : `last working day passed ${-left} day(s) ago`}${e.exit_note ? ` · ${esc(e.exit_note)}` : ''}. Still Active until marked Resigned.</span>`,
       `<button class="btn btn-sm" data-notice="edit">Edit notice</button><button class="btn btn-sm" data-withdraw>Withdraw</button><button class="btn btn-sm btn-primary" data-emp-status="resigned">Resigned</button><button class="btn btn-sm btn-danger" data-emp-status="terminated">Terminated</button>`);
   } else if (st === 'fnf') {
-    body = row(`${empChip(e)}<span class="muted" style="font-size:13px">${EMP_STATE[e.employment_status]?.[0] || 'Exited'} · last working day ${fmtDMY(e.exit_date)} · F&F completed ${fmtDate(String(e.fnf_completed_at).slice(0, 10))}. Their journey has ended — they are not included in any sheet and can no longer sign in.</span>`);
+    body = row(`${empChip(e)}<span class="muted" style="font-size:13px">${EMP_STATE[e.employment_status]?.[0] || 'Exited'} · last working day ${fmtDMY(e.exit_date)} · F&F completed ${fmtDate(String(e.fnf_completed_at).slice(0, 10))}. Their journey has ended — they are not included in any sheet; they can sign in for 3 days after F&F to download their documents, then access ends.</span>`, `<button class="btn btn-sm" data-exit-docs="${e.id}">${icon('file', 'sm')}Exit documents</button>`);
   } else {
     body = row(`${empChip(e)}${lwdChip(e)}${settleChip(e)}<span class="muted" style="font-size:13px">${e.resignation_date ? `Resigned on ${fmtDMY(e.resignation_date)} · ` : ''}${e.exit_note ? `${esc(e.exit_note)} · ` : ''}In Resigned & Terminated (EMD and Payroll) until F&F.</span>`,
-      `<button class="btn btn-sm" data-emp-status="active">Mark active again</button><button class="btn btn-sm btn-primary" data-fnf="${e.id}">Complete F&F</button>`);
+      `<button class="btn btn-sm" data-exit-docs="${e.id}">${icon('file', 'sm')}Exit documents</button><button class="btn btn-sm" data-emp-status="active">Mark active again</button><button class="btn btn-sm btn-primary" data-fnf="${e.id}">Complete F&F</button>`);
   }
   return `<div class="card" id="emp-status-card"><div class="card-head"><div><h3>Status</h3></div></div><div class="card-body">${body}</div></div>`;
 }
@@ -2971,22 +3041,8 @@ function mountEmploymentStatus(e) {
       } catch (err) { toast(friendlyError(err), 'error'); }
     });
   }));
-  $$('[data-fnf]').forEach((b) => b.addEventListener('click', () => completeFnf(byId(b.dataset.fnf))));
-}
-async function completeFnf(e) {
-  const ok = await confirmDialog({
-    title: 'Complete F&F?',
-    message: `This ends <b>${esc(e.full_name)}</b>’s journey: they leave every sheet (payroll, variable, bonus, loans, expenses), can no longer sign in, and are kept under <b>F&F completed</b> in Employee Master Data. This cannot be undone.`,
-    confirmText: 'Complete F&F', danger: true,
-  });
-  if (!ok) return;
-  try {
-    await api.rpc('admin_complete_fnf', { p_user: e.id });
-    toast(`F&F completed for ${e.full_name}.`);
-    state.payroll.runs = null;
-    state.fin.loaded = false;
-    await refreshAdmin();
-  } catch (err) { toast(friendlyError(err), 'error'); }
+  $$('[data-fnf]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', () => completeFnf(byId(b.dataset.fnf)).catch((err) => toast(friendlyError(err), 'error')))));
+  $$('[data-exit-docs]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', () => openExitDocs(byId(b.dataset.exitDocs)).catch((err) => toast(friendlyError(err), 'error')))));
 }
 
 /* ---------- Employee Master Data (individual) ---------- */
@@ -3272,16 +3328,20 @@ async function ensurePayroll({ reload = false } = {}) {
   if (!P.runs || reload) {
     [P.runs, P.codeMap, P.rules, P.pt] = await Promise.all([payrollApi.runs(), payrollApi.codeMap(), payrollApi.rules(), payrollApi.pt()]);
   }
-  // Calendar and WFH change from other screens (and from employees) — always fresh
-  [P.calendar, P.wfh, P.leaves] = await Promise.all([payrollApi.calendar(), payrollApi.wfh(), payrollApi.leaves().catch(() => [])]);
+  // Calendar, WFH and leaves change from other screens (and from employees): refreshed when older than 20 s
+  // or after any change, loaded in parallel with the month's data
+  const side = (!reload && P.sideAt && Date.now() - P.sideAt < 20000) ? null
+    : Promise.all([payrollApi.calendar(), payrollApi.wfh(), payrollApi.leaves().catch(() => [])])
+      .then(([c, w, l]) => { P.calendar = c; P.wfh = w; P.leaves = l; P.sideAt = Date.now(); });
   if (!P.runs.some((r) => r.id === P.runId)) P.runId = P.runs[0]?.id || null;
-  if (!P.runId) { P.data = null; return; }
+  if (!P.runId) { P.data = null; await side; return; }
   if (!P.data || P.data.runId !== P.runId || reload) {
     const [punches, adjustments, results, queries] = await Promise.all([
-      payrollApi.punches(P.runId), payrollApi.adjustments(P.runId), payrollApi.results(P.runId), payrollApi.queries(P.runId).catch(() => [])]);
+      payrollApi.punches(P.runId), payrollApi.adjustments(P.runId), payrollApi.results(P.runId), payrollApi.queries(P.runId).catch(() => []), side]);
     P.data = { runId: P.runId, punches, adjustments, results, queries };
   } else {
-    P.data.queries = await payrollApi.queries(P.runId).catch(() => P.data.queries);
+    const [queries] = await Promise.all([payrollApi.queries(P.runId).catch(() => P.data.queries), side]);
+    P.data.queries = queries;
   }
 }
 const currentRun = () => state.payroll.runs?.find((r) => r.id === state.payroll.runId) || null;
@@ -3807,7 +3867,8 @@ async function pagePayrollCalc() {
         const tr = ev.target.closest('tr[data-href]');
         if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href;
       }));
-      $$('[data-fnf]').forEach((b) => b.addEventListener('click', () => completeFnf(byId(b.dataset.fnf))));
+      $$('[data-fnf]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', () => completeFnf(byId(b.dataset.fnf)).catch((err) => toast(friendlyError(err), 'error')))));
+  $$('[data-exit-docs]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', () => openExitDocs(byId(b.dataset.exitDocs)).catch((err) => toast(friendlyError(err), 'error')))));
       $('#export-payroll')?.addEventListener('click', () => exportPayrollCsv(run, mapped));
       $('#slips-payroll')?.addEventListener('click', (ev) => withBusy(ev.currentTarget, '', () => openSalarySlips(run, P.data.results).catch((e) => toast(friendlyError(e), 'error'))));
       const results = () => mapped.filter((m) => m.salary != null).map((m) => ({
@@ -5571,6 +5632,240 @@ async function pageExpenseEmployee(id) {
 
 /* ---------- ESOPs ---------- */
 /* =====================================================================
+   Exit: once someone is Resigned / Terminated their portal shows only
+   their relieving letter, experience letter, last 6 salary slips and the
+   F&F. After F&F they can sign in for 3 more days, then access ends.
+   ===================================================================== */
+const ACCESS_AFTER_FNF_DAYS = 3;
+const hasLeft = (p) => p?.role === 'team' && (['resigned', 'terminated'].includes(p.employment_status) || !!p.fnf_completed_at);
+const accessEnded = (p) => !!p?.fnf_completed_at && Date.now() > new Date(p.fnf_completed_at).getTime() + ACCESS_AFTER_FNF_DAYS * 86400e3;
+const EXIT_DOC = { relieving: 'Relieving letter', experience: 'Experience letter', fnf: 'F&F statement' };
+// Signs the person out and shows the sign-in page with "No access found". Their data stays in the HRMS.
+async function endAccess() {
+  state.authNotice = 'No access found. Your access to the Altius HRMS has ended — please contact HR if you need anything.';
+  try { await db.auth.signOut({ scope: 'local' }); } catch { /* still clear the screen */ }
+  resetSessionState();
+  renderAuth('login');
+}
+
+/* ---------- Letters (our letterhead) ---------- */
+// e: {full_name, employee_code, designation, date_of_joining, resignation_date, exit_date, employment_status}
+async function buildRelievingLetter(e, { date, signature } = {}) {
+  const [JsPDF, co] = await Promise.all([loadPDF(), companyInfo()]);
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  let y = pdfHeading(doc, 'Relieving Letter', PDF.top, { underline: true, center: true }) + 6;
+  y = exitAddress(doc, e, y, date || e.exit_date);
+  y = pdfRich(doc, `Dear ${e.full_name},`, y, { gap: 3 });
+  const resigned = e.employment_status !== 'terminated' && e.resignation_date;
+  y = pdfRich(doc, resigned
+    ? `This is with reference to your resignation dated ${fmtSlash(e.resignation_date)}. We confirm that your resignation has been accepted and that you are relieved from the services of **${co.name}** with effect from the close of working hours on **${fmtSlash(e.exit_date)}**.`
+    : `This is to confirm that you are relieved from the services of **${co.name}** with effect from the close of working hours on **${fmtSlash(e.exit_date)}**.`, y, { gap: 3 });
+  y = pdfRich(doc, `During your employment you were working with us as ${e.designation || 'a member of our team'}${e.employee_code ? ` (Employee ID: ${e.employee_code})` : ''}, from ${fmtSlash(e.date_of_joining)} to ${fmtSlash(e.exit_date)}.`, y, { gap: 3 });
+  y = pdfRich(doc, 'Your full and final settlement will be processed as per the Company’s policy. You are reminded of your continuing obligations regarding the confidentiality of the Company’s information.', y, { gap: 3 });
+  y = pdfRich(doc, 'We thank you for your contribution to the Company and wish you every success in your future endeavours.', y, { gap: 10 });
+  exitSignature(doc, co, y, signature);
+  pdfDecorate(doc, co);
+  return doc;
+}
+async function buildExperienceLetter(e, { date, signature } = {}) {
+  const [JsPDF, co] = await Promise.all([loadPDF(), companyInfo()]);
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  let y = pdfHeading(doc, 'Experience Letter', PDF.top, { underline: true, center: true }) + 6;
+  doc.setFont('times', 'normal'); doc.setFontSize(11.5);
+  doc.text(`Date: ${fmtSlash(date || e.exit_date)}`, PDF.R, y, { align: 'right' }); y += 10;
+  y = pdfHeading(doc, 'TO WHOMSOEVER IT MAY CONCERN', y, { center: true }) + 4;
+  y = pdfRich(doc, `This is to certify that **${e.full_name}**${e.employee_code ? ` (Employee ID: ${e.employee_code})` : ''} was employed with **${co.name}** from **${fmtSlash(e.date_of_joining)}** to **${fmtSlash(e.exit_date)}**.`, y, { gap: 3 });
+  y = pdfRich(doc, `At the time of leaving the Company, ${e.full_name} held the position of **${e.designation || 'team member'}**.`, y, { gap: 3 });
+  y = pdfRich(doc, `We thank ${e.full_name} for the contribution made during the tenure with us and wish ${e.full_name} every success in the future.`, y, { gap: 10 });
+  exitSignature(doc, co, y, signature);
+  pdfDecorate(doc, co);
+  return doc;
+}
+// fnf: {settled_on, items:[{label,type,amount}], net, note}
+async function buildFnfStatement(e, fnf, { signature } = {}) {
+  const [JsPDF, co] = await Promise.all([loadPDF(), companyInfo()]);
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  let y = pdfHeading(doc, 'Full and Final Settlement Statement', PDF.top, { underline: true, center: true }) + 4;
+  y = pdfTable(doc, y, { columnStyles: { 0: { fontStyle: 'bold', cellWidth: 40 }, 2: { fontStyle: 'bold', cellWidth: 40 } },
+    body: [['Employee Name', e.full_name || '—', 'Employee ID', e.employee_code || '—'],
+      ['Designation', e.designation || '—', 'Date of Joining', e.date_of_joining ? fmtSlash(e.date_of_joining) : '—'],
+      [e.employment_status === 'terminated' ? 'Separation' : 'Resignation Date', e.employment_status === 'terminated' ? 'Terminated' : (e.resignation_date ? fmtSlash(e.resignation_date) : '—'), 'Last Working Day', e.exit_date ? fmtSlash(e.exit_date) : '—'],
+      ['Settlement Date', fmtSlash(fnf.settled_on), '', '']] });
+  const earn = (fnf.items || []).filter((x) => x.type === 'earning'), ded = (fnf.items || []).filter((x) => x.type === 'deduction');
+  const rows = Array.from({ length: Math.max(earn.length, ded.length, 1) }, (_, i) => [earn[i]?.label || '', earn[i] ? rsAmt(earn[i].amount) : '', ded[i]?.label || '', ded[i] ? rsAmt(ded[i].amount) : '']);
+  const sum = (a) => a.reduce((s, x) => s + Number(x.amount || 0), 0);
+  rows.push([{ content: 'Total Earnings', styles: { fontStyle: 'bold' } }, { content: rsAmt(sum(earn)), styles: { fontStyle: 'bold' } },
+    { content: 'Total Deductions', styles: { fontStyle: 'bold' } }, { content: rsAmt(sum(ded)), styles: { fontStyle: 'bold' } }]);
+  y = pdfTable(doc, y, { head: [['Earnings', 'Amount', 'Deductions', 'Amount']], columnStyles: { 1: { halign: 'right' }, 3: { halign: 'right' } }, body: rows });
+  const net = Number(fnf.net || 0);
+  y = pdfTable(doc, y, { body: [[{ content: `Net ${net < 0 ? 'Recoverable' : 'Payable'}: ${rsAmt(Math.abs(net))}`, styles: { fontStyle: 'bold', fontSize: 12.5 } }], [`(${inrWords(Math.abs(net))})`]] });
+  if (fnf.note) y = pdfRich(doc, `Note: ${fnf.note}`, y, { gap: 4 });
+  y = pdfRich(doc, 'This statement completes the full and final settlement of all dues between you and the Company.', y + 2, { gap: 10 });
+  exitSignature(doc, co, y, signature);
+  pdfDecorate(doc, co);
+  return doc;
+}
+function exitAddress(doc, e, y, date) {
+  doc.setFont('times', 'normal'); doc.setFontSize(11.5);
+  doc.text('To', PDF.L, y); doc.text(`Date: ${fmtSlash(date)}`, PDF.R, y, { align: 'right' }); y += 5.4;
+  doc.text(e.full_name || '', PDF.L, y); y += 5.4;
+  if (e.employee_code) { doc.text(`Employee ID: ${e.employee_code}`, PDF.L, y); y += 5.4; }
+  if (e.designation) { doc.text(e.designation, PDF.L, y); y += 5.4; }
+  return y + 5;
+}
+function exitSignature(doc, co, y, signature) {
+  if (y > PDF.bottom - 45) { doc.addPage(); y = PDF.top + 4; }
+  y = pdfRich(doc, 'Yours sincerely,', y, { gap: 0 });
+  y = pdfRich(doc, `For and on behalf of **${co.name}**`, y, { gap: 1 });
+  if (signature) { try { doc.addImage(signature, signature.startsWith('data:image/png') ? 'PNG' : 'JPEG', PDF.L, y - 2, 46, 15.6); } catch (err) { /* no signature */ } }
+  y += 20;
+  if (co.signatory_name) y = pdfRich(doc, co.signatory_name, y, { gap: 0 });
+  pdfRich(doc, co.signatory_title || 'Authorized Signatory', y, { gap: 0 });
+}
+const exitDocName = (kind, e) => `${e.full_name || 'Employee'}${e.employee_code ? ` - ${e.employee_code}` : ''} - ${EXIT_DOC[kind]}.pdf`;
+
+/* ---------- Admin: exit documents for one employee ---------- */
+async function openExitDocs(e) {
+  const [docs, fnf, on, signature] = await Promise.all([
+    q(db.from('exit_documents').select('*').eq('employee_id', e.id).is('removed_at', null)).catch(() => []),
+    q(db.from('fnf_settlements').select('*').eq('employee_id', e.id).maybeSingle()).catch(() => null),
+    driveOn(), signatureImage()]);
+  const saved = Object.fromEntries((docs || []).map((d) => [d.kind, d]));
+  const kinds = ['relieving', 'experience', ...(fnf ? ['fnf'] : [])];
+  const make = (kind) => {
+    const date = $('#ex-date', el)?.value || e.exit_date;
+    if (kind === 'relieving') return buildRelievingLetter(e, { date, signature });
+    if (kind === 'experience') return buildExperienceLetter(e, { date, signature });
+    return buildFnfStatement(e, fnf, { signature });
+  };
+  const { el } = openModal({ title: `Exit documents — ${e.full_name}`, subtitle: `Last working day ${fmtDMY(e.exit_date)}${fnf ? ` · F&F settled ${fmtDMY(fnf.settled_on)}` : ''}`, size: 'md',
+    body: `<div class="field" style="max-width:220px;margin-bottom:10px"><label>Letter date</label><input class="input" type="date" id="ex-date" value="${e.exit_date || todayISO()}"></div>
+      ${on ? '' : `<div class="alert alert-info" style="margin-bottom:10px">${icon('info')}<span>Google Drive is not connected, so documents can only be downloaded — connect it in <a href="#/storage">Storage &amp; documents</a> to issue them to the employee.</span></div>`}
+      ${signature ? '' : `<div class="alert alert-warn" style="margin-bottom:10px">${icon('alert')}<span>No signatory signature uploaded — letters print without it.</span></div>`}
+      <div class="table-wrap"><table class="table compact"><thead><tr><th>Document</th><th>Issued</th><th></th></tr></thead><tbody>
+      ${kinds.map((k) => `<tr><td><b>${EXIT_DOC[k]}</b></td><td data-st="${k}">${saved[k] ? `<span class="chip green plain">In Drive</span> <span class="faint" style="font-size:11.5px">${fmtRelative(saved[k].created_at)}</span>` : '<span class="faint">Not issued</span>'}</td>
+        <td class="actions"><button class="btn btn-sm" data-dl="${k}">${icon('download', 'sm')}PDF</button> <button class="btn btn-sm btn-primary" data-issue="${k}" ${on ? '' : 'disabled'}>${icon('upload', 'sm')}${saved[k] ? 'Issue again' : 'Issue'}</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="faint" style="font-size:12px;margin-top:8px">Issuing saves the PDF in Google Drive (Exit documents / ${esc(e.full_name)}) and shows it in the employee's exit page.</p>`,
+    footer: '<button class="btn" data-close>Close</button>' });
+  $$('[data-dl]', el).forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+    try { saveBlob((await make(b.dataset.dl)).output('blob'), exitDocName(b.dataset.dl, e)); } catch (err) { toast(friendlyError(err), 'error'); }
+  })));
+  $$('[data-issue]', el).forEach((b) => b.addEventListener('click', () => withBusy(b, 'Saving…', async () => {
+    const k = b.dataset.issue;
+    try {
+      const f = await driveUpload({ folder: ['Exit documents', `${e.full_name}${e.employee_code ? ` - ${e.employee_code}` : ''}`], name: exitDocName(k, e), blob: (await make(k)).output('blob'), owner: e.id });
+      await api.rpc('admin_record_exit_doc', { p_employee: e.id, p_kind: k, p_file_id: f.id, p_file_name: f.name });
+      $(`[data-st="${k}"]`, el).innerHTML = '<span class="chip green plain">In Drive</span> <span class="faint" style="font-size:11.5px">just now</span>';
+      toast(`${EXIT_DOC[k]} issued to ${e.full_name}`);
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  })));
+}
+
+/* ---------- Admin: complete F&F with its statement ---------- */
+async function completeFnf(e) {
+  await ensureFinance();
+  const loan = empLoanLeft(e.id);
+  const lines = [{ label: `Salary for ${e.exit_date ? monthName(e.exit_date) : 'the last month'}`, type: 'earning', amount: '' },
+    { label: 'Leave encashment', type: 'earning', amount: '' }, ...(loan > 0 ? [{ label: 'Loan recovery', type: 'deduction', amount: String(loan) }] : [])];
+  const { el, close } = openModal({ title: `Complete F&F — ${e.full_name}`, subtitle: `Last working day ${fmtDMY(e.exit_date)} · settle by ${fmtDMY(settleDue(e))}`, size: 'lg',
+    body: `<div class="field" style="max-width:220px;margin-bottom:10px"><label>Settlement date</label><input class="input" type="date" id="fnf-date" value="${todayISO()}"></div>
+      <div class="table-wrap"><table class="table compact"><thead><tr><th>Description</th><th>Type</th><th class="num">Amount (₹)</th><th></th></tr></thead><tbody id="fnf-lines"></tbody></table></div>
+      <div class="bar-row" style="margin-top:8px"><button class="btn btn-sm" id="fnf-add">${icon('plus', 'sm')}Add line</button><b id="fnf-net"></b></div>
+      <div class="field" style="margin-top:10px"><label>Note (optional, shown on the statement)</label><input class="input" id="fnf-note" placeholder="e.g. Paid by NEFT on 05/12/2026"></div>
+      <div class="alert alert-warn" style="margin-top:12px">${icon('alert')}<span>This ends <b>${esc(e.full_name)}</b>’s journey: they leave every sheet, see the F&F statement in their exit page, and can sign in for ${ACCESS_AFTER_FNF_DAYS} more days — then access ends. Everything stays in the HRMS. This cannot be undone.</span></div>`,
+    footer: '<button class="btn" data-close>Cancel</button><button class="btn btn-danger-solid" data-ok>Complete F&F</button>' });
+  const draw = () => {
+    $('#fnf-lines', el).innerHTML = lines.map((l, i) => `<tr><td><input class="input input-sm" data-l="${i}" data-k="label" value="${esc(l.label)}" style="min-width:220px"></td>
+      <td><select class="input input-sm" data-l="${i}" data-k="type"><option value="earning"${l.type === 'earning' ? ' selected' : ''}>Earning</option><option value="deduction"${l.type === 'deduction' ? ' selected' : ''}>Deduction</option></select></td>
+      <td class="num"><input class="input input-sm mono" data-l="${i}" data-k="amount" inputmode="decimal" value="${esc(l.amount)}" style="width:130px;text-align:right"></td>
+      <td class="actions"><button class="icon-btn" data-rm="${i}" title="Remove">${icon('x')}</button></td></tr>`).join('');
+    net();
+  };
+  const net = () => {
+    const n = lines.reduce((s, l) => s + (l.type === 'earning' ? 1 : -1) * (Number(l.amount) || 0), 0);
+    $('#fnf-net', el).textContent = `Net ${n < 0 ? 'recoverable' : 'payable'}: ${fmtINR(Math.abs(n))}`;
+  };
+  $('#fnf-lines', el).addEventListener('input', (ev) => { const t = ev.target; if (t.dataset.l == null) return; lines[Number(t.dataset.l)][t.dataset.k] = t.value; net(); });
+  $('#fnf-lines', el).addEventListener('change', (ev) => { const t = ev.target; if (t.dataset.l == null) return; lines[Number(t.dataset.l)][t.dataset.k] = t.value; net(); });
+  $('#fnf-lines', el).addEventListener('click', (ev) => { const b = ev.target.closest('[data-rm]'); if (!b) return; lines.splice(Number(b.dataset.rm), 1); draw(); });
+  $('#fnf-add', el).addEventListener('click', () => { lines.push({ label: '', type: 'earning', amount: '' }); draw(); });
+  draw();
+  $('[data-ok]', el).addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
+    const items = lines.filter((l) => l.label.trim() || l.amount !== '').map((l) => ({ label: l.label.trim(), type: l.type, amount: Math.round(Number(l.amount || 0) * 100) / 100 }));
+    if (items.some((l) => !l.label)) return toast('Every line needs a description', 'error');
+    if (items.some((l) => !(l.amount >= 0))) return toast('Enter a valid amount on every line', 'error');
+    const settled = $('#fnf-date', el).value;
+    if (!settled) return toast('Pick the settlement date', 'error');
+    try {
+      await api.rpc('admin_complete_fnf', { p_user: e.id, p_settled_on: settled, p_items: items, p_note: $('#fnf-note', el).value || null });
+      close();
+      toast(`F&F completed for ${e.full_name}.`);
+      // Save the statement to Drive straight away so the employee can download it
+      if (await driveOn()) {
+        try {
+          const n = items.reduce((s, l) => s + (l.type === 'earning' ? 1 : -1) * l.amount, 0);
+          const doc = await buildFnfStatement(e, { settled_on: settled, items, net: n, note: $('#fnf-note', el).value || '' }, { signature: await signatureImage() });
+          const f = await driveUpload({ folder: ['Exit documents', `${e.full_name}${e.employee_code ? ` - ${e.employee_code}` : ''}`], name: exitDocName('fnf', e), blob: doc.output('blob'), owner: e.id });
+          await api.rpc('admin_record_exit_doc', { p_employee: e.id, p_kind: 'fnf', p_file_id: f.id, p_file_name: f.name });
+        } catch (err) { toast(`F&F saved — but the statement could not be saved to Drive: ${friendlyError(err)}`, 'error'); }
+      }
+      state.payroll.runs = null;
+      state.fin.loaded = false;
+      await refreshAdmin();
+    } catch (err) { toast(friendlyError(err), 'error'); }
+  }));
+}
+
+/* ---------- Employee: exit page ---------- */
+async function pageMyExit() {
+  const X = await api.rpc('my_exit');
+  if (X?.ended) { setTimeout(endAccess, 0); return { title: 'Access ended', html: '' }; }
+  if (!X?.left) { setTimeout(() => { state.profile = null; loadSelfAndRoute(); }, 0); return { title: '', html: '' }; }
+  const p = X.profile, fnf = X.fnf;
+  const doc = Object.fromEntries((X.documents || []).map((d) => [d.kind, d]));
+  const today = todayISO();
+  const due = p.settle_due, left = due ? daysBetween(today, due) : null;
+  const docRow = (k, pending) => `<div class="list-row"><div class="person"><span class="avatar" style="background:var(--accent-soft);color:var(--accent)">${icon('file')}</span><div><div class="name">${EXIT_DOC[k]}</div>
+      <div class="sub">${doc[k] ? `Issued ${fmtDate(String(doc[k].at).slice(0, 10))}` : pending}</div></div></div>
+      <div class="right">${doc[k] ? `<button class="btn btn-sm btn-primary" data-exit-doc="${k}">${icon('download', 'sm')}Download</button>` : '<span class="chip gray plain">Not issued yet</span>'}</div></div>`;
+  state.exitSlips = X.payslips || [];
+  return {
+    title: 'My exit', crumbs: `${p.employment_status === 'terminated' ? 'Terminated' : 'Resigned'} · last working day ${fmtDMY(p.exit_date)}`,
+    html: `
+      ${fnf ? `<div class="alert alert-warn">${icon('clock')}<span>Your full and final settlement is complete. <b>Your access to the HRMS ends on ${esc(fmtDateTime(p.access_until))}</b> — please download your documents before then.</span></div>`
+        : `<div class="card"><div class="card-body exit-fnf"><div><div class="label">Full &amp; final settlement</div><div class="big">by ${fmtDMY(due)}</div>
+            <div class="muted" style="font-size:13px">60 days from your last working day (${fmtDMY(p.exit_date)})${left != null ? ` · ${left > 0 ? `${left} day(s) to go` : left === 0 ? 'due today' : 'being processed'}` : ''}</div></div>
+            <span class="chip blue">In progress</span></div></div>`}
+      ${fnf ? `<div class="card"><div class="card-head"><div><h3>F&amp;F statement</h3><p>Settled on ${fmtDMY(fnf.settled_on)}</p></div>
+          <div class="right"><button class="btn btn-sm btn-primary" data-exit-doc="fnf">${icon('download', 'sm')}Download statement</button></div></div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Description</th><th>Type</th><th class="num">Amount</th></tr></thead><tbody>
+          ${(fnf.items || []).map((x) => `<tr><td>${esc(x.label)}</td><td>${x.type === 'earning' ? 'Earning' : 'Deduction'}</td><td class="num">${x.type === 'deduction' ? '− ' : ''}${fmtINR(x.amount)}</td></tr>`).join('')}
+          <tr class="total-row"><td colspan="2"><b>Net ${Number(fnf.net) < 0 ? 'recoverable' : 'payable'}</b></td><td class="num"><b>${fmtINR(Math.abs(Number(fnf.net)))}</b></td></tr></tbody></table></div>
+        ${fnf.note ? `<div class="card-body" style="border-top:1px solid var(--border);font-size:13px">${esc(fnf.note)}</div>` : ''}</div>` : ''}
+      <div class="card"><div class="card-head"><div><h3>Your letters</h3></div></div>
+        ${docRow('relieving', 'HR issues it on or after your last working day')}
+        ${docRow('experience', 'HR issues it on or after your last working day')}</div>
+      <div class="card"><div class="card-head"><div><h3>Salary slips</h3><p>${state.exitSlips.length ? `Your last ${state.exitSlips.length === 6 ? '6 months' : `${state.exitSlips.length} month${state.exitSlips.length === 1 ? '' : 's'}`}` : 'No salary slips published'}</p></div></div>
+        ${state.exitSlips.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th class="num">Earned</th><th class="num">PT</th><th class="num">Net pay</th><th></th></tr></thead><tbody>
+          ${state.exitSlips.map((sl, i) => `<tr><td><b style="color:var(--text)">${fmtMonth(sl.month)}</b></td><td class="num">${fmtINR(sl.earned)}</td><td class="num">${fmtINR(sl.pt)}</td><td class="num"><b style="color:var(--text)">${fmtINR(sl.net)}</b></td>
+            <td class="actions"><button class="btn btn-sm" data-exit-slip="${i}">${icon('download', 'sm')}Slip</button></td></tr>`).join('')}</tbody></table></div>` : ''}</div>`,
+    mount() {
+      $$('[data-exit-doc]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+        const k = b.dataset.exitDoc;
+        try {
+          if (doc[k]) { const f = await driveDownload(doc[k].file); saveBlob(f.blob, f.name); }
+          else if (k === 'fnf') saveBlob((await buildFnfStatement(p, fnf)).output('blob'), exitDocName('fnf', p));
+        } catch (e) { toast(friendlyError(e), 'error'); }
+      })));
+      $$('[data-exit-slip]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+        try { await downloadMySlip(state.exitSlips[Number(b.dataset.exitSlip)]); } catch (e) { toast(friendlyError(e), 'error'); }
+      })));
+    },
+  };
+}
+
+/* =====================================================================
    Google Drive storage (through the Apps Script bridge in drive-bridge/Code.gs)
    Files live in the company's Drive; Supabase keeps only the Drive file id.
    KYC paths for Drive files look like "<employee id>/drive/<file id>".
@@ -6324,6 +6619,9 @@ function esopSchemeHTML(open = false) {
 /* ---------- Admin data ---------- */
 async function loadEsopAdmin() {
   await ensureAdmin();
+  return cachedLoad('esop', 30000, loadEsopAdminFresh);
+}
+async function loadEsopAdminFresh() {
   const [allocations, grants, vesting, exercises, setting] = await Promise.all([
     q(db.from('esop_allocations').select('*').is('removed_at', null).order('allocation_date')),
     fetchAll(() => db.from('esop_grants').select('*').order('member_name')),
