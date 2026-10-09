@@ -5,15 +5,16 @@
  * the uploaded Excel sheets) in a Google Drive folder instead of Supabase
  * storage. The HRMS keeps only the Drive file id.
  *
- * Every call carries the person's HRMS sign-in token; the bridge checks it
- * with Supabase before doing anything:
+ * Every call carries a short-lived pass from the HRMS, signed by the database
+ * with a shared secret; the bridge checks the signature before doing anything
+ * (no outside connection needed):
  *   - employees can only upload their own KYC (named and filed automatically)
  *     and open files that belong to them;
  *   - admins can upload salary slips, grant letters and sheets, and open any
  *     HRMS file.
  *
  * Setup: see "Storage & documents" in the HRMS admin (Settings).
- * Script properties: SUPABASE_URL, SUPABASE_ANON_KEY, ROOT_FOLDER_ID
+ * Script properties: ROOT_FOLDER_ID, DRIVE_SECRET
  */
 var APP = 'altius-hrms';
 
@@ -49,7 +50,7 @@ var ACTIONS = {
       var person = user;
       if (req.owner && req.owner !== user.id) {
         if (!user.isAdmin) throw new Error('Not allowed');
-        person = profile_(req.owner, req.token);
+        person = { id: req.owner, full_name: req.ownerName || 'Employee', employee_code: req.ownerCode || '' };
       }
       path = ['KYC', person.full_name + (person.employee_code ? ' - ' + person.employee_code : '')];
       owner = person.id;
@@ -98,13 +99,13 @@ var ACTIONS = {
   },
 };
 
-// Run this once from the editor (select "setup" → Run): Google then asks for the Drive and
-// "connect to an external service" permissions, and it checks the three script properties.
+// Run this once from the editor (select "setup" → Run): Google asks for the Drive permission,
+// and it checks the two script properties.
 function setup() {
   var folder = root_();
-  var r = UrlFetchApp.fetch(cfg_('SUPABASE_URL').replace(/\/$/, '') + '/auth/v1/health', { headers: { apikey: cfg_('SUPABASE_ANON_KEY') }, muteHttpExceptions: true });
+  cfg_('DRIVE_SECRET');
   Logger.log('Drive folder: ' + folder.getName() + ' — OK');
-  Logger.log('Supabase: ' + (r.getResponseCode() === 200 ? 'OK' : 'answered ' + r.getResponseCode() + ' — check SUPABASE_URL / SUPABASE_ANON_KEY'));
+  Logger.log('DRIVE_SECRET — OK');
 }
 
 function cfg_(k) {
@@ -114,24 +115,19 @@ function cfg_(k) {
 }
 function root_() { return DriveApp.getFolderById(cfg_('ROOT_FOLDER_ID')); }
 
-// Checks the HRMS sign-in token with Supabase and loads the person's profile
+// Checks the pass from the HRMS: base64url(json).hex(hmac_sha256(json part, DRIVE_SECRET)), valid 5 minutes
 function verify_(token) {
-  if (!token) throw new Error('Not signed in');
-  var base = cfg_('SUPABASE_URL').replace(/\/$/, '');
-  var h = { apikey: cfg_('SUPABASE_ANON_KEY'), Authorization: 'Bearer ' + token };
-  var u = UrlFetchApp.fetch(base + '/auth/v1/user', { headers: h, muteHttpExceptions: true });
-  if (u.getResponseCode() !== 200) throw new Error('Your session has expired. Please sign in again.');
-  var p = profile_(JSON.parse(u.getContentText()).id, token);
-  p.isAdmin = p.role === 'admin' && p.status === 'active';
-  return p;
-}
-function profile_(id, token) {
-  var base = cfg_('SUPABASE_URL').replace(/\/$/, '');
-  var h = { apikey: cfg_('SUPABASE_ANON_KEY'), Authorization: 'Bearer ' + token };
-  var r = UrlFetchApp.fetch(base + '/rest/v1/profiles?select=id,role,status,full_name,employee_code&id=eq.' + encodeURIComponent(id), { headers: h, muteHttpExceptions: true });
-  var rows = JSON.parse(r.getContentText() || '[]');
-  if (!rows.length) throw new Error('Profile not found');
-  return rows[0];
+  var parts = String(token || '').split('.');
+  if (parts.length !== 2) throw new Error('Not signed in');
+  var sig = Utilities.computeHmacSha256Signature(parts[0], cfg_('DRIVE_SECRET')).map(function (b) {
+    return ('0' + ((b + 256) % 256).toString(16)).slice(-2);
+  }).join('');
+  if (sig !== parts[1].toLowerCase()) throw new Error('This pass is not valid — check that DRIVE_SECRET matches the HRMS (Settings → Storage & documents).');
+  var b64 = parts[0];
+  while (b64.length % 4) b64 += '=';
+  var p = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(b64)).getDataAsString());
+  if (!p.exp || p.exp < Date.now() / 1000) throw new Error('Your session has expired. Please try again.');
+  return { id: p.uid, full_name: p.name || '', employee_code: p.eid || '', isAdmin: !!p.admin };
 }
 
 // Finds or creates root/path[0]/path[1]/…; the last folder can be tied to an owner

@@ -1054,7 +1054,7 @@ function resetSessionState() {
   state.dirty = false;
   state.emdSearch = '';
   state.admin = { loaded: false, profiles: [], salaries: [] };
-  state.drive = null; state.company = null; state.esop = null;
+  state.drive = null; state.company = null; state.esop = null; state.driveTicket = null;
 }
 
 // Signs out of this device. The local session is always cleared, even if
@@ -5585,13 +5585,16 @@ const driveOn = async () => !!(await driveSettings()).url;
 async function driveCall(action, body = {}) {
   const { url } = await driveSettings();
   if (!url) throw new Error('Google Drive is not connected yet — an admin can set it up in Settings → Storage & documents.');
-  const { data } = await db.auth.getSession();
+  // A 5-minute pass signed by the database; the bridge checks it with DRIVE_SECRET
+  if (!state.driveTicket || state.driveTicket.uid !== state.user?.id || Date.now() - state.driveTicket.at > 240000) {
+    state.driveTicket = { uid: state.user?.id, at: Date.now(), t: await api.rpc('drive_ticket') };
+  }
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 120000);
   let res;
   try {
     res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ ...body, action, token: data?.session?.access_token }), signal: ctrl.signal });
+      body: JSON.stringify({ ...body, action, token: state.driveTicket.t }), signal: ctrl.signal });
   } catch (e) {
     throw new Error(e?.name === 'AbortError' ? 'Google Drive took too long to answer. Try again.' : 'Could not reach Google Drive. Check the bridge URL in Settings → Storage & documents.');
   } finally { clearTimeout(timer); }
@@ -5924,7 +5927,6 @@ async function pageStorage() {
   const inSupabase = (kyc || []).reduce((s, k) => s + cols.filter((c) => k[c] && !isDrivePath(k[c])).length, 0);
   const inDrive = (kyc || []).reduce((s, k) => s + cols.filter((c) => isDrivePath(k[c])).length, 0);
   const canEdit = amSuper();
-  const copyRow = (label, value, id) => `<div class="bar-row" style="margin:4px 0"><span class="mono" style="font-size:12px;word-break:break-all"><b>${label}</b> = ${esc(value)}</span><button class="btn btn-xs" data-copy="${id}">Copy</button></div>`;
   return {
     title: 'Storage & documents', crumbs: 'Settings · Google Drive for files, company details for slips and letters',
     html: `
@@ -5945,13 +5947,15 @@ async function pageStorage() {
       <details class="card fold"${drive.url ? '' : ' open'}><summary class="card-head"><div><h3>Set up the Drive bridge (one time, about 10 minutes)</h3><p>A small Google Apps Script that saves files in your Drive and checks the HRMS sign-in</p></div><div class="right">${icon('arrowRight', 'sm')}</div></summary>
         <div class="card-body"><ol class="rule-list steps">
           <li>Sign in to Google with the company account that should own the files. In Drive, create a folder (e.g. <b>Altius HRMS</b>), open it and copy its id — the part of the address after <span class="mono">/folders/</span>. Keep this folder shared only with HR.</li>
-          <li>Open <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> → <b>New project</b>, name it <b>Altius HRMS Drive bridge</b>, delete what is in <span class="mono">Code.gs</span> and paste the bridge code: <button class="btn btn-xs" id="drv-copy-code">${icon('copy', 'sm')}Copy bridge code</button></li>
-          <li>⚙ <b>Project Settings</b> → <b>Script properties</b> → add these three:
-            ${copyRow('SUPABASE_URL', SUPABASE_URL, 'url')}${copyRow('SUPABASE_ANON_KEY', SUPABASE_ANON_KEY, 'key')}<div class="mono" style="font-size:12px"><b>ROOT_FOLDER_ID</b> = the folder id from step 1</div></li>
-          <li>Back in the editor, pick <b>setup</b> in the function list next to ▷ Run and click <b>Run</b>. Google asks for permission (Review permissions → your account → Advanced → Go to the project → Allow). The log should say the folder and Supabase are OK.</li>
+          <li>Open <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> → <b>New project</b>, name it <b>Altius HRMS Drive bridge</b>, delete what is in <span class="mono">Code.gs</span> and paste the bridge code: <button class="btn btn-xs" id="drv-copy-code">${icon('copy', 'sm')}Copy bridge code</button> (updating an existing bridge? paste the new code over the old one, then make a new version as in step 5)</li>
+          <li>⚙ <b>Project Settings</b> → <b>Script properties</b> → add these two:
+            <div class="mono" style="font-size:12px;margin:4px 0"><b>ROOT_FOLDER_ID</b> = the folder id from step 1</div>
+            <div class="bar-row" style="margin:4px 0"><span class="mono" style="font-size:12px;word-break:break-all"><b>DRIVE_SECRET</b> = <span id="drv-secret">${canEdit ? '••••••••' : 'only a Super Admin can see this'}</span></span>${canEdit ? '<button class="btn btn-xs" id="drv-secret-copy">Show &amp; copy</button>' : ''}</div>
+            <span class="faint" style="font-size:12px">The secret lets the bridge check that a request really comes from someone signed in to the HRMS — keep it private.</span></li>
+          <li>Back in the editor, pick <b>setup</b> in the function list next to ▷ Run and click <b>Run</b>. If Google asks for permission: Review permissions → your account → Advanced → Go to the project → Allow. The log should say the folder and DRIVE_SECRET are OK.</li>
           <li><b>Deploy</b> → <b>New deployment</b> → type <b>Web app</b> → Execute as <b>Me</b>, Who has access <b>Anyone</b> → <b>Deploy</b>. Allow access when Google asks (Advanced → Go to the project).</li>
           <li>Copy the <b>Web app URL</b>, paste it above, click <b>Save</b>, then <b>Test connection</b>.</li>
-        </ol><p class="faint" style="font-size:12px">“Anyone” only lets the HRMS reach the script — every request must carry a valid HRMS sign-in, employees can only add their own KYC and open their own files, and only admins can save or open anything else. When you change the code later, use Deploy → Manage deployments → edit → New version so the URL stays the same.</p></div></details>
+        </ol><p class="faint" style="font-size:12px">“Anyone” only lets the HRMS reach the script — every request must carry a pass signed for someone signed in to the HRMS, employees can only add their own KYC and open their own files, and only admins can save or open anything else. When you change the code later, use Deploy → Manage deployments → edit → New version so the URL stays the same.</p></div></details>
       <div class="card"><div class="card-head"><div><h3>Company details on documents</h3><p>Printed on salary slips and ESOP grant letters</p></div></div>
         <div class="card-body"><div class="grid g2" style="gap:10px">
           <div class="field"><label>Company name</label><input class="input" id="co-name" value="${esc(co.name)}" ${canEdit ? '' : 'disabled'}></div>
@@ -5965,7 +5969,10 @@ async function pageStorage() {
         <div class="card-body"><p class="muted" style="font-size:13px">New KYC uploads go straight to Drive once it is connected. <b>Move to Drive</b> copies the older files into each employee's KYC folder with the new names, points the HRMS at the Drive copy, and then deletes them from Supabase storage to free space.</p>
         <p class="faint" style="font-size:12px;margin-top:6px" id="kyc-move-msg"></p></div></div>`,
     mount() {
-      $$('[data-copy]').forEach((b) => b.addEventListener('click', () => { navigator.clipboard?.writeText(b.dataset.copy === 'url' ? SUPABASE_URL : SUPABASE_ANON_KEY); toast('Copied'); }));
+      $('#drv-secret-copy')?.addEventListener('click', (ev) => withBusy(ev.currentTarget, '', async () => {
+        try { const v = await api.rpc('admin_drive_secret'); $('#drv-secret').textContent = v; navigator.clipboard?.writeText(v); toast('Secret copied — paste it as DRIVE_SECRET'); }
+        catch (e) { toast(friendlyError(e), 'error'); }
+      }));
       $('#drv-copy-code').addEventListener('click', () => { navigator.clipboard?.writeText($('#drive-bridge-code').textContent.trim()); toast('Bridge code copied — paste it into Code.gs'); });
       $('#drv-save')?.addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
         const url = $('#drv-url').value.trim();
@@ -6000,7 +6007,7 @@ async function pageStorage() {
               try {
                 const blob = await (await fetch(await api.signedUrl(p))).blob();
                 const ext = (p.split('.').pop() || 'pdf').toLowerCase();
-                const f = await driveCall('upload', { kind: 'kyc', owner: k.employee_id, label: d.label, ext, mime: blob.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'), data: await blobToB64(blob) });
+                const f = await driveCall('upload', { kind: 'kyc', owner: k.employee_id, ownerName: emp?.full_name, ownerCode: emp?.employee_code || '', label: d.label, ext, mime: blob.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'), data: await blobToB64(blob) });
                 paths[d.col] = `${k.employee_id}/drive/${f.id}`; old.push(p);
               } catch (e) { fails.push(`${emp?.full_name || k.employee_id} ${d.label}: ${friendlyError(e)}`); }
             }
@@ -7178,15 +7185,16 @@ window.addEventListener('unhandledrejection', (e) => toast(friendlyError(e.reaso
  * the uploaded Excel sheets) in a Google Drive folder instead of Supabase
  * storage. The HRMS keeps only the Drive file id.
  *
- * Every call carries the person's HRMS sign-in token; the bridge checks it
- * with Supabase before doing anything:
+ * Every call carries a short-lived pass from the HRMS, signed by the database
+ * with a shared secret; the bridge checks the signature before doing anything
+ * (no outside connection needed):
  *   - employees can only upload their own KYC (named and filed automatically)
  *     and open files that belong to them;
  *   - admins can upload salary slips, grant letters and sheets, and open any
  *     HRMS file.
  *
  * Setup: see "Storage & documents" in the HRMS admin (Settings).
- * Script properties: SUPABASE_URL, SUPABASE_ANON_KEY, ROOT_FOLDER_ID
+ * Script properties: ROOT_FOLDER_ID, DRIVE_SECRET
  */
 var APP = 'altius-hrms';
 
@@ -7222,7 +7230,7 @@ var ACTIONS = {
       var person = user;
       if (req.owner && req.owner !== user.id) {
         if (!user.isAdmin) throw new Error('Not allowed');
-        person = profile_(req.owner, req.token);
+        person = { id: req.owner, full_name: req.ownerName || 'Employee', employee_code: req.ownerCode || '' };
       }
       path = ['KYC', person.full_name + (person.employee_code ? ' - ' + person.employee_code : '')];
       owner = person.id;
@@ -7271,13 +7279,13 @@ var ACTIONS = {
   },
 };
 
-// Run this once from the editor (select "setup" → Run): Google then asks for the Drive and
-// "connect to an external service" permissions, and it checks the three script properties.
+// Run this once from the editor (select "setup" → Run): Google asks for the Drive permission,
+// and it checks the two script properties.
 function setup() {
   var folder = root_();
-  var r = UrlFetchApp.fetch(cfg_('SUPABASE_URL').replace(/\/$/, '') + '/auth/v1/health', { headers: { apikey: cfg_('SUPABASE_ANON_KEY') }, muteHttpExceptions: true });
+  cfg_('DRIVE_SECRET');
   Logger.log('Drive folder: ' + folder.getName() + ' — OK');
-  Logger.log('Supabase: ' + (r.getResponseCode() === 200 ? 'OK' : 'answered ' + r.getResponseCode() + ' — check SUPABASE_URL / SUPABASE_ANON_KEY'));
+  Logger.log('DRIVE_SECRET — OK');
 }
 
 function cfg_(k) {
@@ -7287,24 +7295,19 @@ function cfg_(k) {
 }
 function root_() { return DriveApp.getFolderById(cfg_('ROOT_FOLDER_ID')); }
 
-// Checks the HRMS sign-in token with Supabase and loads the person's profile
+// Checks the pass from the HRMS: base64url(json).hex(hmac_sha256(json part, DRIVE_SECRET)), valid 5 minutes
 function verify_(token) {
-  if (!token) throw new Error('Not signed in');
-  var base = cfg_('SUPABASE_URL').replace(/\/$/, '');
-  var h = { apikey: cfg_('SUPABASE_ANON_KEY'), Authorization: 'Bearer ' + token };
-  var u = UrlFetchApp.fetch(base + '/auth/v1/user', { headers: h, muteHttpExceptions: true });
-  if (u.getResponseCode() !== 200) throw new Error('Your session has expired. Please sign in again.');
-  var p = profile_(JSON.parse(u.getContentText()).id, token);
-  p.isAdmin = p.role === 'admin' && p.status === 'active';
-  return p;
-}
-function profile_(id, token) {
-  var base = cfg_('SUPABASE_URL').replace(/\/$/, '');
-  var h = { apikey: cfg_('SUPABASE_ANON_KEY'), Authorization: 'Bearer ' + token };
-  var r = UrlFetchApp.fetch(base + '/rest/v1/profiles?select=id,role,status,full_name,employee_code&id=eq.' + encodeURIComponent(id), { headers: h, muteHttpExceptions: true });
-  var rows = JSON.parse(r.getContentText() || '[]');
-  if (!rows.length) throw new Error('Profile not found');
-  return rows[0];
+  var parts = String(token || '').split('.');
+  if (parts.length !== 2) throw new Error('Not signed in');
+  var sig = Utilities.computeHmacSha256Signature(parts[0], cfg_('DRIVE_SECRET')).map(function (b) {
+    return ('0' + ((b + 256) % 256).toString(16)).slice(-2);
+  }).join('');
+  if (sig !== parts[1].toLowerCase()) throw new Error('This pass is not valid — check that DRIVE_SECRET matches the HRMS (Settings → Storage & documents).');
+  var b64 = parts[0];
+  while (b64.length % 4) b64 += '=';
+  var p = JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(b64)).getDataAsString());
+  if (!p.exp || p.exp < Date.now() / 1000) throw new Error('Your session has expired. Please try again.');
+  return { id: p.uid, full_name: p.name || '', employee_code: p.eid || '', isAdmin: !!p.admin };
 }
 
 // Finds or creates root/path[0]/path[1]/…; the last folder can be tied to an owner
