@@ -559,7 +559,7 @@
   .ch-legend b { color: var(--text); font-weight: 600; }
   .card-head .right .ch-legend { margin-top: 0; }
   .ch-scroll { overflow-x: auto; }
-  svg.chart { display: block; max-width: 100%; height: auto; }
+  svg.chart { display: block; height: auto; }
   svg.chart .ch-grid { stroke: var(--border); stroke-width: 1; }
   svg.chart .ch-axis { font-size: 11px; fill: var(--muted); }
   svg.chart .ch-axis.faint { font-size: 10px; fill: var(--faint, #9CA3AF); }
@@ -935,7 +935,7 @@ const api = {
   allSalaries: () => q(db.from('salary_history').select('employee_id, effective_month, amount').is('removed_at', null).order('effective_month')),
   kycFor: (id) => q(db.from('kyc_submissions').select('*').eq('employee_id', id).maybeSingle()),
   upload: (path, file) => q(db.storage.from(BUCKET).upload(path, file, { upsert: false, contentType: file.type || undefined })),
-  removeFiles: (paths) => db.storage.from(BUCKET).remove(paths),
+  removeFiles: (paths) => { const p = paths.filter((x) => !isDrivePath(x)); return p.length ? db.storage.from(BUCKET).remove(p) : Promise.resolve({ data: [] }); },
   signedUrl: async (path) => (await q(db.storage.from(BUCKET).createSignedUrl(path, 600))).signedUrl,
   rpc: (fn, args) => q(db.rpc(fn, args)),
 };
@@ -947,7 +947,7 @@ async function openDocument(path) {
   const w = window.open('', '_blank');
   if (w) w.document.write('<p style="font:14px system-ui;color:#6B7280;padding:24px">Opening document…</p>');
   try {
-    const url = await api.signedUrl(path);
+    const url = isDrivePath(path) ? URL.createObjectURL((await driveDownload(driveIdOf(path))).blob) : await api.signedUrl(path);
     if (w) { w.opener = null; w.location.replace(url); } else { window.location.href = url; }
   } catch (e) {
     if (w) w.close();
@@ -1054,6 +1054,7 @@ function resetSessionState() {
   state.dirty = false;
   state.emdSearch = '';
   state.admin = { loaded: false, profiles: [], salaries: [] };
+  state.drive = null; state.company = null; state.esop = null;
 }
 
 // Signs out of this device. The local session is always cleared, even if
@@ -1640,9 +1641,14 @@ async function renderKycForm() {
     const area = $('.drop, .file', tile);
     if (area) area.outerHTML = `<div class="drop" style="cursor:default">${spinnerHTML}<b>Uploading…</b><span>${esc(file.name)}</span></div>`;
     $('.acts', tile)?.remove();
-    const path = `${state.user.id}/${key}-${Date.now()}.${ext === 'jpeg' ? 'jpg' : ext}`;
+    let path = `${state.user.id}/${key}-${Date.now()}.${ext === 'jpeg' ? 'jpg' : ext}`;
     try {
-      await api.upload(path, file);
+      if (await driveOn()) {
+        // Saved in Google Drive as "<Name> - <Document>.<ext>" in the employee's KYC folder
+        const f = await driveCall('upload', { kind: 'kyc', label: DOCS.find((d) => d.key === key).label, ext: ext === 'jpeg' ? 'jpg' : ext,
+          mime: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'), data: await blobToB64(file) });
+        path = `${state.user.id}/drive/${f.id}`;
+      } else await api.upload(path, file);
       uploadedNow.add(path);
       const prev = k.files[key];
       if (prev && !savedPaths.has(prev.path)) api.removeFiles([prev.path]).catch(() => {});
@@ -1750,6 +1756,7 @@ const NAV = {
       { key: 'esops', label: 'ESOPs', icon: 'pie' },
       { label: 'Settings' },
       { key: 'team-access', label: 'Team Access', icon: 'sliders' },
+      { key: 'storage', label: 'Storage & documents', icon: 'file' },
       { key: 'rules', label: 'Rules & formulas', icon: 'info' },
       { key: 'account', label: 'My Account', icon: 'lock' },
     ];
@@ -1767,7 +1774,7 @@ const NAV = {
 };
 const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, rules: pageRules, leaves: pageLeaves, wfh: pageAdminWfh, holidays: pageHolidays, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
-    variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops },
+    variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops, storage: pageStorage },
   team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, wfh: pageMyWfh, esop: pageMyEsop, kyc: pageTeamKyc },
 };
 const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
@@ -2297,6 +2304,7 @@ function showBulkPreview(file, rows) {
       $('#bulk-table', dlg.el).innerHTML = tableHTML();
     }
     $('#bulk-table', dlg.el).innerHTML = tableHTML();
+    if (added) archiveUpload('Employees', file);
     $('#bulk-progress', dlg.el).innerHTML = `<b>${added} of ${order.length} added.</b> Download the sign-in details to share each person’s email and temporary password.${stopped ? ` <span class="error-text">${esc(stopped)}</span>` : ''}`;
     $$('[data-close]', dlg.el).forEach((b) => { b.disabled = false; });
     const foot = btn.parentElement;
@@ -3693,6 +3701,7 @@ function showImportPreview(file, parsed) {
     try {
       const runId = await withBusy(e.currentTarget, 'Saving…', () => api.rpc('admin_import_attendance', { p_month: month, p_file_name: file.name, p_rows: rows }));
       close();
+      archiveUpload('Attendance', file);
       state.payroll.runId = runId;
       await ensurePayroll({ reload: true });
       const unmapped = payrollSheet().unmapped.length;
@@ -3780,6 +3789,7 @@ async function pagePayrollCalc() {
         <div class="card-head"><div><h3>Salary calculation — ${fmtMonth(run.month)}</h3></div>
           <div class="right"><button class="btn btn-sm" id="export-payroll" ${mapped.length ? '' : 'disabled'}>${icon('download', 'sm')}Export CSV</button>
           <button class="btn btn-sm" id="save-payroll" ${mapped.length ? '' : 'disabled'}>${icon('check', 'sm')}Save payroll</button>
+          <button class="btn btn-sm" id="slips-payroll" ${P.data.results.length ? '' : 'disabled title="Save the payroll first"'}>${icon('file', 'sm')}Salary slips</button>
           <button class="btn btn-sm btn-primary" id="push-payroll" ${mapped.length ? '' : 'disabled'} title="Save, then publish each employee’s final day-wise sheet in their portal">${icon('upload', 'sm')}Save &amp; push</button></div></div>
         ${mapped.length ? '' : emptyState('users', 'No mapped employees yet', 'Map the sheet’s EmpCodes to employees in the <a href="#/payroll/mapping">Mapping</a> tab.')}
       </div>
@@ -3798,6 +3808,7 @@ async function pagePayrollCalc() {
       }));
       $$('[data-fnf]').forEach((b) => b.addEventListener('click', () => completeFnf(byId(b.dataset.fnf))));
       $('#export-payroll')?.addEventListener('click', () => exportPayrollCsv(run, mapped));
+      $('#slips-payroll')?.addEventListener('click', (ev) => withBusy(ev.currentTarget, '', () => openSalarySlips(run, P.data.results).catch((e) => toast(friendlyError(e), 'error'))));
       const results = () => mapped.filter((m) => m.salary != null).map((m) => ({
         employee_id: m.emp.id, emp_code: m.g.code, monthly_salary: m.salary, daily_salary: Number(m.daily.toFixed(4)),
         pre_full: m.pre.F, pre_half: m.pre.HD, pre_leave: m.pre.L, pre_weekly_off: m.pre.WO,
@@ -4337,6 +4348,7 @@ async function pageRules(r) {
         'For 12 hours after the first push, an employee can ask about a Leave or Half day on a specific date',
         'When the queried day is changed and saved or pushed, the query is resolved automatically',
         'Admins can change days and answer queries at any time',
+        'Every published month stays in the employee’s Pay record with a salary slip to download; the day-wise sheet is shown only during the 12 hours',
         'People in Resigned & Terminated can’t raise queries'])}
       ${sec('esop', 'ESOPs', [
         'Grants and the vesting schedule come from the allocation Excel; each schedule month (e.g. Mar\'27) vests on the last day of that month',
@@ -4344,7 +4356,8 @@ async function pageRules(r) {
         'On resignation or termination, unvested options after the notice date (or the last working day) go back to the pool',
         'Vested options not exercised within 6 months of the last working day (30 days after a termination), or by the end of the exercise period, lapse back to the pool',
         'Available in pool = pool − granted + returned',
-        'Uploading a sheet with the same allocation date replaces that allocation'])}
+        'Each uploaded sheet (e.g. weekly) is a separate allocation; the final position adds all allocations up. Uploading a sheet with the same allocation date replaces that allocation',
+        'A sheet without schedule columns vests from its vesting notes (e.g. “25% each - 4 years”, “50% - 2 years”; none = 25% a year for 4 years) on each anniversary of the allocation date, rounded to whole options'])}
       ${sec('mapping', 'Payroll mapping', [
         'Each EmpCode in the attendance sheet is mapped to an employee; only mapped employees are paid',
         'The EmpCode should be the same as the Employee ID in Employee Master Data — case and leading zeros are ignored (0003 = 003)',
@@ -4919,6 +4932,7 @@ function showVariableImport(file, rows) {
     try {
       const res = await withBusy(ev.currentTarget, 'Importing…', () => api.rpc('admin_import_variable', { p_month: month(), p_file_name: file.name, p_rows: rows, p_replace: replace }));
       close();
+      archiveUpload('Variable', file);
       state.variableMonth = month();
       toast(`Variable for ${fmtMonth(month())} imported — ${res?.rows ?? rows.length} row(s)${res?.unmatched ? `, ${res.unmatched} not matched` : ''}.`);
       await ensureFinance(true);
@@ -5555,6 +5569,454 @@ async function pageExpenseEmployee(id) {
 
 /* ---------- ESOPs ---------- */
 /* =====================================================================
+   Google Drive storage (through the Apps Script bridge in drive-bridge/Code.gs)
+   Files live in the company's Drive; Supabase keeps only the Drive file id.
+   KYC paths for Drive files look like "<employee id>/drive/<file id>".
+   ===================================================================== */
+const isDrivePath = (p) => /^[^/]+\/drive\/[^/]+$/.test(String(p || ''));
+const driveIdOf = (p) => String(p).split('/drive/')[1];
+async function driveSettings(force = false) {
+  if (state.drive && !force) return state.drive;
+  const row = await q(db.from('app_settings').select('value').eq('key', 'drive').maybeSingle()).catch(() => null);
+  state.drive = { url: String(row?.value?.url || '').trim() };
+  return state.drive;
+}
+const driveOn = async () => !!(await driveSettings()).url;
+async function driveCall(action, body = {}) {
+  const { url } = await driveSettings();
+  if (!url) throw new Error('Google Drive is not connected yet — an admin can set it up in Settings → Storage & documents.');
+  const { data } = await db.auth.getSession();
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 120000);
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ ...body, action, token: data?.session?.access_token }), signal: ctrl.signal });
+  } catch (e) {
+    throw new Error(e?.name === 'AbortError' ? 'Google Drive took too long to answer. Try again.' : 'Could not reach Google Drive. Check the bridge URL in Settings → Storage & documents.');
+  } finally { clearTimeout(timer); }
+  const j = await res.json().catch(() => null);
+  if (!j) throw new Error('Google Drive did not answer properly — check that the bridge is deployed as a web app for “Anyone”.');
+  if (!j.ok) throw new Error(j.error || 'Google Drive error');
+  return j;
+}
+const blobToB64 = (blob) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(',')[1] || '');
+  r.onerror = () => reject(r.error);
+  r.readAsDataURL(blob);
+});
+function b64ToBlob(b64, mime) {
+  const bin = atob(b64); const a = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+  return new Blob([a], { type: mime || 'application/octet-stream' });
+}
+function saveBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+}
+async function driveUpload({ folder, name, blob, owner = '', replace = true }) {
+  return driveCall('upload', { folder, name, owner, replace, mime: blob.type || 'application/octet-stream', data: await blobToB64(blob) });
+}
+async function driveDownload(id) {
+  const r = await driveCall('get', { id });
+  return { blob: b64ToBlob(r.data, r.mime), name: r.name, url: r.url };
+}
+// Keeps a copy of an uploaded sheet in Drive (Uploads/<section>/<YYYY-MM>/…). Never blocks the import.
+async function archiveUpload(section, file) {
+  try {
+    if (!(await driveOn())) return;
+    const n = new Date();
+    await driveCall('upload', { folder: ['Uploads', section, `${n.getFullYear()}-${pad(n.getMonth() + 1)}`],
+      name: `${fmtDMY(todayISO())} ${pad(n.getHours())}${pad(n.getMinutes())} - ${file.name}`, replace: false,
+      mime: file.type || 'application/octet-stream', data: await blobToB64(file) });
+  } catch (e) { toast(`Saved — but the sheet could not be copied to Google Drive: ${friendlyError(e)}`, 'error'); }
+}
+
+/* ---------- PDFs (made in the browser) ---------- */
+const JSPDF_SRC = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+const AUTOTABLE_SRC = 'https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js';
+const scriptLoads = {};
+function loadScript(src) {
+  if (!scriptLoads[src]) {
+    scriptLoads[src] = new Promise((resolve, reject) => {
+      const s = document.createElement('script'); s.src = src; s.onload = resolve;
+      s.onerror = () => { delete scriptLoads[src]; reject(new Error('Could not load the PDF maker. Check your connection and try again.')); };
+      document.head.appendChild(s);
+    });
+  }
+  return scriptLoads[src];
+}
+async function loadPDF() { await loadScript(JSPDF_SRC); await loadScript(AUTOTABLE_SRC); return window.jspdf.jsPDF; }
+const COMPANY_DEFAULT = { name: 'Altius Investech Private Limited', address: '', cin: '', signatory_name: '', signatory_title: 'Director' };
+async function companyInfo(force = false) {
+  if (state.company && !force) return state.company;
+  const row = await q(db.from('app_settings').select('value').eq('key', 'company').maybeSingle()).catch(() => null);
+  state.company = { ...COMPANY_DEFAULT, ...(row?.value || {}) };
+  return state.company;
+}
+const rsAmt = (n) => `Rs. ${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function inrWords(num) {
+  const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const two = (x) => (x < 20 ? a[x] : `${b[Math.floor(x / 10)]}${x % 10 ? ` ${a[x % 10]}` : ''}`);
+  const three = (x) => (x >= 100 ? `${a[Math.floor(x / 100)]} Hundred${x % 100 ? ` ${two(x % 100)}` : ''}` : two(x));
+  const words = (n) => {
+    if (n === 0) return '';
+    const out = [];
+    const cr = Math.floor(n / 1e7); n %= 1e7;
+    const lk = Math.floor(n / 1e5); n %= 1e5;
+    const th = Math.floor(n / 1e3); n %= 1e3;
+    if (cr) out.push(`${words(cr)} Crore`);
+    if (lk) out.push(`${two(lk)} Lakh`);
+    if (th) out.push(`${two(th)} Thousand`);
+    if (n) out.push(three(n));
+    return out.join(' ');
+  };
+  const total = Math.round(Math.abs(Number(num) || 0) * 100);
+  const rupees = Math.floor(total / 100), paise = total % 100;
+  return `Rupees ${words(rupees) || 'Zero'}${paise ? ` and ${two(paise)} Paise` : ''} Only`;
+}
+const PDF = { L: 16, W: 178, ink: [17, 24, 39], muted: [107, 114, 128], line: [229, 231, 235] };
+function pdfLetterhead(doc, co) {
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...PDF.ink);
+  doc.text(co.name || COMPANY_DEFAULT.name, PDF.L, 18);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(...PDF.muted);
+  let y = 23;
+  for (const line of doc.splitTextToSize([co.address, co.cin ? `CIN: ${co.cin}` : ''].filter(Boolean).join('  ·  '), PDF.W)) { doc.text(line, PDF.L, y); y += 4; }
+  doc.setDrawColor(...PDF.line); doc.setLineWidth(0.4); doc.line(PDF.L, y, PDF.L + PDF.W, y);
+  doc.setTextColor(...PDF.ink);
+  return y + 8;
+}
+function pdfPara(doc, text, y, { size = 10, bold = false, gap = 2.5, color = PDF.ink } = {}) {
+  doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(size); doc.setTextColor(...color);
+  const lines = doc.splitTextToSize(text, PDF.W);
+  const lh = size * 0.47;
+  if (y + lines.length * lh > 282) { doc.addPage(); y = 20; }
+  doc.text(lines, PDF.L, y);
+  doc.setTextColor(...PDF.ink);
+  return y + lines.length * lh + gap;
+}
+function pdfFooter(doc, text) {
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...PDF.muted);
+    doc.text(`${text}${n > 1 ? `  ·  Page ${i} of ${n}` : ''}`, PDF.L, 290);
+  }
+  doc.setTextColor(...PDF.ink);
+}
+const pdfTable = (doc, y, opts) => {
+  doc.autoTable({ startY: y, margin: { left: PDF.L, right: PDF.L }, theme: 'grid',
+    styles: { fontSize: 9, cellPadding: 2.2, textColor: PDF.ink, lineColor: PDF.line, lineWidth: 0.2 },
+    headStyles: { fillColor: [243, 244, 246], textColor: PDF.ink, fontStyle: 'bold' }, ...opts });
+  return doc.lastAutoTable.finalY + 6;
+};
+const monthName = (iso) => parseISODate(iso).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+
+// s: {month, employee:{full_name, employee_code, designation, date_of_joining, bank_last4}, monthly_salary, daily_salary,
+//     full, half, leave, weekly_off, holidays, wfh, earned, pt, net}
+async function buildSalarySlip(s) {
+  const [JsPDF, co] = await Promise.all([loadPDF(), companyInfo()]);
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  let y = pdfLetterhead(doc, co);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12.5);
+  doc.text(`Salary slip — ${monthName(s.month)}`, PDF.L, y); y += 7;
+  const e = s.employee || {};
+  const d = parseISODate(s.month); const dim = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const paidDays = Number(s.daily_salary) > 0 ? Math.round((Number(s.earned) / Number(s.daily_salary)) * 100) / 100 : null;
+  y = pdfTable(doc, y, { theme: 'plain', styles: { fontSize: 9.5, cellPadding: 1.6 }, columnStyles: { 0: { textColor: PDF.muted, cellWidth: 34 }, 2: { textColor: PDF.muted, cellWidth: 34 } },
+    body: [['Employee name', e.full_name || '—', 'Employee ID', e.employee_code || '—'],
+      ['Designation', e.designation || '—', 'Date of joining', e.date_of_joining ? fmtDMY(e.date_of_joining) : '—'],
+      ['Pay period', monthName(s.month), 'Bank account', e.bank_last4 ? `XXXX${e.bank_last4}` : '—'],
+      ['Days in month', String(dim), 'Paid days', paidDays == null ? '—' : String(paidDays)]] });
+  y = pdfTable(doc, y, { head: [['Full days', 'Half days', 'Leave', 'Weekly off', 'Holidays', 'WFH']],
+    body: [[s.full, s.half, s.leave, s.weekly_off, s.holidays || 0, s.wfh || 0].map((v) => String(v ?? 0))], styles: { halign: 'center', fontSize: 9 },
+    headStyles: { fillColor: [243, 244, 246], textColor: PDF.ink, fontStyle: 'bold', halign: 'center' } });
+  y = pdfTable(doc, y, { head: [['Earnings', 'Amount', 'Deductions', 'Amount']],
+    columnStyles: { 1: { halign: 'right' }, 3: { halign: 'right' } },
+    body: [['Monthly salary (gross)', rsAmt(s.monthly_salary), 'Professional Tax', rsAmt(s.pt)],
+      ['Earned for the month', rsAmt(s.earned), '', ''],
+      [{ content: 'Total earnings', styles: { fontStyle: 'bold' } }, { content: rsAmt(s.earned), styles: { fontStyle: 'bold' } },
+        { content: 'Total deductions', styles: { fontStyle: 'bold' } }, { content: rsAmt(s.pt), styles: { fontStyle: 'bold' } }]] });
+  doc.setFillColor(243, 244, 246); doc.roundedRect(PDF.L, y - 2, PDF.W, 17, 2, 2, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text(`Net pay: ${rsAmt(s.net)}`, PDF.L + 4, y + 5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...PDF.muted); doc.text(inrWords(s.net), PDF.L + 4, y + 11);
+  doc.setTextColor(...PDF.ink); y += 24;
+  y = pdfPara(doc, 'Earned = (full days + paid weekly offs) × daily salary + half days × daily salary × ½, where daily salary = monthly salary ÷ 30. Holidays and WFH days count as full days.', y, { size: 8.5, color: PDF.muted });
+  pdfFooter(doc, `This is a computer-generated salary slip from Altius HRMS and needs no signature. Generated on ${fmtDMY(todayISO())}.`);
+  return doc;
+}
+const slipFileName = (s) => `${s.employee?.full_name || 'Employee'}${s.employee?.employee_code ? ` - ${s.employee.employee_code}` : ''} - Salary slip ${monthName(s.month)}.pdf`;
+
+// g: {date, employee:{full_name, employee_code, designation}, allocation:{allocation_date, exercise_years, exercise_price},
+//     grants:[{type, options, note}], vesting:[{date, label, options}]}
+async function buildGrantLetter(g) {
+  const [JsPDF, co] = await Promise.all([loadPDF(), companyInfo()]);
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  let y = pdfLetterhead(doc, co);
+  const e = g.employee || {}, a = g.allocation || {};
+  const total = g.grants.reduce((s, x) => s + Number(x.options), 0);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+  doc.text(`Date: ${fmtDMY(g.date || a.allocation_date)}`, PDF.L, y);
+  doc.setFont('helvetica', 'bold'); doc.text('STRICTLY PRIVATE & CONFIDENTIAL', PDF.L + PDF.W, y, { align: 'right' }); y += 8;
+  y = pdfPara(doc, `To\n${e.full_name || ''}${e.employee_code ? `\nEmployee ID: ${e.employee_code}` : ''}${e.designation ? `\n${e.designation}` : ''}`, y, { size: 10, gap: 4 });
+  y = pdfPara(doc, 'Subject: Grant of Stock Options under the Altius Investech Employee Stock Option Plan – 2026 (“ESOP 2026”)', y, { size: 10.5, bold: true, gap: 4 });
+  y = pdfPara(doc, `Dear ${firstName(e.full_name || '')},`, y, { gap: 3 });
+  y = pdfPara(doc, `We are pleased to inform you that the Committee has granted you ${fmtNum(total)} (${inrWords(total).replace(/^Rupees /, '').replace(/ Only$/, '')}) Stock Option${total === 1 ? '' : 's'} under ESOP 2026, on the terms set out in this letter and subject to the Scheme. Each Option gives you the right, but not the obligation, to apply for one Equity Share of the Company of face value Rs.100, once it has vested and on payment of the Exercise Price.`, y, { gap: 4 });
+  y = pdfTable(doc, y, { theme: 'plain', styles: { fontSize: 9.5, cellPadding: 1.6 }, columnStyles: { 0: { textColor: PDF.muted, cellWidth: 52 } },
+    body: [['Grant date', fmtDMY(a.allocation_date)], ['Number of Options', fmtNum(total)],
+      ['Exercise price per Option', a.exercise_price != null && a.exercise_price !== '' ? rsAmt(a.exercise_price) : 'As fixed by the Committee (not below the face value of Rs.100)'],
+      ['Exercise period', a.exercise_years ? `${a.exercise_years} years from the grant date, i.e. up to ${fmtDMY(addYearsISO(a.allocation_date, a.exercise_years))}` : 'As per the Scheme']] });
+  if (g.grants.length > 1 || g.grants[0]?.note) {
+    y = pdfTable(doc, y, { head: [['Grant', 'Options', 'Vesting']], columnStyles: { 1: { halign: 'right' } },
+      body: g.grants.map((x) => [x.type, fmtNum(x.options), x.note || '']) });
+  }
+  let cum = 0;
+  y = pdfTable(doc, y, { head: [['Vesting date', 'Options vesting', 'Cumulative vested']], columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
+    body: [...g.vesting].sort((p, q2) => p.date.localeCompare(q2.date)).map((v) => { cum += Number(v.options); return [`${fmtDMY(v.date)}${v.label ? `  (${v.label})` : ''}`, fmtNum(v.options), fmtNum(cum)]; }) });
+  y = pdfPara(doc, 'Key terms', y, { bold: true, size: 10.5, gap: 2 });
+  const terms = [
+    'Vesting needs you to be in continuous employment with the Company and not to be serving notice on the vesting date.',
+    'If you resign or your employment is terminated (other than for misconduct), unvested Options are cancelled from the date of notice. Vested Options may be exercised within 6 months of your last working day after a resignation, or 30 days after a termination; otherwise they lapse.',
+    'If your employment is terminated for misconduct, all Options — vested and unvested — are cancelled.',
+    'Options are personal to you and cannot be transferred, pledged or otherwise dealt with. You have no shareholder rights until Shares are allotted to you.',
+    'Shares allotted on exercise may be subject to lock-in, right of first refusal and tag-along / drag-along terms as set out in the Scheme and the Company’s articles.',
+    'All taxes arising on exercise or sale of Shares are borne by you; the Company may withhold tax as required by law.',
+    'This letter is to be read with ESOP 2026. If there is any difference, the Scheme prevails.'];
+  for (const t of terms) y = pdfPara(doc, `•  ${t}`, y, { size: 9.3, gap: 1.6 });
+  y += 2;
+  y = pdfPara(doc, 'Please confirm your acceptance by signing and returning a copy of this letter within 30 days of the date above; a grant not accepted within that time lapses.', y, { gap: 8 });
+  if (y > 240) { doc.addPage(); y = 24; }
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  doc.text(`For ${co.name || COMPANY_DEFAULT.name}`, PDF.L, y); y += 18;
+  doc.line(PDF.L, y, PDF.L + 60, y); y += 5;
+  doc.text([co.signatory_name, co.signatory_title].filter(Boolean).join(', ') || 'Authorised signatory', PDF.L, y); y += 12;
+  y = pdfPara(doc, 'Acceptance', y, { bold: true, size: 10.5, gap: 2 });
+  y = pdfPara(doc, `I, ${e.full_name || '____________'}, accept the grant of ${fmtNum(total)} Options on the terms of this letter and ESOP 2026.`, y, { gap: 14 });
+  doc.line(PDF.L, y, PDF.L + 60, y); doc.line(PDF.L + 100, y, PDF.L + 150, y); y += 5;
+  doc.setFontSize(9); doc.text('Signature', PDF.L, y); doc.text('Date', PDF.L + 100, y);
+  pdfFooter(doc, `${co.name || COMPANY_DEFAULT.name} · ESOP 2026 grant letter · ${e.full_name || ''}`);
+  return doc;
+}
+const letterFileName = (g) => `${g.employee?.full_name || 'Member'} - ESOP grant letter ${fmtDMY(g.allocation.allocation_date)}.pdf`;
+
+/* ---------- Salary slips (admin, from saved payroll) ---------- */
+async function openSalarySlips(run, results) {
+  const month = run.month.slice(0, 7);
+  const [docs, kyc, on] = await Promise.all([
+    q(db.from('hr_documents').select('*').eq('kind', 'salary_slip').eq('ref', month).is('removed_at', null)).catch(() => []),
+    q(db.from('kyc_submissions').select('employee_id, bank_account_number')).catch(() => []),
+    driveOn()]);
+  const bank = new Map((kyc || []).map((k) => [k.employee_id, String(k.bank_account_number || '').slice(-4)]));
+  const savedDoc = new Map((docs || []).map((d) => [d.employee_id, d]));
+  const cnt = (days, k) => (Array.isArray(days) ? days.filter((x) => x.status === k).length : 0);
+  const slips = results.map((x) => {
+    const p = byId(x.employee_id) || {};
+    return { employee_id: x.employee_id, month: run.month, monthly_salary: x.monthly_salary, daily_salary: x.daily_salary,
+      full: x.post_full, half: x.post_half, leave: x.post_leave, weekly_off: x.post_weekly_off, holidays: cnt(x.days, 'H'), wfh: cnt(x.days, 'WFH'),
+      earned: x.payable, pt: x.pt, net: x.net_payable,
+      employee: { full_name: p.full_name, employee_code: p.employee_code, designation: p.designation, date_of_joining: p.date_of_joining, bank_last4: bank.get(x.employee_id) || null } };
+  }).sort((a, b) => String(a.employee.full_name).localeCompare(String(b.employee.full_name)));
+  const co = await companyInfo();
+  const row = (s, i) => { const d = savedDoc.get(s.employee_id); return `<tr><td><b>${esc(s.employee.full_name || '—')}</b> <span class="faint">${esc(s.employee.employee_code || '')}</span></td>
+    <td class="num">${fmtINR(s.net)}</td><td data-st="${i}">${d ? `<span class="chip green plain">In Drive</span> <span class="faint" style="font-size:11.5px">${fmtRelative(d.created_at)}</span>` : '<span class="faint">—</span>'}</td>
+    <td class="actions"><button class="btn btn-sm" data-dl="${i}">${icon('download', 'sm')}PDF</button></td></tr>`; };
+  const { el } = openModal({ title: `Salary slips — ${fmtMonth(run.month)}`, subtitle: `${slips.length} employee(s) from the saved payroll`, size: 'lg',
+    body: `${!co.address ? `<div class="alert alert-warn" style="margin-bottom:10px">${icon('alert')}<span>The company address is empty — add it in <a href="#/storage">Settings → Storage &amp; documents</a> so it prints on the slips.</span></div>` : ''}
+      ${on ? '' : `<div class="alert alert-info" style="margin-bottom:10px">${icon('info')}<span>Google Drive is not connected, so slips can only be downloaded. Connect it in <a href="#/storage">Storage &amp; documents</a> to save them in Drive (Salary slips / ${month}).</span></div>`}
+      <div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th class="num">Net pay</th><th>Drive</th><th></th></tr></thead><tbody>${slips.map(row).join('')}</tbody></table></div>
+      <p class="faint" style="font-size:12px;margin-top:8px" id="slip-progress"></p>`,
+    footer: `<button class="btn" data-close>Close</button><button class="btn btn-primary" data-save-all ${on && slips.length ? '' : 'disabled'}>${icon('upload', 'sm')}Save all to Drive</button>` });
+  $$('[data-dl]', el).forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+    try { const s = slips[Number(b.dataset.dl)]; saveBlob((await buildSalarySlip(s)).output('blob'), slipFileName(s)); } catch (e) { toast(friendlyError(e), 'error'); }
+  })));
+  $('[data-save-all]', el)?.addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
+    let ok = 0; const fails = [];
+    for (const [i, s] of slips.entries()) {
+      $('#slip-progress', el).textContent = `Saving ${i + 1} of ${slips.length} — ${s.employee.full_name}…`;
+      try {
+        const name = slipFileName(s);
+        const f = await driveUpload({ folder: ['Salary slips', `${month} (${monthName(run.month)})`], name, blob: (await buildSalarySlip(s)).output('blob'), owner: s.employee_id });
+        await api.rpc('admin_record_document', { p_employee: s.employee_id, p_kind: 'salary_slip', p_ref: month, p_title: `Salary slip ${monthName(run.month)}`, p_file_id: f.id, p_file_name: f.name });
+        const st = $(`[data-st="${i}"]`, el); if (st) st.innerHTML = '<span class="chip green plain">In Drive</span> <span class="faint" style="font-size:11.5px">just now</span>';
+        ok += 1;
+      } catch (e) { fails.push(`${s.employee.full_name}: ${friendlyError(e)}`); }
+    }
+    $('#slip-progress', el).textContent = fails.length ? `${ok} saved. Not saved — ${fails.join(' · ')}` : `${ok} slip(s) saved to Drive → Salary slips / ${month}. Employees can download them in My Pay.`;
+    toast(fails.length ? `${ok} saved, ${fails.length} failed` : `${ok} salary slip(s) saved to Google Drive`, fails.length ? 'error' : 'ok');
+  }));
+}
+// Employee: the copy saved in Drive if there is one, else made from the published sheet
+async function downloadMySlip(sl) {
+  const s = { ...sl, employee: sl.employee || {} };
+  if (sl.slip_file) {
+    try { const f = await driveDownload(sl.slip_file); return saveBlob(f.blob, f.name); } catch (e) { /* fall back to making it here */ }
+  }
+  saveBlob((await buildSalarySlip(s)).output('blob'), slipFileName(s));
+}
+
+/* ---------- ESOP grant letters (admin) ---------- */
+async function openGrantLetters(allocationId) {
+  const E = state.esop; const a = E.allocations.find((x) => x.id === allocationId); if (!a) return;
+  const [docs, on] = await Promise.all([
+    q(db.from('hr_documents').select('*').eq('kind', 'grant_letter').eq('ref', a.id).is('removed_at', null)).catch(() => []), driveOn()]);
+  const savedDoc = new Map((docs || []).map((d) => [d.employee_id, d]));
+  const byMember = {};
+  for (const g of E.grants.filter((x) => x.allocation_id === a.id)) {
+    const k = `${g.employee_id || ''}|${g.member_name}`;
+    (byMember[k] = byMember[k] || { employee_id: g.employee_id, member_name: g.member_name, grants: [], vesting: [] }).grants.push({ type: g.grant_type, options: g.options, note: g.vesting_note });
+  }
+  for (const v of E.vesting.filter((x) => x.allocation_id === a.id)) {
+    const k = `${v.employee_id || ''}|${v.member_name}`;
+    if (byMember[k]) byMember[k].vesting.push({ date: v.vest_date, label: v.label, options: v.options });
+  }
+  const members = Object.values(byMember).sort((x, y) => x.member_name.localeCompare(y.member_name));
+  const letterOf = (m, date) => { const p = m.employee_id ? byId(m.employee_id) : null;
+    return { date, employee: { full_name: p?.full_name || m.member_name, employee_code: p?.employee_code, designation: p?.designation }, allocation: a, grants: m.grants, vesting: m.vesting }; };
+  const { el } = openModal({ title: `Grant letters — allocation ${fmtDMY(a.allocation_date)}`, subtitle: `${members.length} member(s) · ${fmtNum(members.reduce((s, m) => s + m.grants.reduce((t, g) => t + g.options, 0), 0))} options`, size: 'lg',
+    body: `<div class="cal-form" style="margin-bottom:10px">
+        <div class="field"><label>Exercise price per option (₹)</label><input class="input" type="number" min="100" step="0.01" id="gl-price" value="${a.exercise_price ?? ''}" placeholder="Not set"></div>
+        <div class="field"><label>Letter date</label><input class="input" type="date" id="gl-date" value="${a.allocation_date}"></div>
+        <button class="btn" id="gl-price-save">${icon('check', 'sm')}Save price</button></div>
+      ${on ? '' : `<div class="alert alert-info" style="margin-bottom:10px">${icon('info')}<span>Google Drive is not connected, so letters can only be downloaded. Connect it in <a href="#/storage">Storage &amp; documents</a>.</span></div>`}
+      <div class="table-wrap"><table class="table compact"><thead><tr><th>Member</th><th class="num">Options</th><th>Drive</th><th></th></tr></thead><tbody>
+      ${members.map((m, i) => { const d = m.employee_id ? savedDoc.get(m.employee_id) : null; return `<tr><td><b>${esc(m.employee_id ? byId(m.employee_id)?.full_name || m.member_name : m.member_name)}</b>${m.employee_id ? '' : ' <span class="chip amber">Not linked</span>'}</td>
+        <td class="num">${fmtNum(m.grants.reduce((s, g) => s + g.options, 0))}</td><td data-st="${i}">${d ? `<span class="chip green plain">In Drive</span> <span class="faint" style="font-size:11.5px">${fmtRelative(d.created_at)}</span>` : '<span class="faint">—</span>'}</td>
+        <td class="actions"><button class="btn btn-sm" data-dl="${i}">${icon('download', 'sm')}PDF</button></td></tr>`; }).join('')}</tbody></table></div>
+      <p class="faint" style="font-size:12px;margin-top:8px" id="gl-progress">Only members linked to an employee are saved to Drive and shown in their portal.</p>`,
+    footer: `<button class="btn" data-close>Close</button><button class="btn btn-primary" data-save-all ${on ? '' : 'disabled'}>${icon('upload', 'sm')}Save letters to Drive</button>` });
+  const priceNow = () => { const v = $('#gl-price', el).value; return v === '' ? null : Number(v); };
+  $('#gl-price-save', el).addEventListener('click', (ev) => withBusy(ev.currentTarget, '', async () => {
+    try { await api.rpc('admin_set_esop_price', { p_allocation: a.id, p_price: priceNow() }); a.exercise_price = priceNow(); toast('Exercise price saved'); } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  const withPrice = (m) => { const g = letterOf(m, $('#gl-date', el).value || a.allocation_date); g.allocation = { ...a, exercise_price: priceNow() }; return g; };
+  $$('[data-dl]', el).forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+    try { const g = withPrice(members[Number(b.dataset.dl)]); saveBlob((await buildGrantLetter(g)).output('blob'), letterFileName(g)); } catch (e) { toast(friendlyError(e), 'error'); }
+  })));
+  $('[data-save-all]', el)?.addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
+    if (priceNow() !== (a.exercise_price == null ? null : Number(a.exercise_price))) {
+      try { await api.rpc('admin_set_esop_price', { p_allocation: a.id, p_price: priceNow() }); a.exercise_price = priceNow(); } catch (e) { return toast(friendlyError(e), 'error'); }
+    }
+    let ok = 0; const fails = [];
+    for (const [i, m] of members.entries()) {
+      if (!m.employee_id) continue;
+      const g = withPrice(m);
+      $('#gl-progress', el).textContent = `Saving ${ok + fails.length + 1} — ${g.employee.full_name}…`;
+      try {
+        const f = await driveUpload({ folder: ['ESOP grant letters', `Allocation ${fmtDMY(a.allocation_date)}`], name: letterFileName(g), blob: (await buildGrantLetter(g)).output('blob'), owner: m.employee_id });
+        await api.rpc('admin_record_document', { p_employee: m.employee_id, p_kind: 'grant_letter', p_ref: a.id, p_title: `ESOP grant letter ${fmtDMY(a.allocation_date)}`, p_file_id: f.id, p_file_name: f.name });
+        const st = $(`[data-st="${i}"]`, el); if (st) st.innerHTML = '<span class="chip green plain">In Drive</span> <span class="faint" style="font-size:11.5px">just now</span>';
+        ok += 1;
+      } catch (e) { fails.push(`${g.employee.full_name}: ${friendlyError(e)}`); }
+    }
+    $('#gl-progress', el).textContent = fails.length ? `${ok} saved. Not saved — ${fails.join(' · ')}` : `${ok} letter(s) saved to Drive → ESOP grant letters / Allocation ${fmtDMY(a.allocation_date)}. Employees can download theirs in My ESOPs.`;
+    toast(fails.length ? `${ok} saved, ${fails.length} failed` : `${ok} grant letter(s) saved to Google Drive`, fails.length ? 'error' : 'ok');
+  }));
+}
+
+/* ---------- Settings → Storage & documents ---------- */
+async function pageStorage() {
+  await ensureAdmin();
+  const [drive, co, kyc] = await Promise.all([driveSettings(true), companyInfo(true), q(db.from('kyc_submissions').select('*')).catch(() => [])]);
+  const cols = DOCS.map((d) => d.col);
+  const inSupabase = (kyc || []).reduce((s, k) => s + cols.filter((c) => k[c] && !isDrivePath(k[c])).length, 0);
+  const inDrive = (kyc || []).reduce((s, k) => s + cols.filter((c) => isDrivePath(k[c])).length, 0);
+  const canEdit = amSuper();
+  const copyRow = (label, value, id) => `<div class="bar-row" style="margin:4px 0"><span class="mono" style="font-size:12px;word-break:break-all"><b>${label}</b> = ${esc(value)}</span><button class="btn btn-xs" data-copy="${id}">Copy</button></div>`;
+  return {
+    title: 'Storage & documents', crumbs: 'Settings · Google Drive for files, company details for slips and letters',
+    html: `
+      <div class="card"><div class="card-head"><div><h3>Google Drive</h3><p>KYC documents, salary slips, grant letters and uploaded sheets are saved in your Drive; the HRMS keeps only a link</p></div>
+        <div class="right">${drive.url ? '<span class="chip green">Connected</span>' : '<span class="chip amber">Not connected — files go to Supabase storage</span>'}</div></div>
+        <div class="card-body">
+          <div class="cal-form"><input class="input" id="drv-url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(drive.url)}" ${canEdit ? '' : 'disabled'}>
+            <button class="btn" id="drv-test">${icon('refresh', 'sm')}Test connection</button>
+            ${canEdit ? `<button class="btn btn-primary" id="drv-save">${icon('check', 'sm')}Save</button>` : ''}</div>
+          <p class="faint" style="font-size:12px;margin-top:6px" id="drv-msg">${canEdit ? 'Paste the web app URL of the Drive bridge (steps below).' : 'Only a Super Admin can change this.'}</p>
+          <ul class="rule-list" style="margin-top:10px">
+            <li><b>KYC</b> → KYC / <i>Name - Employee ID</i> / <i>Name - PAN.pdf</i> (renamed automatically when the employee uploads)</li>
+            <li><b>Salary slips</b> → Salary slips / <i>YYYY-MM</i> / <i>Name - ID - Salary slip Month.pdf</i></li>
+            <li><b>Grant letters</b> → ESOP grant letters / Allocation <i>date</i> / <i>Name - ESOP grant letter date.pdf</i></li>
+            <li><b>Uploaded sheets</b> (attendance, variable, ESOP, employees) → Uploads / <i>section</i> / <i>YYYY-MM</i></li>
+          </ul>
+        </div></div>
+      <details class="card fold"${drive.url ? '' : ' open'}><summary class="card-head"><div><h3>Set up the Drive bridge (one time, about 10 minutes)</h3><p>A small Google Apps Script that saves files in your Drive and checks the HRMS sign-in</p></div><div class="right">${icon('arrowRight', 'sm')}</div></summary>
+        <div class="card-body"><ol class="rule-list steps">
+          <li>Sign in to Google with the company account that should own the files. In Drive, create a folder (e.g. <b>Altius HRMS</b>), open it and copy its id — the part of the address after <span class="mono">/folders/</span>. Keep this folder shared only with HR.</li>
+          <li>Open <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> → <b>New project</b>, name it <b>Altius HRMS Drive bridge</b>, delete what is in <span class="mono">Code.gs</span> and paste the bridge code: <button class="btn btn-xs" id="drv-copy-code">${icon('copy', 'sm')}Copy bridge code</button></li>
+          <li>⚙ <b>Project Settings</b> → <b>Script properties</b> → add these three:
+            ${copyRow('SUPABASE_URL', SUPABASE_URL, 'url')}${copyRow('SUPABASE_ANON_KEY', SUPABASE_ANON_KEY, 'key')}<div class="mono" style="font-size:12px"><b>ROOT_FOLDER_ID</b> = the folder id from step 1</div></li>
+          <li><b>Deploy</b> → <b>New deployment</b> → type <b>Web app</b> → Execute as <b>Me</b>, Who has access <b>Anyone</b> → <b>Deploy</b>. Allow access when Google asks (Advanced → Go to the project).</li>
+          <li>Copy the <b>Web app URL</b>, paste it above, click <b>Save</b>, then <b>Test connection</b>.</li>
+        </ol><p class="faint" style="font-size:12px">“Anyone” only lets the HRMS reach the script — every request must carry a valid HRMS sign-in, employees can only add their own KYC and open their own files, and only admins can save or open anything else. When you change the code later, use Deploy → Manage deployments → edit → New version so the URL stays the same.</p></div></details>
+      <div class="card"><div class="card-head"><div><h3>Company details on documents</h3><p>Printed on salary slips and ESOP grant letters</p></div></div>
+        <div class="card-body"><div class="grid g2" style="gap:10px">
+          <div class="field"><label>Company name</label><input class="input" id="co-name" value="${esc(co.name)}" ${canEdit ? '' : 'disabled'}></div>
+          <div class="field"><label>CIN</label><input class="input" id="co-cin" value="${esc(co.cin)}" ${canEdit ? '' : 'disabled'}></div>
+          <div class="field" style="grid-column:1/-1"><label>Registered address</label><input class="input" id="co-address" value="${esc(co.address)}" ${canEdit ? '' : 'disabled'}></div>
+          <div class="field"><label>Signatory name (grant letters)</label><input class="input" id="co-sign" value="${esc(co.signatory_name)}" ${canEdit ? '' : 'disabled'}></div>
+          <div class="field"><label>Signatory title</label><input class="input" id="co-title" value="${esc(co.signatory_title)}" ${canEdit ? '' : 'disabled'}></div>
+        </div>${canEdit ? `<div style="margin-top:10px"><button class="btn btn-primary" id="co-save">${icon('check', 'sm')}Save details</button></div>` : ''}</div></div>
+      <div class="card"><div class="card-head"><div><h3>KYC documents</h3><p>${fmtNum(inDrive)} in Google Drive · ${fmtNum(inSupabase)} still in Supabase storage</p></div>
+        <div class="right"><button class="btn btn-sm" id="kyc-move" ${drive.url && inSupabase && canEdit ? '' : 'disabled'}>${icon('upload', 'sm')}Move to Drive</button></div></div>
+        <div class="card-body"><p class="muted" style="font-size:13px">New KYC uploads go straight to Drive once it is connected. <b>Move to Drive</b> copies the older files into each employee's KYC folder with the new names, points the HRMS at the Drive copy, and then deletes them from Supabase storage to free space.</p>
+        <p class="faint" style="font-size:12px;margin-top:6px" id="kyc-move-msg"></p></div></div>`,
+    mount() {
+      $$('[data-copy]').forEach((b) => b.addEventListener('click', () => { navigator.clipboard?.writeText(b.dataset.copy === 'url' ? SUPABASE_URL : SUPABASE_ANON_KEY); toast('Copied'); }));
+      $('#drv-copy-code').addEventListener('click', () => { navigator.clipboard?.writeText($('#drive-bridge-code').textContent.trim()); toast('Bridge code copied — paste it into Code.gs'); });
+      $('#drv-save')?.addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
+        const url = $('#drv-url').value.trim();
+        if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) return toast('That does not look like an Apps Script web app URL.', 'error');
+        try { await q(db.from('app_settings').update({ value: { url } }).eq('key', 'drive').select()); state.drive = null; toast(url ? 'Drive bridge saved' : 'Drive disconnected'); render(); }
+        catch (e) { toast(friendlyError(e), 'error'); }
+      }));
+      $('#drv-test').addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Testing…', async () => {
+        const typed = $('#drv-url').value.trim(); const saved = state.drive;
+        try {
+          state.drive = { url: typed };
+          const r = await driveCall('ping');
+          $('#drv-msg').innerHTML = `<span style="color:var(--green)">Connected — files go to the folder <b>${esc(r.folder)}</b> (signed in as ${esc(r.user)}${r.admin ? ', admin' : ''}).</span>${typed !== saved?.url ? ' Click Save to use it.' : ''}`;
+        } catch (e) { $('#drv-msg').innerHTML = `<span class="error-text">${esc(friendlyError(e))}</span>`; }
+        finally { state.drive = saved; }
+      }));
+      $('#co-save')?.addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
+        const value = { name: $('#co-name').value.trim() || COMPANY_DEFAULT.name, cin: $('#co-cin').value.trim(), address: $('#co-address').value.trim(),
+          signatory_name: $('#co-sign').value.trim(), signatory_title: $('#co-title').value.trim() };
+        try { await q(db.from('app_settings').update({ value }).eq('key', 'company').select()); state.company = null; toast('Company details saved'); }
+        catch (e) { toast(friendlyError(e), 'error'); }
+      }));
+      $('#kyc-move')?.addEventListener('click', async (ev) => {
+        if (!(await confirmDialog({ title: 'Move KYC files to Google Drive?', message: `${inSupabase} document(s) are copied into Drive and then deleted from Supabase storage. Each one is deleted only after its Drive copy is saved.`, confirmText: 'Move' }))) return;
+        await withBusy(ev.currentTarget, 'Moving…', async () => {
+          let moved = 0; const fails = [];
+          for (const k of kyc) {
+            const emp = byId(k.employee_id); const paths = {}; const old = [];
+            for (const d of DOCS) {
+              const p = k[d.col]; if (!p || isDrivePath(p)) continue;
+              $('#kyc-move-msg').textContent = `Moving ${emp?.full_name || ''} — ${d.label}…`;
+              try {
+                const blob = await (await fetch(await api.signedUrl(p))).blob();
+                const ext = (p.split('.').pop() || 'pdf').toLowerCase();
+                const f = await driveCall('upload', { kind: 'kyc', owner: k.employee_id, label: d.label, ext, mime: blob.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'), data: await blobToB64(blob) });
+                paths[d.col] = `${k.employee_id}/drive/${f.id}`; old.push(p);
+              } catch (e) { fails.push(`${emp?.full_name || k.employee_id} ${d.label}: ${friendlyError(e)}`); }
+            }
+            if (!old.length) continue;
+            try { await api.rpc('admin_set_kyc_paths', { p_employee: k.employee_id, p: paths }); await api.removeFiles(old); moved += old.length; }
+            catch (e) { fails.push(`${emp?.full_name || k.employee_id}: ${friendlyError(e)}`); }
+          }
+          $('#kyc-move-msg').textContent = fails.length ? `${moved} moved. Not moved — ${fails.join(' · ')}` : `${moved} document(s) moved to Drive.`;
+          toast(fails.length ? `${moved} moved, ${fails.length} failed` : `${moved} KYC document(s) moved to Google Drive`, fails.length ? 'error' : 'ok');
+          if (!fails.length) setTimeout(render, 1200);
+        });
+      });
+    },
+  };
+}
+
+/* =====================================================================
    ESOPs — allocations come from the ESOP Excel; vesting follows the sheet's
    schedule. Status per tranche is worked out here from the dates and the
    employee's exit, following the scheme (summary below — the scheme
@@ -5672,9 +6134,11 @@ function esopTimelineChart(rows, { height = 190, today = todayISO(), startDate =
     svg += `<text x="${cx}" y="${H - bottom + 28}" class="ch-axis faint" text-anchor="middle">${fmtDMY(c.date)}</text>`;
   });
   // today marker, placed between the columns it falls between
-  const idx = cols.findIndex((c) => c.date > today);
-  const tx = idx === -1 ? W - 10 : idx === 0 ? left + 4 : left + step * idx;
-  svg += `<line x1="${tx}" x2="${tx}" y1="${top - 8}" y2="${H - bottom}" class="ch-today"/><text x="${tx + 4}" y="${top - 10}" class="ch-axis" style="fill:var(--text)">Today</text>`;
+  if (today) {
+    const idx = cols.findIndex((c) => c.date > today);
+    const tx = idx === -1 ? W - 10 : idx === 0 ? left + 4 : left + step * idx;
+    svg += `<line x1="${tx}" x2="${tx}" y1="${top - 8}" y2="${H - bottom}" class="ch-today"/><text x="${tx + 4}" y="${top - 10}" class="ch-axis" style="fill:var(--text)">Today</text>`;
+  }
   const legendKeys = keys.filter((k) => cols.some((c) => c[k] > 0));
   return `<div class="ch-scroll"><svg class="chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Vesting timeline">${svg}</svg></div>${legendKeys.length > 1 ? esopLegend(legendKeys) : ''}`;
 }
@@ -5794,7 +6258,7 @@ async function parseEsopFile(file) {
     grantCols.push({ col: c, type: esopGrantType(H[c]), header: String(H[c]).trim(), note: String(notesRow[c] ?? '').replace(/\s+/g, ' ').trim() });
   }
   if (!grantCols.length) throw new Error('No grant columns found before the allocation schedule.');
-  if (!sched.length) throw new Error('No vesting schedule columns (like Mar\'27) found.');
+  const derived = !sched.length; // no Mar'27-style columns: work the schedule out from the vesting notes
   const num = (v) => { const n = Number(String(v ?? '').replace(/[,\s]/g, '')); return Number.isFinite(n) ? Math.round(n) : 0; };
   const members = []; let sheetTotal = null;
   for (let r = hi + 1; r < A.length; r++) {
@@ -5802,13 +6266,41 @@ async function parseEsopFile(file) {
     if (!name) continue;
     if (/^total/i.test(name)) { if (sheetTotal == null) sheetTotal = { grants: grantCols.map((g) => num(row[g.col])), sched: sched.map((s) => num(row[s.col])) }; if (/^total\s*$/i.test(name)) break; continue; }
     const grants = grantCols.map((g) => ({ type: g.type, options: num(row[g.col]), note: g.note }));
-    const vesting = sched.map((s) => ({ date: s.date, label: s.label, options: num(row[s.col]) }));
+    const vesting = derived ? [] : sched.map((s) => ({ date: s.date, label: s.label, options: num(row[s.col]) }));
     if (!grants.some((g) => g.options) && !vesting.some((v) => v.options)) continue;
     if (/vesting\s*period/i.test(name)) continue;
     members.push({ member_name: name, grants, vesting, granted: grants.reduce((s, g) => s + g.options, 0), scheduled: vesting.reduce((s, v) => s + v.options, 0) });
   }
   if (!members.length) throw new Error('No members with options found under the header row.');
-  return { allocationDate, title, exerciseYears, grantCols, sched, members, sheetTotal };
+  const P = { allocationDate, title, exerciseYears, grantCols, sched, members, sheetTotal, derived };
+  if (derived) esopApplyDerived(P, allocationDate || todayISO());
+  return P;
+}
+// "25% each - 4 years" → 4 equal yearly parts; "50% - 2 years" → 2. No note: the scheme's standard 25% a year for 4 years.
+function esopNoteSplit(note) {
+  const s = String(note || '').toLowerCase();
+  const yrs = Number((s.match(/(\d+)\s*-?\s*y(?:ea)?rs?/) || [])[1]) || 0;
+  const pct = Number((s.match(/(\d+(?:\.\d+)?)\s*%/) || [])[1]) || 0;
+  const n = Math.min(10, yrs || (pct ? Math.round(100 / pct) : 4)) || 4;
+  return Array.from({ length: n }, () => 1 / n);
+}
+// Vesting on each anniversary of the allocation date; whole options, rounded so they add up to the grant
+function esopDeriveVesting(grants, allocDate) {
+  const per = {};
+  for (const g of grants) esopNoteSplit(g.note).forEach((f, i) => { per[i + 1] = (per[i + 1] || 0) + g.options * f; });
+  const total = grants.reduce((s, g) => s + g.options, 0);
+  const years = Object.keys(per).map(Number).sort((a, b) => a - b);
+  const whole = years.map((y) => Math.floor(per[y] + 1e-9));
+  let left = total - whole.reduce((s, v) => s + v, 0);
+  for (const [, i] of years.map((y, i) => [per[y] - whole[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1])) { if (left <= 0) break; whole[i] += 1; left -= 1; }
+  return years.map((y, i) => { const d = addYearsISO(allocDate, y); const dt = parseISODate(d);
+    return { date: d, label: `${MONTHS3[dt.getMonth()][0].toUpperCase()}${MONTHS3[dt.getMonth()].slice(1)}'${String(dt.getFullYear()).slice(2)}`, options: whole[i] }; }).filter((v) => v.options > 0);
+}
+function esopApplyDerived(P, allocDate) {
+  for (const m of P.members) { m.vesting = esopDeriveVesting(m.grants, allocDate); m.scheduled = m.vesting.reduce((s, v) => s + v.options, 0); }
+  const dates = [...new Set(P.members.flatMap((m) => m.vesting.map((v) => v.date)))].sort();
+  P.sched = dates.map((d) => ({ date: d, label: P.members.flatMap((m) => m.vesting).find((v) => v.date === d).label }));
+  for (const m of P.members) m.vesting = P.sched.map((s) => ({ ...s, options: m.vesting.find((v) => v.date === s.date)?.options || 0 }));
 }
 const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
 function esopMatchMember(name, profiles) {
@@ -5823,68 +6315,117 @@ function esopMatchMember(name, profiles) {
 }
 
 /* ---------- Admin page ---------- */
-async function pageEsops() {
+// Totals over tranche rows (from esopPosition) — used for one allocation or all of them
+function esopSum(rows) {
+  const s = { granted: 0, vested: 0, exercised: 0, lapsed: 0, cancelled: 0, unvested: 0 };
+  for (const r of rows) {
+    s.granted += r.options;
+    if (['vested', 'exercised', 'lapsed'].includes(r.status)) s.vested += r.options;
+    if (r.status === 'upcoming') s.unvested += r.options;
+    if (r.status === 'returned') s.cancelled += r.options;
+    s.exercised += r.exercised || 0; s.lapsed += r.lapsed || 0;
+  }
+  s.returned = s.cancelled + s.lapsed;
+  s.exercisable = Math.max(0, s.vested - s.exercised - s.lapsed);
+  s.next = rows.filter((r) => r.status === 'upcoming').sort((a, b) => a.date.localeCompare(b.date))[0] || null;
+  return s;
+}
+// One row per allocation with a running (cumulative) total — the "final" calculation
+function esopAllocationRows(allocations, rows, grants) {
+  let cum = 0, cumRet = 0;
+  return [...allocations].sort((a, b) => a.allocation_date.localeCompare(b.allocation_date)).map((a) => {
+    const s = esopSum(rows.filter((r) => r.allocation_id === a.id));
+    cum += s.granted; cumRet += s.returned;
+    const members = new Set(grants.filter((g) => g.allocation_id === a.id).map((g) => g.employee_id || g.member_name)).size;
+    return { a, s, cum, cumRet, members };
+  });
+}
+async function pageEsops(r = {}) {
   const E = await loadEsopAdmin();
-  const T = E.totals, today = todayISO();
+  const today = todayISO();
+  const view = r.id && E.allocations.some((a) => a.id === r.id) ? r.id : 'all';
+  const alloc = view === 'all' ? null : E.allocations.find((a) => a.id === view);
+  const inView = (rows) => (alloc ? rows.filter((x) => x.allocation_id === alloc.id) : rows);
+  // Holders and totals for the chosen view (all allocations = the final position)
+  const holders = E.holders.map((h) => ({ ...h, s: esopSum(inView(h.pos.rows)), grantsIn: alloc ? h.grants.filter((g) => g.allocation_id === alloc.id) : h.grants }))
+    .filter((h) => h.s.granted || (!alloc && h.exercises.length));
+  for (const h of holders) if (!alloc) h.s.exercised = h.pos.exercised;
+  const T = esopSum(inView(E.holders.flatMap((h) => h.pos.rows)));
+  if (!alloc) T.exercised = E.totals.exercised;
+  const types = {};
+  for (const g of alloc ? E.grants.filter((x) => x.allocation_id === alloc.id) : E.grants) types[g.grant_type] = (types[g.grant_type] || 0) + g.options;
+  const typeMax = Math.max(1, ...Object.values(types));
+  const AR = esopAllocationRows(E.allocations, E.holders.flatMap((h) => h.pos.rows), E.grants);
   const unmapped = E.holders.filter((h) => !h.employee_id && h.grants.length);
   const stat = (label, value, foot, color) => `<div class="card stat"><div class="top"><span>${label}</span>${color ? `<i class="sw" style="background:${color}"></i>` : ''}</div><div class="value">${fmtNum(value)}</div><div class="foot">${foot}</div></div>`;
   const pct = (v) => (E.pool ? `${((v / E.pool) * 100).toFixed(1)}% of the pool` : '');
-  const allTranches = E.holders.flatMap((h) => h.pos.rows);
-  const typeMax = Math.max(1, ...Object.values(E.types));
   const empOptions = state.admin.profiles.filter((p) => p.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name));
-  const mapSelect = (h, alloc) => `<select class="input input-sm" data-map="${esc([...h.names][0])}" data-alloc="${alloc}"><option value="">Not linked</option>${empOptions.map((p) => `<option value="${p.id}"${p.id === h.employee_id ? ' selected' : ''}>${esc(p.full_name)}${p.employee_code ? ` · ${esc(p.employee_code)}` : ''}</option>`).join('')}</select>`;
-  const maxGrant = Math.max(1, ...E.holders.map((h) => h.pos.granted));
+  const mapSelect = (h, allocId) => `<select class="input input-sm" data-map="${esc([...h.names][0])}" data-alloc="${allocId}"><option value="">Not linked</option>${empOptions.map((p) => `<option value="${p.id}"${p.id === h.employee_id ? ' selected' : ''}>${esc(p.full_name)}${p.employee_code ? ` · ${esc(p.employee_code)}` : ''}</option>`).join('')}</select>`;
+  const maxGrant = Math.max(1, ...holders.map((h) => h.s.granted));
+  const tabs = E.allocations.length > 0 ? `<div style="margin-bottom:12px"><nav class="tabs">
+      <a href="#/esops" class="${view === 'all' ? 'active' : ''}">Final — all allocations<span class="count">${fmtNum(E.totals.granted)}</span></a>
+      ${[...E.allocations].sort((a, b) => b.allocation_date.localeCompare(a.allocation_date)).map((a) => `<a href="#/esops/${a.id}" class="${view === a.id ? 'active' : ''}">${fmtDMY(a.allocation_date)}<span class="count">${fmtNum(AR.find((x) => x.a.id === a.id)?.s.granted || 0)}</span></a>`).join('')}
+    </nav></div>` : '';
+  const P0 = E.totals;
   return {
-    title: 'ESOPs', crumbs: `Finance · employee stock options${E.allocations.length ? ` · ${E.allocations.map((a) => `allocated ${fmtDMY(a.allocation_date)}`).join(', ')}` : ''}`,
+    title: 'ESOPs', crumbs: alloc ? `Finance · ESOPs · allocation ${fmtDMY(alloc.allocation_date)}${alloc.title ? ` · ${esc(alloc.title)}` : ''}` : `Finance · employee stock options · ${E.allocations.length} allocation${E.allocations.length === 1 ? '' : 's'}`,
     html: `
       <div class="bar-row" style="margin-bottom:12px">
-        <span class="muted" style="font-size:12.5px">${E.allocations.length ? `${E.allocations.length} allocation${E.allocations.length > 1 ? 's' : ''} · ${E.holders.filter((h) => h.pos.granted).length} holders` : 'No allocation uploaded yet'}</span>
+        <span class="muted" style="font-size:12.5px">${E.allocations.length ? `${alloc ? 'This allocation' : 'Final position across all allocations'} · ${holders.length} holder${holders.length === 1 ? '' : 's'}` : 'No allocation uploaded yet'}</span>
         <div class="right" style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn btn-sm" data-esop-template>${icon('download')}<span>Template</span></button>
           <button class="btn btn-sm" data-esop-pool>${icon('edit')}<span>Edit pool</span></button>
+          ${alloc ? `<button class="btn btn-sm" data-letters="${alloc.id}">${icon('file')}<span>Grant letters</span></button>` : ''}
           <button class="btn btn-sm btn-primary" data-esop-upload>${icon('upload')}<span>Upload allocation Excel</span></button>
         </div>
       </div>
+      ${tabs}
       <div class="stats esop-stats">
-        ${stat('Total pool', E.pool, `${fmtNum(T.available)} available to grant`)}
-        ${stat('Granted', T.granted, pct(T.granted))}
+        ${alloc ? `<div class="card stat"><div class="top"><span>Allocated on</span></div><div class="value">${fmtDMY(alloc.allocation_date)}</div><div class="foot">${alloc.exercise_price != null ? `Exercise price ${fmtINR(alloc.exercise_price)}` : 'Exercise price not set'}</div></div>`
+          : stat('Total pool', E.pool, `${fmtNum(P0.available)} available to grant`)}
+        ${stat('Granted', T.granted, alloc ? `${pct(T.granted)} · in this allocation` : pct(T.granted))}
         ${stat('Vested', T.vested, `${fmtNum(T.exercisable)} can be exercised`, ESOP_COLORS.vested)}
         ${stat('Unvested', T.unvested, T.unvested ? 'Vest on the schedule dates' : 'Nothing left to vest', ESOP_COLORS.unvested)}
         ${stat('Exercised', T.exercised, T.exercised ? 'Converted to shares' : 'None exercised yet', ESOP_COLORS.exercised)}
         ${stat('Returned to pool', T.returned, T.returned ? 'Cancelled on exit or lapsed' : 'Nothing returned', ESOP_COLORS.returned)}
       </div>
-      ${unmapped.length ? `<div class="card"><div class="card-head"><div><h3>Link sheet names to employees</h3><p>${unmapped.length} name${unmapped.length > 1 ? 's' : ''} from the sheet could not be matched — link them so the employee sees the grant in their portal</p></div></div>
+      ${unmapped.length && !alloc ? `<details class="card fold"${unmapped.length <= 5 ? ' open' : ''}><summary class="card-head"><div><h3>Link sheet names to employees</h3><p>${unmapped.length} name${unmapped.length > 1 ? 's' : ''} from the sheets could not be matched — link them so the employee sees the grant in their portal</p></div><div class="right"><span class="chip amber">${unmapped.length} not linked</span>${icon('arrowRight', 'sm')}</div></summary>
         <div class="table-wrap"><table class="table compact"><thead><tr><th>Name in sheet</th><th class="num">Options</th><th>Employee</th></tr></thead><tbody>
-        ${unmapped.map((h) => `<tr><td>${esc(h.name)}</td><td class="num">${fmtNum(h.pos.granted)}</td><td>${mapSelect(h, h.grants[0].allocation_id)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+        ${unmapped.map((h) => [...new Set(h.grants.map((g) => g.allocation_id))].map((aid) => `<tr><td>${esc(h.name)} <span class="faint">· ${fmtDMY(E.allocations.find((a) => a.id === aid)?.allocation_date)}</span></td><td class="num">${fmtNum(h.grants.filter((g) => g.allocation_id === aid).reduce((s, g) => s + g.options, 0))}</td><td>${mapSelect(h, aid)}</td></tr>`).join('')).join('')}</tbody></table></div></details>` : ''}
+      ${!alloc && AR.length ? `<div class="card"><div class="card-head"><div><h3>Allocations</h3><p>Each uploaded sheet is a separate allocation; the final position adds them up. Uploading a sheet with the same allocation date replaces it.</p></div></div>
+        ${AR.length > 1 ? `<div class="card-body" style="border-bottom:1px solid var(--border)">${esopTimelineChart(E.holders.flatMap((h) => h.pos.rows).map((x) => { const a = E.allocations.find((y) => y.id === x.allocation_id); return { ...x, date: a.allocation_date, label: fmtDMY(a.allocation_date).slice(0, 5) }; }), { height: 170, today: null })}</div>` : ''}
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Allocated on</th><th>Title</th><th class="num">Members</th><th class="num">Granted</th><th class="num">Cumulative</th><th class="num">Vested</th><th class="num">Unvested</th><th class="num">Exercised</th><th class="num">Returned</th><th class="num">Pool left</th><th></th></tr></thead><tbody>
+        ${AR.map(({ a, s, cum, cumRet, members }) => `<tr><td class="nowrap"><a href="#/esops/${a.id}" title="${esc(a.exercise_years ? `Exercise period ${a.exercise_years} years · till ${fmtDMY(addYearsISO(a.allocation_date, a.exercise_years))}` : '')}"><b>${fmtDMY(a.allocation_date)}</b></a></td><td class="trunc" style="max-width:150px" title="${esc(`${a.title || ''} · ${a.source_file_name || ''} · uploaded ${fmtRelative(a.uploaded_at)}`)}">${esc(a.title || '—')}</td>
+          <td class="num">${members}</td><td class="num"><b style="color:var(--text)">${fmtNum(s.granted)}</b></td><td class="num">${fmtNum(cum)}</td><td class="num">${fmtNum(s.vested)}</td><td class="num">${fmtNum(s.unvested)}</td><td class="num">${fmtNum(s.exercised)}</td><td class="num">${s.returned ? fmtNum(s.returned) : '—'}</td>
+          <td class="num">${fmtNum(Math.max(0, E.pool - cum + cumRet))}</td>
+          <td class="actions"><button class="btn btn-sm" data-letters="${a.id}">${icon('file', 'sm')}Letters</button> ${amSuper() ? `<button class="btn btn-sm btn-danger" data-esop-remove="${a.id}">${icon('trash')}</button>` : ''}</td></tr>`).join('')}
+        <tr class="total-row"><td colspan="3"><b>Final</b></td><td class="num"><b>${fmtNum(P0.granted)}</b></td><td></td><td class="num"><b>${fmtNum(P0.vested)}</b></td><td class="num"><b>${fmtNum(P0.unvested)}</b></td><td class="num"><b>${fmtNum(P0.exercised)}</b></td><td class="num"><b>${fmtNum(P0.returned)}</b></td><td class="num"><b>${fmtNum(P0.available)}</b></td><td></td></tr>
+        </tbody></table></div></div>` : ''}
       <div class="split">
-        <div class="card"><div class="card-head"><div><h3>Pool</h3><p>Where the ${fmtNum(E.pool)} options stand today</p></div></div>
+        <div class="card"><div class="card-head"><div><h3>Pool</h3><p>Where the ${fmtNum(E.pool)} options stand today — all allocations</p></div></div>
           <div class="card-body">
-            ${esopStackBar([{ key: 'exercised', value: T.exercised }, { key: 'vested', value: T.exercisable }, { key: 'unvested', value: T.unvested }, { key: 'available', value: T.available }], E.pool, { height: 26 })}
-            ${esopLegend(['exercised', 'vested', 'unvested', 'available'], { exercised: T.exercised, vested: T.exercisable, unvested: T.unvested, available: T.available })}
-            <p class="faint" style="font-size:12px;margin-top:8px">Available = pool − granted + returned (${fmtNum(E.pool)} − ${fmtNum(T.granted)} + ${fmtNum(T.returned)}). Vested here counts options not yet exercised.</p>
-            ${Object.keys(E.types).length ? `<h4 class="scheme-h" style="margin-top:14px">Granted by type</h4>
-            <div class="hbars">${Object.entries(E.types).sort((a, b) => b[1] - a[1]).map(([t, v]) => `<div class="hb"><span>${esc(t)}</span><div><i style="width:${(v / typeMax) * 100}%" data-tip="${esc(`${t}: ${fmtNum(v)} options`)}"></i></div><b>${fmtNum(v)}</b></div>`).join('')}</div>` : ''}
+            ${esopStackBar([{ key: 'exercised', value: P0.exercised }, { key: 'vested', value: P0.exercisable }, { key: 'unvested', value: P0.unvested }, { key: 'available', value: P0.available }], E.pool, { height: 26 })}
+            ${esopLegend(['exercised', 'vested', 'unvested', 'available'], { exercised: P0.exercised, vested: P0.exercisable, unvested: P0.unvested, available: P0.available })}
+            <p class="faint" style="font-size:12px;margin-top:8px">Available = pool − granted + returned (${fmtNum(E.pool)} − ${fmtNum(P0.granted)} + ${fmtNum(P0.returned)}). Vested here counts options not yet exercised.</p>
+            ${Object.keys(types).length ? `<h4 class="scheme-h" style="margin-top:14px">Granted by type${alloc ? ' — this allocation' : ''}</h4>
+            <div class="hbars">${Object.entries(types).sort((a, b) => b[1] - a[1]).map(([t, v]) => `<div class="hb"><span>${esc(t)}</span><div><i style="width:${(v / typeMax) * 100}%" data-tip="${esc(`${t}: ${fmtNum(v)} options`)}"></i></div><b>${fmtNum(v)}</b></div>`).join('')}</div>` : ''}
           </div></div>
-        <div class="card"><div class="card-head"><div><h3>Vesting timeline</h3><p>Options vesting on each schedule date, all holders</p></div></div>
-          <div class="card-body">${esopTimelineChart(allTranches, { today })}</div></div>
+        <div class="card"><div class="card-head"><div><h3>Vesting timeline</h3><p>Options vesting on each schedule date${alloc ? ' — this allocation' : ', all allocations'}</p></div></div>
+          <div class="card-body">${esopTimelineChart(inView(E.holders.flatMap((h) => h.pos.rows)), { today })}</div></div>
       </div>
-      <div class="card"><div class="card-head"><div><h3>Employee-wise</h3><p>Click a row for the tranche timeline, exercises and linking</p></div>
+      <div class="card"><div class="card-head"><div><h3>Employee-wise${alloc ? ` — allocation ${fmtDMY(alloc.allocation_date)}` : ' — final'}</h3><p>Click a row for the allocations, tranche timeline, exercises and linking</p></div>
         <div class="right">${esopLegend(['exercised', 'vested', 'unvested', 'returned'])}</div></div>
-        ${E.holders.length ? `<div class="table-wrap"><table class="table compact esop-table"><thead><tr><th>Employee</th>${Object.keys(E.types).map((t) => `<th class="num">${esc(t)}</th>`).join('')}<th class="num">Granted</th><th class="num">Vested</th><th class="num">Unvested</th><th class="num">Exercised</th><th class="num">Returned</th><th style="min-width:110px">Split</th><th>Next vesting</th></tr></thead><tbody>
-          ${E.holders.map((h, i) => { const p = h.pos; const byType = (t) => h.grants.filter((g) => g.grant_type === t).reduce((s, g) => s + g.options, 0);
-            return `<tr class="clickable" data-holder="${i}"><td><div class="name-line"><b>${esc(h.name)}</b>${h.emp?.employee_code ? `<span class="faint">${esc(h.emp.employee_code)}</span>` : ''}${!h.employee_id ? '<span class="chip amber">Not linked</span>' : ''}${h.emp && empState(h.emp) !== 'active' ? empChip(h.emp) : ''}</div></td>
-              ${Object.keys(E.types).map((t) => `<td class="num">${byType(t) ? fmtNum(byType(t)) : '—'}</td>`).join('')}
+        ${holders.length ? `<div class="table-wrap"><table class="table compact esop-table"><thead><tr><th>Employee</th>${Object.keys(types).map((t) => `<th class="num">${esc(t)}</th>`).join('')}<th class="num">Granted</th><th class="num">Vested</th><th class="num">Unvested</th><th class="num">Exercised</th><th class="num">Returned</th><th style="min-width:110px">Split</th><th>Next vesting</th></tr></thead><tbody>
+          ${holders.map((h) => { const p = h.s; const byType = (t) => h.grantsIn.filter((g) => g.grant_type === t).reduce((s, g) => s + g.options, 0);
+            const nAlloc = new Set(h.grants.map((g) => g.allocation_id)).size;
+            return `<tr class="clickable" data-holder="${E.holders.indexOf(E.holders.find((x) => x.key === h.key))}"><td><div class="name-line"><b>${esc(h.name)}</b>${h.emp?.employee_code ? `<span class="faint">${esc(h.emp.employee_code)}</span>` : ''}${!h.employee_id ? '<span class="chip amber">Not linked</span>' : ''}${h.emp && empState(h.emp) !== 'active' ? empChip(h.emp) : ''}${!alloc && nAlloc > 1 ? `<span class="chip gray plain">${nAlloc} allocations</span>` : ''}</div></td>
+              ${Object.keys(types).map((t) => `<td class="num">${byType(t) ? fmtNum(byType(t)) : '—'}</td>`).join('')}
               <td class="num"><b style="color:var(--text)">${fmtNum(p.granted)}</b></td><td class="num">${fmtNum(p.vested)}</td><td class="num">${fmtNum(p.unvested)}</td><td class="num">${fmtNum(p.exercised)}</td><td class="num">${p.returned ? fmtNum(p.returned) : '—'}</td>
-              <td><div style="width:${Math.max(18, (p.granted / maxGrant) * 100)}%">${esopStackBar([{ key: 'exercised', value: p.exercised }, { key: 'vested', value: p.exercisable }, { key: 'unvested', value: p.unvested }, { key: 'returned', value: p.returned }], p.granted, { height: 12, labels: false })}</div></td>
+              <td><div style="width:${Math.max(18, (p.granted / maxGrant) * 100)}%">${esopStackBar([{ key: 'exercised', value: p.exercised }, { key: 'vested', value: p.exercisable }, { key: 'unvested', value: p.unvested }, { key: 'returned', value: p.returned }], p.granted || 1, { height: 12, labels: false })}</div></td>
               <td class="nowrap">${p.next ? `${fmtNum(p.next.options)} on ${fmtDMY(p.next.date)}` : '—'}</td></tr>`; }).join('')}
-          <tr class="total-row"><td><b>Total</b></td>${Object.keys(E.types).map((t) => `<td class="num"><b>${fmtNum(E.types[t])}</b></td>`).join('')}<td class="num"><b>${fmtNum(T.granted)}</b></td><td class="num"><b>${fmtNum(T.vested)}</b></td><td class="num"><b>${fmtNum(T.unvested)}</b></td><td class="num"><b>${fmtNum(T.exercised)}</b></td><td class="num"><b>${fmtNum(T.returned)}</b></td><td></td><td></td></tr>
-          </tbody></table></div>` : emptyState('pie', 'No ESOP allocation yet', 'Upload the allocation Excel (Member Name, grant columns, and the vesting schedule like Mar\'27, Mar\'28…).')}
+          <tr class="total-row"><td><b>${alloc ? 'Total' : 'Final'}</b></td>${Object.keys(types).map((t) => `<td class="num"><b>${fmtNum(types[t])}</b></td>`).join('')}<td class="num"><b>${fmtNum(T.granted)}</b></td><td class="num"><b>${fmtNum(T.vested)}</b></td><td class="num"><b>${fmtNum(T.unvested)}</b></td><td class="num"><b>${fmtNum(T.exercised)}</b></td><td class="num"><b>${fmtNum(T.returned)}</b></td><td></td><td></td></tr>
+          </tbody></table></div>` : emptyState('pie', 'No ESOP allocation yet', 'Upload the allocation Excel (Member Name, grant columns, and the vesting schedule like Mar\'27, Mar\'28… — or vesting notes like “25% each - 4 years”).')}
       </div>
-      ${E.allocations.length ? `<div class="card"><div class="card-head"><div><h3>Allocations</h3><p>Uploading a sheet with the same allocation date replaces that allocation</p></div></div>
-        <div class="table-wrap"><table class="table compact"><thead><tr><th>Allocation date</th><th>Title</th><th>Exercise period</th><th class="num">Options</th><th>File</th><th>Uploaded</th><th></th></tr></thead><tbody>
-        ${E.allocations.map((a) => `<tr><td class="nowrap">${fmtDMY(a.allocation_date)}</td><td>${esc(a.title || '—')}</td><td>${a.exercise_years ? `${a.exercise_years} years · till ${fmtDMY(addYearsISO(a.allocation_date, a.exercise_years))}` : '—'}</td>
-          <td class="num">${fmtNum(E.grants.filter((g) => g.allocation_id === a.id).reduce((s, g) => s + g.options, 0))}</td><td class="trunc">${esc(a.source_file_name || '')}</td><td class="nowrap faint">${fmtRelative(a.uploaded_at)}</td>
-          <td class="actions">${amSuper() ? `<button class="btn btn-sm btn-danger" data-esop-remove="${a.id}">${icon('trash')}<span>Remove</span></button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
       ${esopSchemeHTML()}`,
     mount() {
       $('[data-esop-upload]').addEventListener('click', pickEsopFile);
@@ -5895,9 +6436,10 @@ async function pageEsops() {
         try { await api.rpc('admin_map_esop_member', { p_allocation: s.dataset.alloc, p_member_name: s.dataset.map, p_employee: s.value || null }); toast('Linked'); render(); }
         catch (e) { toast(friendlyError(e), 'error'); }
       }));
+      $$('[data-letters]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', () => openGrantLetters(b.dataset.letters).catch((e) => toast(friendlyError(e), 'error')))));
       $$('[data-esop-remove]').forEach((b) => b.addEventListener('click', async () => {
         if (!(await confirmDialog({ title: 'Remove this allocation?', message: 'Its grants and vesting schedule stop counting. Exercises already recorded stay.', confirmText: 'Remove', danger: true }))) return;
-        await withBusy(b, '', async () => { try { await api.rpc('admin_remove_esop_allocation', { p_id: b.dataset.esopRemove }); toast('Allocation removed'); render(); } catch (e) { toast(friendlyError(e), 'error'); } });
+        await withBusy(b, '', async () => { try { await api.rpc('admin_remove_esop_allocation', { p_id: b.dataset.esopRemove }); toast('Allocation removed'); location.hash = '#/esops'; render(); } catch (e) { toast(friendlyError(e), 'error'); } });
       }));
     },
   };
@@ -5918,6 +6460,9 @@ function openEsopHolder(h) {
   const { el, close } = openModal({ title: h.name, subtitle: `${h.emp?.employee_code ? `${esc(h.emp.employee_code)} · ` : ''}${fmtNum(p.granted)} options granted${h.emp ? ` · ${EMP_STATE[empState(h.emp)][0]}` : ' · not linked to an employee'}`, size: 'lg',
     body: `
       <div class="count-grid" style="margin-bottom:12px">${[['Granted', p.granted], ['Vested', p.vested], ['Can exercise', p.exercisable], ['Unvested', p.unvested], ['Exercised', p.exercised], ['Returned', p.returned]].map(([l, v]) => `<div><b>${fmtNum(v)}</b><span>${l}</span></div>`).join('')}</div>
+      ${allocs.length > 1 ? `<h4 class="scheme-h">By allocation</h4><div class="table-wrap" style="margin-bottom:12px"><table class="table compact"><thead><tr><th>Allocated on</th><th class="num">Granted</th><th class="num">Cumulative</th><th class="num">Vested</th><th class="num">Unvested</th><th class="num">Exercised</th><th class="num">Returned</th></tr></thead><tbody>
+        ${esopAllocationRows(allocs, p.rows, h.grants).map(({ a, s, cum }) => `<tr><td class="nowrap">${fmtDMY(a.allocation_date)}</td><td class="num">${fmtNum(s.granted)}</td><td class="num">${fmtNum(cum)}</td><td class="num">${fmtNum(s.vested)}</td><td class="num">${fmtNum(s.unvested)}</td><td class="num">${fmtNum(s.exercised)}</td><td class="num">${s.returned ? fmtNum(s.returned) : '—'}</td></tr>`).join('')}
+        <tr class="total-row"><td><b>Final</b></td><td class="num"><b>${fmtNum(p.granted)}</b></td><td></td><td class="num"><b>${fmtNum(p.vested)}</b></td><td class="num"><b>${fmtNum(p.unvested)}</b></td><td class="num"><b>${fmtNum(p.exercised)}</b></td><td class="num"><b>${fmtNum(p.returned)}</b></td></tr></tbody></table></div>` : ''}
       ${p.noticeDate ? `<div class="alert alert-info" style="margin-bottom:12px">${icon('info')}<span>Notice date ${fmtDMY(p.noticeDate)}: unvested options after it go back to the pool.${p.leaveDeadline ? ` Vested options must be exercised by ${fmtDMY(p.leaveDeadline)}.` : ''}</span></div>` : ''}
       ${esopTimelineChart(p.rows, { height: 170 })}
       <h4 class="scheme-h" style="margin-top:14px">Tranches</h4>
@@ -6000,17 +6545,21 @@ function showEsopPreview(file, P) {
         ${P.members.map((m, i) => `<tr><td class="nowrap">${esc(m.member_name)}</td><td><select class="input input-sm" data-m="${i}"><option value="">Not linked</option>${profiles.map((p) => `<option value="${p.id}"${m.emp?.id === p.id ? ' selected' : ''}>${esc(p.full_name)}${p.employee_code ? ` · ${esc(p.employee_code)}` : ''}</option>`).join('')}</select></td>
           ${m.grants.map((g) => `<td class="num">${g.options || '—'}</td>`).join('')}<td class="num"><b style="color:var(--text)">${m.granted}</b></td>${m.vesting.map((v) => `<td class="num">${v.options || '—'}</td>`).join('')}</tr>`).join('')}
       </tbody></table></div>
-      <p class="faint" style="font-size:12px;margin-top:8px">Vesting dates are the last day of each schedule month (${P.sched.map((s) => `${esc(s.label)} → ${fmtDMY(s.date)}`).join(', ')}). Unlinked members are saved and can be linked later.</p>`,
+      <p class="faint" style="font-size:12px;margin-top:8px">${P.derived
+        ? `The sheet has no schedule columns, so vesting is worked out from the vesting notes (${P.grantCols.map((g) => `${esc(g.type)}: ${esc(g.note || '25% a year for 4 years')}`).join('; ')}) — on each anniversary of the allocation date, rounded to whole options.`
+        : `Vesting dates are the last day of each schedule month (${P.sched.map((s) => `${esc(s.label)} → ${fmtDMY(s.date)}`).join(', ')}).`} Unlinked members are saved and can be linked later.</p>`,
     footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check')}<span>Save allocation</span></button>`,
   });
   $$('select[data-m]', el).forEach((s) => s.addEventListener('change', () => { P.members[Number(s.dataset.m)].emp = profiles.find((p) => p.id === s.value) || null; }));
   $('[data-ok]', el).addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving', async () => {
     const date = $('[data-a-date]', el).value, years = Number($('[data-a-years]', el).value) || null;
     if (!date) return toast('Enter the allocation date', 'error');
+    if (P.derived) esopApplyDerived(P, date);
     try {
       await api.rpc('admin_import_esop', { p_allocation_date: date, p_title: $('[data-a-title]', el).value, p_exercise_years: years, p_file_name: file.name,
         p_rows: P.members.map((m) => ({ member_name: m.member_name, employee_id: m.emp?.id || null, grants: m.grants, vesting: m.vesting })) });
       close(); toast(`Saved ${fmtNum(total)} options for ${P.members.length} members`);
+      archiveUpload('ESOP', file);
       location.hash = '#/esops'; render();
     } catch (e) { toast(friendlyError(e), 'error'); }
   }));
@@ -6070,6 +6619,14 @@ async function pageMyEsop() {
         ${esopStackBar([{ key: 'exercised', value: pos.exercised }, { key: 'vested', value: pos.exercisable }, { key: 'unvested', value: pos.unvested }, { key: 'returned', value: pos.returned }], pos.granted, { height: 26 })}
         ${esopLegend(['exercised', 'vested', 'unvested', 'returned'].filter((k) => k !== 'returned' || pos.returned), { exercised: pos.exercised, vested: pos.exercisable, unvested: pos.unvested, returned: pos.returned })}
       </div></div>
+      <div class="card"><div class="card-head"><div><h3>Your allocations</h3><p>Each allocation separately, and the final total</p></div></div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Allocated on</th><th class="num">Granted</th><th class="num">Cumulative</th><th class="num">Vested</th><th class="num">Unvested</th><th class="num">Exercised</th><th class="num">Returned</th><th class="num">Exercise price</th><th></th></tr></thead><tbody>
+        ${esopAllocationRows(D.allocations || [], pos.rows, (D.grants || []).map((g) => ({ allocation_id: g.allocation_id, member_name: 'me' }))).map(({ a, s, cum }) => `<tr><td class="nowrap"><b style="color:var(--text)">${fmtDMY(a.allocation_date)}</b></td>
+          <td class="num">${fmtNum(s.granted)}</td><td class="num">${fmtNum(cum)}</td><td class="num">${fmtNum(s.vested)}</td><td class="num">${fmtNum(s.unvested)}</td><td class="num">${fmtNum(s.exercised)}</td><td class="num">${s.returned ? fmtNum(s.returned) : '—'}</td>
+          <td class="num">${a.exercise_price != null ? fmtINR(a.exercise_price) : '—'}</td>
+          <td class="actions">${a.letter_file ? `<button class="btn btn-sm" data-letter="${esc(a.letter_file)}">${icon('download', 'sm')}Grant letter</button>` : '<span class="faint" style="font-size:12px">Letter not issued yet</span>'}</td></tr>`).join('')}
+        <tr class="total-row"><td><b>Final</b></td><td class="num"><b>${fmtNum(pos.granted)}</b></td><td></td><td class="num"><b>${fmtNum(pos.vested)}</b></td><td class="num"><b>${fmtNum(pos.unvested)}</b></td><td class="num"><b>${fmtNum(pos.exercised)}</b></td><td class="num"><b>${fmtNum(pos.returned)}</b></td><td></td><td></td></tr>
+        </tbody></table></div></div>
       <div class="split">
         <div class="card"><div class="card-head"><div><h3>Vesting timeline</h3><p>Options vesting on each date</p></div></div><div class="card-body">${esopTimelineChart(pos.rows)}</div></div>
         <div class="card"><div class="card-head"><div><h3>Stages</h3><p>From allocation to the end of the exercise period</p></div></div><div class="card-body">${esopStagesHTML(D.allocations || [], pos.rows, pos)}</div></div>
@@ -6082,6 +6639,11 @@ async function pageMyEsop() {
         <div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th class="num">Options</th><th class="num">Price / option</th><th>Note</th></tr></thead><tbody>
         ${D.exercises.map((x) => `<tr><td class="nowrap">${fmtDMY(x.date)}</td><td class="num">${fmtNum(x.options)}</td><td class="num">${x.price != null ? fmtINR(x.price) : '—'}</td><td>${esc(x.note || '')}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
       ${esopSchemeHTML()}`,
+    mount() {
+      $$('[data-letter]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+        try { const f = await driveDownload(b.dataset.letter); saveBlob(f.blob, f.name); } catch (e) { toast(friendlyError(e), 'error'); }
+      })));
+    },
   };
 }
 // Hover tooltips for chart marks (data-tip)
@@ -6275,7 +6837,7 @@ async function pageMyPay() {
     title: 'My Pay', crumbs: 'Your salary sheets and payouts as published by HR',
     html: `
       ${!vis.pay && !vis.finance ? `<div class="card">${emptyState('lock', 'Not shared yet', 'HR has not made pay details visible in the portal.')}</div>` : ''}
-      ${vis.pay ? (slips.length ? slips.map(payslipCardHTML).join('') : `<div class="card"><div class="card-head"><div><h3>Salary sheets</h3><p>Published by HR each month</p></div></div>${none('No salary sheet has been published for you yet.')}</div>`) : ''}
+      ${vis.pay ? (slips.length ? payRecordHTML(slips) + slips.filter((sl) => (sl.days || []).length).map(payslipCardHTML).join('') : `<div class="card"><div class="card-head"><div><h3>Pay record</h3><p>Published by HR each month</p></div></div>${none('No salary sheet has been published for you yet.')}</div>`) : ''}
       ${vis.finance ? `<div class="card"><div class="card-head"><div><h3>Bonus &amp; leave encashment</h3></div></div>
         ${(P.bonus || []).length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th class="num">Loan deduction</th><th class="num">Net</th></tr></thead><tbody>
           ${P.bonus.map((b) => `<tr><td class="nowrap">${fmtDMY(b.date)}</td><td>${esc(b.description)}</td><td class="num">${fmtINR(b.amount)}</td><td class="num">${Number(b.loan_deduction) ? fmtINR(b.loan_deduction) : '—'}</td><td class="num"><b style="color:var(--text)">${fmtINR(Number(b.amount) - Number(b.loan_deduction))}</b></td></tr>`).join('')}
@@ -6288,8 +6850,27 @@ async function pageMyPay() {
         ${(P.loans || []).length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Taken on</th><th class="num">Amount</th><th class="num">Remaining</th></tr></thead><tbody>
           ${P.loans.map((l) => `<tr><td class="nowrap">${fmtDMY(l.taken_on)}</td><td class="num">${fmtINR(l.amount)}</td><td class="num"><b style="color:${Number(l.remaining) > 0 ? 'var(--text)' : 'var(--green)'}">${Number(l.remaining) > 0 ? fmtINR(l.remaining) : 'Repaid'}</b></td></tr>`).join('')}
           </tbody></table></div>` : none('No loans.')}</div>` : ''}`,
-    mount() { mountPayslipActions(); },
+    mount() {
+      mountPayslipActions();
+      $$('[data-slip]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+        const sl = state.slips[Number(b.dataset.slip)];
+        const pr = P.profile || {};
+        try { await downloadMySlip({ ...sl, employee: sl.employee || { full_name: pr.full_name, employee_code: pr.employee_code, designation: pr.designation, date_of_joining: pr.date_of_joining } }); }
+        catch (e) { toast(friendlyError(e), 'error'); }
+      })));
+    },
   };
+}
+// Every published month stays here; the day-wise sheet is shown only while queries are open (12 hours)
+function payRecordHTML(slips) {
+  return `<div class="card"><div class="card-head"><div><h3>Pay record</h3><p>Every month HR has published · the day-wise sheet shows below for ${QUERY_HOURS} hours after publishing</p></div></div>
+    <div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th class="num">Full</th><th class="num">Half</th><th class="num">Leave</th><th class="num">WO</th><th class="num">Monthly salary</th><th class="num">Earned</th><th class="num">PT</th><th class="num">Net pay</th><th></th></tr></thead><tbody>
+    ${slips.map((sl, i) => { const qs = sl.queries || []; const open = (sl.days || []).length;
+      return `<tr><td class="nowrap"><b style="color:var(--text)">${fmtMonth(sl.month)}</b>${open ? ' <span class="chip blue plain">Sheet open</span>' : ''}${qs.length ? ` <span class="chip gray plain" title="${esc(qs.map((x) => `${fmtDMY(x.date)}: ${Q_LABEL[x.status]}`).join(' · '))}">${qs.length} quer${qs.length === 1 ? 'y' : 'ies'}</span>` : ''}</td>
+        <td class="num">${sl.full}</td><td class="num">${sl.half}</td><td class="num">${sl.leave}</td><td class="num">${sl.weekly_off}</td>
+        <td class="num">${fmtINR(sl.monthly_salary)}</td><td class="num">${fmtINR(sl.earned)}</td><td class="num">${fmtINR(sl.pt)}</td><td class="num"><b style="color:var(--text)">${fmtINR(sl.net)}</b></td>
+        <td class="actions"><button class="btn btn-sm" data-slip="${i}" title="Download the salary slip (PDF)">${icon('download', 'sm')}Slip</button></td></tr>`; }).join('')}
+    </tbody></table></div></div>`;
 }
 
 // ---- Published salary sheet (read-only) with date-specific queries ----
@@ -6587,6 +7168,163 @@ async function handleAuthEvent(event, session) {
 
 // Never fail silently: surface unexpected errors to the user.
 window.addEventListener('unhandledrejection', (e) => toast(friendlyError(e.reason), 'error'));
+</script>
+<script type="text/plain" id="drive-bridge-code">
+/**
+ * Altius HRMS — Google Drive bridge (Google Apps Script web app)
+ *
+ * Saves the HRMS files (KYC documents, salary slips, ESOP grant letters and
+ * the uploaded Excel sheets) in a Google Drive folder instead of Supabase
+ * storage. The HRMS keeps only the Drive file id.
+ *
+ * Every call carries the person's HRMS sign-in token; the bridge checks it
+ * with Supabase before doing anything:
+ *   - employees can only upload their own KYC (named and filed automatically)
+ *     and open files that belong to them;
+ *   - admins can upload salary slips, grant letters and sheets, and open any
+ *     HRMS file.
+ *
+ * Setup: see "Storage & documents" in the HRMS admin (Settings).
+ * Script properties: SUPABASE_URL, SUPABASE_ANON_KEY, ROOT_FOLDER_ID
+ */
+var APP = 'altius-hrms';
+
+function doGet() {
+  return out_({ ok: true, service: 'Altius HRMS Drive bridge' });
+}
+
+function doPost(e) {
+  try {
+    var req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    var user = verify_(req.token);
+    var fn = ACTIONS[req.action];
+    if (!fn) throw new Error('Unknown action');
+    var res = fn(req, user);
+    res.ok = true;
+    return out_(res);
+  } catch (err) {
+    return out_({ ok: false, error: String((err && err.message) || err) });
+  }
+}
+
+var ACTIONS = {
+  // Check the connection
+  ping: function (req, user) {
+    var root = root_();
+    return { user: user.full_name, admin: user.isAdmin, folder: root.getName(), folderUrl: root.getUrl() };
+  },
+
+  // Save a file. KYC: {kind:'kyc', label, ext, mime, data, owner?}; other files (admin): {folder:[...], name, mime, data, owner?}
+  upload: function (req, user) {
+    var path, owner, name, replace;
+    if (req.kind === 'kyc') {
+      var person = user;
+      if (req.owner && req.owner !== user.id) {
+        if (!user.isAdmin) throw new Error('Not allowed');
+        person = profile_(req.owner, req.token);
+      }
+      path = ['KYC', person.full_name + (person.employee_code ? ' - ' + person.employee_code : '')];
+      owner = person.id;
+      name = person.full_name + ' - ' + clean_(req.label || 'Document') + '.' + String(req.ext || 'pdf').replace(/[^a-z0-9]/gi, '').toLowerCase();
+      replace = 'rename';
+    } else {
+      if (!user.isAdmin) throw new Error('Only admin can do this');
+      if (!req.folder || !req.folder.length) throw new Error('Folder missing');
+      path = req.folder;
+      owner = req.owner || '';
+      name = clean_(req.name || 'File');
+      replace = req.replace ? 'trash' : 'keep';
+    }
+    if (!req.data) throw new Error('The file is empty');
+    var folder = folder_(path, req.kind === 'kyc' ? owner : '');
+    var same = folder.getFilesByName(name);
+    while (same.hasNext()) {
+      var old = same.next();
+      if (meta_(old).app !== APP) continue;
+      if (replace === 'trash') old.setTrashed(true);
+      else if (replace === 'rename') old.setName(name.replace(/(\.[a-z0-9]+)?$/i, ' (replaced ' + Utilities.formatDate(new Date(), 'Asia/Kolkata', 'dd-MM-yyyy HHmm') + ')$1'));
+    }
+    var blob = Utilities.newBlob(Utilities.base64Decode(req.data), req.mime || 'application/octet-stream', name);
+    var file = folder.createFile(blob);
+    file.setDescription(JSON.stringify({ app: APP, owner: owner, kind: req.kind || 'file', by: user.id }));
+    return { id: file.getId(), name: file.getName(), url: file.getUrl(), folderUrl: folder.getUrl() };
+  },
+
+  // Open a file: the owner or an admin
+  get: function (req, user) {
+    var file = DriveApp.getFileById(req.id);
+    var m = meta_(file);
+    if (m.app !== APP) throw new Error('Not an HRMS file');
+    if (!user.isAdmin && m.owner !== user.id) throw new Error('Not allowed');
+    var blob = file.getBlob();
+    return { name: file.getName(), mime: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()), url: user.isAdmin ? file.getUrl() : null };
+  },
+
+  // Move a file to the Drive bin (admin)
+  remove: function (req, user) {
+    if (!user.isAdmin) throw new Error('Only admin can do this');
+    var file = DriveApp.getFileById(req.id);
+    if (meta_(file).app !== APP) throw new Error('Not an HRMS file');
+    file.setTrashed(true);
+    return {};
+  },
+};
+
+function cfg_(k) {
+  var v = PropertiesService.getScriptProperties().getProperty(k);
+  if (!v) throw new Error('The Drive bridge is missing the script property ' + k);
+  return v;
+}
+function root_() { return DriveApp.getFolderById(cfg_('ROOT_FOLDER_ID')); }
+
+// Checks the HRMS sign-in token with Supabase and loads the person's profile
+function verify_(token) {
+  if (!token) throw new Error('Not signed in');
+  var base = cfg_('SUPABASE_URL').replace(/\/$/, '');
+  var h = { apikey: cfg_('SUPABASE_ANON_KEY'), Authorization: 'Bearer ' + token };
+  var u = UrlFetchApp.fetch(base + '/auth/v1/user', { headers: h, muteHttpExceptions: true });
+  if (u.getResponseCode() !== 200) throw new Error('Your session has expired. Please sign in again.');
+  var p = profile_(JSON.parse(u.getContentText()).id, token);
+  p.isAdmin = p.role === 'admin' && p.status === 'active';
+  return p;
+}
+function profile_(id, token) {
+  var base = cfg_('SUPABASE_URL').replace(/\/$/, '');
+  var h = { apikey: cfg_('SUPABASE_ANON_KEY'), Authorization: 'Bearer ' + token };
+  var r = UrlFetchApp.fetch(base + '/rest/v1/profiles?select=id,role,status,full_name,employee_code&id=eq.' + encodeURIComponent(id), { headers: h, muteHttpExceptions: true });
+  var rows = JSON.parse(r.getContentText() || '[]');
+  if (!rows.length) throw new Error('Profile not found');
+  return rows[0];
+}
+
+// Finds or creates root/path[0]/path[1]/…; the last folder can be tied to an owner
+function folder_(path, owner) {
+  var f = root_();
+  for (var i = 0; i < path.length; i++) {
+    var name = clean_(path[i]);
+    var last = i === path.length - 1;
+    var it = f.getFoldersByName(name), next = null;
+    while (it.hasNext()) {
+      var c = it.next();
+      if (!last || !owner || meta_(c).owner === owner) { next = c; break; }
+    }
+    if (!next) {
+      next = f.createFolder(name);
+      next.setDescription(JSON.stringify({ app: APP, owner: last ? owner : '' }));
+    }
+    f = next;
+  }
+  return f;
+}
+function meta_(item) {
+  try { return JSON.parse(item.getDescription() || '{}') || {}; } catch (e) { return {}; }
+}
+function clean_(s) {
+  return String(s || '').replace(/[\\\/:*?"<>|]+/g, '-').replace(/\s+/g, ' ').trim().slice(0, 150) || 'Untitled';
+}
+function out_(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
 </script>
 </body>
 </html>

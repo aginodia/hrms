@@ -346,6 +346,16 @@ Each line is filled in automatically, with the employee's **current salary** as 
 * EMD → Show detailed info shows the employee's **Activity log** across all sections.
 * The Variable, Bonus and Loans pages each have a **Month log** with a month picker.
 
+**Salary slips.** Payroll → **Salary slips** (after the month is saved) makes a PDF slip per employee from the saved payroll: name, Employee ID, designation, date of joining, bank account (last 4 digits), days, monthly salary, earned, PT, net pay in figures and words. Download one, or **Save all to Drive** (Salary slips / *YYYY-MM*). Company name, address, CIN and the grant-letter signatory are set in **Settings → Storage & documents**.
+
+**My Pay (employee).** A **Pay record** lists every published month (days, monthly salary, earned, PT, net) with a **Slip** button. If HR saved the slip to Drive, that copy downloads; otherwise the slip is made in the browser from the published figures. The day-wise sheet and the Ask buttons show only for the 12 hours after the first push; after that the month stays in the record and the sheet disappears (the database stops sending it).
+
+**Google Drive storage.** Files are kept in the company's Google Drive instead of Supabase storage; Supabase keeps only the Drive file id. It works through a small Google Apps Script web app (`drive-bridge/Code.gs`, also copyable from the Storage page) that runs as the company Google account and checks every request's HRMS sign-in with Supabase: employees can only add their own KYC and open their own files, admins can save and open the rest.
+* Setup (Super Admin, Settings → **Storage & documents**): create a Drive folder, create the Apps Script project with the bridge code, add the script properties `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `ROOT_FOLDER_ID`, deploy as a Web app (Execute as Me, access Anyone), paste the URL, **Save**, **Test connection**.
+* **KYC**: once connected, each upload goes to KYC / *Name - Employee ID* / *Name - PAN.pdf* (renamed automatically; re-uploading renames the older file "replaced …"). **Move to Drive** copies older KYC files out of Supabase storage, points the HRMS at the Drive copies, then deletes the Supabase copies.
+* **Uploaded sheets** (attendance, variable, ESOP, bulk employees) are copied to Uploads / *section* / *YYYY-MM*. The employees sheet can hold temporary passwords — keep the Drive folder shared only with HR.
+* Until Drive is connected, KYC keeps using Supabase storage and slips / letters can still be downloaded.
+
 **Monthly Expense.** The team submits expenses through a Google Form. In the form, go to **Responses → Link to Sheets**, then share that responses sheet as **Anyone with the link: Viewer**. Paste the sheet's link on the Monthly Expense page and click **Sync**. The columns (Employee ID, Amount, Timestamp, Name, Expense date, Category, Description, Bill) are detected automatically and can be changed. Each response is matched to an employee by **Employee ID**, using the same rule as Payroll mapping. Responses that don't match are listed and flagged. **Detailed info** shows an employee's claims month by month, with bill links. Syncing again adds new responses and never duplicates old ones.
 
 **ESOPs.** The allocation comes from the ESOP Excel (the `Esop_Historical.xlsx` layout; **Template** downloads a blank copy):
@@ -355,6 +365,8 @@ Each line is filled in automatically, with the employee's **current salary** as 
 * The page shows tiles for **Total pool / Granted / Vested / Unvested / Exercised / Returned to pool**, a pool bar, grants by type, a vesting-timeline chart, and an employee-wise table. Clicking a row shows the tranche statuses, grants, exercises (**Record exercise**, capped at what has vested), linking and the stages.
 * **Edit pool** changes the pool (2,000 by default).
 * On resignation or termination, unvested options after the notice date go back to the pool. Vested options lapse back to the pool if not exercised within 6 months of the last working day (30 days for a termination) or by the end of the exercise period.
+* **Weekly allocations.** Each uploaded sheet is a separate allocation, keyed by its allocation date. The page has tabs: **Final — all allocations** (the cumulative position, plus an Allocations table with granted / cumulative / vested / unvested / exercised / returned / pool left for each allocation) and one tab per allocation. A sheet without `Mar'27`-style schedule columns vests from its vesting notes (`25% each - 4 years`, `50% - 2 years`; no note = 25% a year for 4 years) on each anniversary of the allocation date, rounded to whole options.
+* **Grant letters** (per allocation): set the exercise price (not below ₹100) and the letter date, download a PDF, or **Save letters to Drive** (ESOP grant letters / Allocation *date*). Employees download theirs in My ESOPs once it is saved.
 * Employees see **My ESOPs** in the portal: their tiles, a timeline chart, stages, grants, exercises and a summary of the scheme. The summary is written into the app; the scheme document itself is not stored. Team Access → **ESOPs** hides it.
 
 ### Choices I made where the brief left a gap
@@ -377,6 +389,8 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261019000000_drive_docs_payslips_esop_weekly.sql` | Pay record (`my_payslips` sends the day-wise sheet only in the 12-hour window, plus slip details), `hr_documents` (Drive links of slips and grant letters), `admin_record_document`, ESOP exercise price (`admin_set_esop_price`), `admin_set_kyc_paths`, `drive` / `company` settings. |
+| `drive-bridge/Code.gs` | Google Apps Script web app that stores HRMS files in Google Drive after checking the HRMS sign-in. |
 | `supabase/migrations/20261018000000_esop.sql` | ESOPs: allocations, grants, vesting tranches and exercises (`esop_*` tables), pool setting, `admin_import_esop`, `admin_map_esop_member`, `admin_add_esop_exercise`, `my_esops()`. |
 | `supabase/migrations/20261017000000_query_autoresolve_left_updates.sql` | Queries resolve automatically on push when their day changed (and carry over after a re-upload), no queries / WFH after leaving, `my_updates()` for the portal's New markers. |
 | `supabase/migrations/20261016000000_leaves_register_wfh_month.sql` | Leaves register (`leave_records`, `admin_add_leaves`, `admin_remove_leave`); employee WFH back-dating limited to the current month. |
@@ -406,5 +420,6 @@ Each line is filled in automatically, with the employee's **current salary** as 
 * `loans` / `loan_deductions` / `loan_repayments`: loans taken, deductions from Variable / Bonus lines (voided, not deleted, when reversed), and manual repayments
 * `finance_log`: who did what, per section, employee and month
 * `bonus_payments`: bonus and leave-encashment payments (date, amount, loan deduction); read-only once saved
-* `esop_allocations` / `esop_grants` / `esop_vesting` / `esop_exercises`: ESOP allocation uploads, grants per member and type, vesting tranches, and exercises
+* `esop_allocations` / `esop_grants` / `esop_vesting` / `esop_exercises`: ESOP allocation uploads (with exercise price), grants per member and type, vesting tranches, and exercises
+* `hr_documents`: salary slips and grant letters saved to Google Drive (Drive file id only)
 * `expense_claims`: expenses synced from the Google Form responses sheet, matched to employees by Employee ID
