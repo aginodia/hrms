@@ -348,7 +348,14 @@ Each line is filled in automatically, with the employee's **current salary** as 
 
 **Monthly Expense.** The team submits expenses through a Google Form. In the form, go to **Responses → Link to Sheets**, then share that responses sheet as **Anyone with the link: Viewer**. Paste the sheet's link on the Monthly Expense page and click **Sync**. The columns (Employee ID, Amount, Timestamp, Name, Expense date, Category, Description, Bill) are detected automatically and can be changed. Each response is matched to an employee by **Employee ID**, using the same rule as Payroll mapping. Responses that don't match are listed and flagged. **Detailed info** shows an employee's claims month by month, with bill links. Syncing again adds new responses and never duplicates old ones.
 
-**ESOPs.** Placeholder. Share how grants, vesting and exercise should work and it will be built to match.
+**ESOPs.** The allocation comes from the ESOP Excel (the `Esop_Historical.xlsx` layout; **Template** downloads a blank copy):
+* The title row holds `ALLOCATION DATE 2nd APRIL 2026`, and a cell holds `Exercise Period : 4 years`.
+* The header row starts with **Member Name**. The grant columns (Performance, Time-weighted, Historical) come before **Allocation Schedule**, and the schedule columns (`Mar'27`, `Mar'28` …) say how many options vest on the last day of that month. The member list ends at the **Total** row.
+* **Upload allocation Excel** shows a preview. Names are matched to employees (exact name, or a unique first/last-name match), and the rest can be linked in the preview or later on the page. Re-uploading the same allocation date replaces it.
+* The page shows tiles for **Total pool / Granted / Vested / Unvested / Exercised / Returned to pool**, a pool bar, grants by type, a vesting-timeline chart, and an employee-wise table. Clicking a row shows the tranche statuses, grants, exercises (**Record exercise**, capped at what has vested), linking and the stages.
+* **Edit pool** changes the pool (2,000 by default).
+* On resignation or termination, unvested options after the notice date go back to the pool. Vested options lapse back to the pool if not exercised within 6 months of the last working day (30 days for a termination) or by the end of the exercise period.
+* Employees see **My ESOPs** in the portal: their tiles, a timeline chart, stages, grants, exercises and a summary of the scheme. The summary is written into the app; the scheme document itself is not stored. Team Access → **ESOPs** hides it.
 
 ### Choices I made where the brief left a gap
 * **Date of birth** is collected in the KYC form. **Date of joining** is set by the admin at approval. Both are locked afterwards, along with name, email and phone.
@@ -370,6 +377,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261006130000_reject_and_salary_audit.sql` | Reject / restore, saving employee details, and the salary audit trail. Re-runnable. |
 | `supabase/migrations/20261007000000_payroll_attendance.sql` | Payroll: attendance uploads and punches, EmpCode mapping, day-wise adjustments, saved payroll, working-hours rules. Admin-only. Re-runnable. |
 | `supabase/migrations/20261007120000_finance_pt_variable_bonus_expenses.sql` | Professional Tax slabs and PT in saved payroll, eligibility, variable entries, bonus/leave-encashment lines, synced expense claims, `norm_emp_code()`. Admin-only. Re-runnable. |
+| `supabase/migrations/20261018000000_esop.sql` | ESOPs: allocations, grants, vesting tranches and exercises (`esop_*` tables), pool setting, `admin_import_esop`, `admin_map_esop_member`, `admin_add_esop_exercise`, `my_esops()`. |
 | `supabase/migrations/20261017000000_query_autoresolve_left_updates.sql` | Queries resolve automatically on push when their day changed (and carry over after a re-upload), no queries / WFH after leaving, `my_updates()` for the portal's New markers. |
 | `supabase/migrations/20261016000000_leaves_register_wfh_month.sql` | Leaves register (`leave_records`, `admin_add_leaves`, `admin_remove_leave`); employee WFH back-dating limited to the current month. |
 | `supabase/migrations/20261015000000_calendar_wfh_payroll_push.sql` | Holiday & time-relaxation calendar (`calendar_days`), WFH (`wfh_days`), Save & push (`payroll_runs.pushed_at`, `payroll_results.days`, `admin_push_payroll`), salary queries with the 12-hour window (`payroll_queries`), `my_payslips()`; the portal's pay list shows pushed months only. |
@@ -398,4 +406,5 @@ Each line is filled in automatically, with the employee's **current salary** as 
 * `loans` / `loan_deductions` / `loan_repayments`: loans taken, deductions from Variable / Bonus lines (voided, not deleted, when reversed), and manual repayments
 * `finance_log`: who did what, per section, employee and month
 * `bonus_payments`: bonus and leave-encashment payments (date, amount, loan deduction); read-only once saved
+* `esop_allocations` / `esop_grants` / `esop_vesting` / `esop_exercises`: ESOP allocation uploads, grants per member and type, vesting tranches, and exercises
 * `expense_claims`: expenses synced from the Google Form responses sheet, matched to employees by Employee ID

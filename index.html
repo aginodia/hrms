@@ -542,6 +542,51 @@
   .rep-list { display: grid; gap: 2px; max-height: 260px; overflow-y: auto; }
   .rep-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 7px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
   .rep-row:last-child { border-bottom: 0; }
+  /* ---------- ESOP charts ---------- */
+  .esop-stats { grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 14px; }
+  .stat .sw { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .input.input-sm, select.input.input-sm { height: 30px; font-size: 12.5px; padding-top: 0; padding-bottom: 0; }
+  tr.clickable { cursor: pointer; }
+  tr.total-row td { background: var(--surface-2); }
+  .ch-stack { display: flex; gap: 2px; width: 100%; border-radius: 5px; overflow: hidden; background: var(--surface); }
+  .ch-stack.empty { background: var(--gray-soft); }
+  .ch-stack > span { min-width: 3px; display: flex; align-items: center; justify-content: center; }
+  .ch-stack em { font-style: normal; font-size: 11.5px; font-weight: 600; color: #fff; }
+  .ch-stack em.dark { color: var(--text-2); }
+  .ch-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .ch-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .ch-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .ch-legend b { color: var(--text); font-weight: 600; }
+  .card-head .right .ch-legend { margin-top: 0; }
+  .ch-scroll { overflow-x: auto; }
+  svg.chart { display: block; max-width: 100%; height: auto; }
+  svg.chart .ch-grid { stroke: var(--border); stroke-width: 1; }
+  svg.chart .ch-axis { font-size: 11px; fill: var(--muted); }
+  svg.chart .ch-axis.faint { font-size: 10px; fill: var(--faint, #9CA3AF); }
+  svg.chart .ch-val { font-size: 11.5px; font-weight: 600; fill: var(--text); }
+  svg.chart .ch-today { stroke: var(--text-2); stroke-width: 1.5; stroke-dasharray: 3 3; }
+  svg.chart path[data-tip]:hover, .ch-stack > span:hover, .hbars i:hover { opacity: .82; }
+  .ch-tip { position: fixed; z-index: 1000; pointer-events: none; background: #111827; color: #fff; font-size: 12px; padding: 5px 8px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.18); white-space: nowrap; }
+  .hbars { display: grid; gap: 6px; margin-top: 6px; }
+  .hb { display: grid; grid-template-columns: 110px minmax(0, 1fr) 44px; gap: 8px; align-items: center; font-size: 12.5px; color: var(--text-2); }
+  .hb > div { height: 12px; }
+  .hb i { display: block; height: 12px; background: var(--accent); border-radius: 0 4px 4px 0; min-width: 3px; }
+  .hb b { text-align: right; color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .scheme-h { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 6px; }
+  .stages { list-style: none; margin: 0; padding: 0 0 0 4px; position: relative; }
+  .stages li { position: relative; display: flex; gap: 10px; padding: 0 0 12px 18px; }
+  .stages li::before { content: ''; position: absolute; left: 4px; top: 12px; bottom: -2px; width: 2px; background: var(--border); }
+  .stages li:last-child::before { display: none; }
+  .stages .dot { position: absolute; left: 0; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border-strong, #CBD5E1); }
+  .stages li.done .dot { background: #eb6834; border-color: #eb6834; }
+  .stages li.next .dot { border-color: #1baf7a; }
+  .stages li.off .dot { background: #9CA3AF; border-color: #9CA3AF; }
+  .stages li.today .dot { background: var(--text); border-color: var(--text); }
+  .stages li > div { display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
+  .stages li b { font-weight: 600; color: var(--text); }
+  .stages li span { color: var(--muted); font-size: 12px; }
+  .stages li.off b { color: var(--muted); text-decoration: line-through; }
+  .stages li.today b { color: var(--accent); }
   details.fold > summary { list-style: none; cursor: pointer; border-bottom: 0; }
   details.fold > summary::-webkit-details-marker { display: none; }
   details.fold > summary .right svg { transition: transform .15s; }
@@ -575,6 +620,7 @@
   /* ---------- Responsive ---------- */
   @media (max-width: 1100px) {
     .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .esop-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .split { grid-template-columns: minmax(0, 1fr) !important; }
     .g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .rep-grid { grid-template-columns: minmax(0, 1fr); }
@@ -599,6 +645,7 @@
   @media (max-width: 640px) {
     .stats, .g2, .g3, .g4, .kv { grid-template-columns: minmax(0, 1fr); }
     .count-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .esop-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .span-2 { grid-column: auto; }
     .salary-row { grid-template-columns: 1fr 1fr; }
     .salary-row.head { display: none; }
@@ -1714,13 +1761,14 @@ const NAV = {
     { key: 'pay', label: 'My Pay', icon: 'wallet', badge: newBadge('pay') },
     { key: 'calendar', label: 'Holidays', icon: 'calendar', badge: newBadge('calendar') },
     { key: 'wfh', label: 'WFH', icon: 'laptop', badge: newBadge('wfh') },
+    { key: 'esop', label: 'My ESOPs', icon: 'pie' },
     { key: 'kyc', label: 'My KYC', icon: 'fileCheck', badge: newBadge('kyc') || (KYC_OPEN.includes(state.profile?.kyc_status || 'not_started') ? 1 : 0) },
   ],
 };
 const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, rules: pageRules, leaves: pageLeaves, wfh: pageAdminWfh, holidays: pageHolidays, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops },
-  team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, wfh: pageMyWfh, kyc: pageTeamKyc },
+  team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, wfh: pageMyWfh, esop: pageMyEsop, kyc: pageTeamKyc },
 };
 const DEFAULT_PAGE = { admin: 'dashboard', team: 'home' };
 
@@ -3129,6 +3177,7 @@ async function pageTeamAccess() {
     ['kyc_documents', 'KYC documents', 'Employees can open the documents they submitted during onboarding.'],
     ['pay', 'Monthly pay', 'Employees see their saved payroll in My Pay: days, earned, PT and net pay per month. On unless switched off.'],
     ['finance', 'Bonus, variable & loans', 'Employees see their bonus / leave encashment, variable payouts and loan balance in My Pay. On unless switched off.'],
+    ['esop', 'ESOPs', 'Employees see their own ESOP grant, vesting timeline and the scheme summary in My ESOPs. On unless switched off.'],
   ];
   return {
     title: 'Team Access',
@@ -3137,7 +3186,7 @@ async function pageTeamAccess() {
       <div class="card" style="max-width:820px">
         <div class="card-head"><div><h3>Visible to employees</h3><p>Changes apply immediately after saving.</p></div></div>
         ${items.map(([k, t, d]) => `<label class="toggle-row"><div class="txt"><b>${t}</b><span>${d}</span></div>
-          <span class="switch"><input type="checkbox" data-vis="${k}" ${(['pay', 'finance'].includes(k) ? vis[k] !== false : vis[k]) ? 'checked' : ''}><span></span></span></label>`).join('')}
+          <span class="switch"><input type="checkbox" data-vis="${k}" ${(['pay', 'finance', 'esop'].includes(k) ? vis[k] !== false : vis[k]) ? 'checked' : ''}><span></span></span></label>`).join('')}
         <div class="card-body" style="border-top:1px solid var(--border);display:flex;justify-content:flex-end">
           <button class="btn btn-primary" id="vis-save">${icon('check', 'sm')}Save settings</button></div>
       </div>`,
@@ -4289,6 +4338,13 @@ async function pageRules(r) {
         'When the queried day is changed and saved or pushed, the query is resolved automatically',
         'Admins can change days and answer queries at any time',
         'People in Resigned & Terminated can’t raise queries'])}
+      ${sec('esop', 'ESOPs', [
+        'Grants and the vesting schedule come from the allocation Excel; each schedule month (e.g. Mar\'27) vests on the last day of that month',
+        'Vested = schedule dates up to today; Unvested = later dates; Exercised = what admins record (never more than vested)',
+        'On resignation or termination, unvested options after the notice date (or the last working day) go back to the pool',
+        'Vested options not exercised within 6 months of the last working day (30 days after a termination), or by the end of the exercise period, lapse back to the pool',
+        'Available in pool = pool − granted + returned',
+        'Uploading a sheet with the same allocation date replaces that allocation'])}
       ${sec('mapping', 'Payroll mapping', [
         'Each EmpCode in the attendance sheet is mapped to an employee; only mapped employees are paid',
         'The EmpCode should be the same as the Employee ID in Employee Master Data — case and leading zeros are ignored (0003 = 003)',
@@ -5498,12 +5554,551 @@ async function pageExpenseEmployee(id) {
 }
 
 /* ---------- ESOPs ---------- */
+/* =====================================================================
+   ESOPs — allocations come from the ESOP Excel; vesting follows the sheet's
+   schedule. Status per tranche is worked out here from the dates and the
+   employee's exit, following the scheme (summary below — the scheme
+   document itself is not stored).
+   ===================================================================== */
+const ESOP_COLORS = { exercised: '#2a78d6', vested: '#eb6834', unvested: '#1baf7a', returned: '#9CA3AF', available: '#E5E7EB' };
+const ESOP_LABEL = { exercised: 'Exercised', vested: 'Vested', unvested: 'Unvested', returned: 'Returned to pool', available: 'Available in pool' };
+const ESOP_TRANCHE = { vested: ['Vested', 'amber'], upcoming: ['Upcoming', 'green'], returned: ['Returned to pool', 'gray'], lapsed: ['Lapsed', 'gray'], exercised: ['Exercised', 'blue'] };
+const ESOP_SCHEME = [
+  ['Plan', ['Altius ESOP 2026 — effective 1 April 2026 for 8 years', 'Pool of 2,000 options; 1 option = 1 equity share of ₹100 face value',
+    'Granted at the discretion of the Committee; a grant is accepted within 30 days or it lapses']],
+  ['Vesting', ['Minimum 12 months from grant before anything vests (cliff)', 'Standard schedule 25% a year over 4 years — the Committee can set a different one; the allocation sheet\'s schedule is what is shown here',
+    'Vesting needs continuous employment and the employee not being on notice on the vesting date']],
+  ['Exercise', ['Exercise price is fixed at grant and is never below face value; paid through banking channels',
+    'Vested options can be exercised while in service (the allocation sheet sets the exercise period)', 'No shareholder rights until shares are allotted; options cannot be transferred, pledged or sold']],
+  ['Leaving the company', ['Resignation or termination (not for misconduct): all unvested options are cancelled from the notice date and go back to the pool',
+    'Vested options: exercise within 6 months of the last working day after resignation, 30 days after termination — otherwise they lapse back to the pool',
+    'Misconduct: all options, vested and unvested, are cancelled', 'Retirement: vested options stay exercisable; unvested may continue to vest if the Committee approves',
+    'Death or permanent incapacity: the Committee may vest everything at once; the nominee or legal heirs exercise', 'Transfer within the group: no change']],
+  ['Shares & other terms', ['Shares may carry lock-in, right of first refusal and tag-along / drag-along terms', 'Bonus, split, merger or similar events: options are adjusted fairly; in a merger they may be rolled over, cashed out or cancelled',
+    'Buy-back or liquidity only at the Board\'s discretion — no liquidity is guaranteed', 'All taxes on exercise and sale are borne by the employee'],
+  ],
+];
+const addYearsISO = (iso, n) => { const d = parseISODate(iso); d.setFullYear(d.getFullYear() + n); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const addMonthsISO = (iso, n) => { const d = parseISODate(iso); const day = d.getDate(); d.setDate(1); d.setMonth(d.getMonth() + n); d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate())); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const fmtNum = (n) => Number(n || 0).toLocaleString('en-IN');
+
+// One employee's position. tranches: [{allocation_id, date, label, options}], exercises: [{date, options}],
+// allocations: [{id, allocation_date, exercise_years}], profile: exit fields.
+function esopPosition({ tranches = [], exercises = [], allocations = [], profile = {}, today = todayISO() }) {
+  const st = profile.employment_status;
+  const left = ['resigned', 'terminated'].includes(st) || !!profile.fnf_completed_at;
+  // Unvested options are cancelled from the notice date (resignation date; for a termination the last working day).
+  const noticeDate = profile.resignation_date || (left ? profile.exit_date : null) || null;
+  const leaveDeadline = left && profile.exit_date ? (st === 'terminated' ? addDaysISO(profile.exit_date, 30) : addMonthsISO(profile.exit_date, 6)) : null;
+  const allocOf = Object.fromEntries(allocations.map((a) => [a.id, a]));
+  const rows = tranches.map((t) => {
+    const a = allocOf[t.allocation_id];
+    const expiry = a?.exercise_years ? addYearsISO(a.allocation_date, a.exercise_years) : null;
+    const deadline = [expiry, leaveDeadline].filter(Boolean).sort()[0] || null;
+    const base = { ...t, options: Number(t.options), deadline, exercised: 0, lapsed: 0 };
+    if (noticeDate && t.date > noticeDate) return { ...base, status: 'returned' };
+    if (t.date <= today) return { ...base, status: 'vested' };
+    return { ...base, status: 'upcoming' };
+  }).sort((a, b) => a.date.localeCompare(b.date));
+  // Exercises use the earliest vested tranches first.
+  let pool = exercises.reduce((s, e) => s + Number(e.options), 0);
+  for (const r of rows) {
+    if (r.status !== 'vested' || pool <= 0) continue;
+    r.exercised = Math.min(r.options, pool); pool -= r.exercised;
+  }
+  for (const r of rows) {
+    if (r.status !== 'vested') continue;
+    const open = r.options - r.exercised;
+    if (open > 0 && r.deadline && today > r.deadline) r.lapsed = open;
+    if (r.exercised === r.options) r.status = 'exercised';
+    else if (r.lapsed && !r.exercised) r.status = 'lapsed';
+  }
+  const sum = (f) => rows.reduce((s, r) => s + f(r), 0);
+  const granted = sum((r) => r.options);
+  const vestedAll = sum((r) => (['vested', 'exercised', 'lapsed'].includes(r.status) ? r.options : 0));
+  const exercised = exercises.reduce((s, e) => s + Number(e.options), 0);
+  const cancelled = sum((r) => (r.status === 'returned' ? r.options : 0));
+  const lapsed = sum((r) => r.lapsed);
+  const unvested = sum((r) => (r.status === 'upcoming' ? r.options : 0));
+  const exercisable = Math.max(0, vestedAll - exercised - lapsed);
+  const next = rows.find((r) => r.status === 'upcoming') || null;
+  return { rows, granted, vested: vestedAll, exercised, exercisable, unvested, returned: cancelled + lapsed, cancelled, lapsed, next, noticeDate, leaveDeadline, left };
+}
+
+/* ---------- Charts (plain SVG/HTML; hover tooltips via data-tip) ---------- */
+function esopLegend(keys, values) {
+  return `<div class="ch-legend">${keys.map((k) => `<span><i style="background:${ESOP_COLORS[k]}"></i>${ESOP_LABEL[k]}${values ? ` <b>${fmtNum(values[k])}</b>` : ''}</span>`).join('')}</div>`;
+}
+// 100% stacked bar with 2px gaps between segments
+function esopStackBar(parts, total, { height = 22, labels = true } = {}) {
+  const shown = parts.filter((p) => p.value > 0);
+  if (!total || !shown.length) return `<div class="ch-stack empty" style="height:${height}px"></div>`;
+  return `<div class="ch-stack" style="height:${height}px">${shown.map((p) => {
+    const pct = (p.value / total) * 100;
+    return `<span style="flex:${p.value} 0 0;background:${ESOP_COLORS[p.key]}" data-tip="${esc(`${ESOP_LABEL[p.key]}: ${fmtNum(p.value)} (${pct.toFixed(1)}%)`)}">${labels && pct >= 7 ? `<em class="${p.key === 'available' ? 'dark' : ''}">${fmtNum(p.value)}</em>` : ''}</span>`;
+  }).join('')}</div>`;
+}
+// Vesting timeline: one column per vesting date, stacked by status; a dashed line marks today.
+function esopTimelineChart(rows, { height = 190, today = todayISO(), startDate = null } = {}) {
+  const byDate = {};
+  for (const r of rows) {
+    const k = r.date; const b = byDate[k] || (byDate[k] = { date: k, label: r.label, exercised: 0, vested: 0, unvested: 0, returned: 0 });
+    b.exercised += r.exercised || 0;
+    b.returned += r.status === 'returned' ? r.options : r.lapsed || 0;
+    b.vested += ['vested', 'exercised', 'lapsed'].includes(r.status) ? r.options - (r.exercised || 0) - (r.lapsed || 0) : 0;
+    b.unvested += r.status === 'upcoming' ? r.options : 0;
+  }
+  const cols = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+  if (!cols.length) return emptyState('pie', 'No vesting yet', 'Upload the ESOP allocation sheet to see the vesting timeline.');
+  const keys = ['exercised', 'vested', 'unvested', 'returned'];
+  const max = Math.max(...cols.map((c) => keys.reduce((s, k) => s + c[k], 0)), 1);
+  const W = Math.max(320, cols.length * 92 + 60), H = height, top = 22, bottom = 34, left = 36, plotH = H - top - bottom;
+  const step = (W - left - 12) / cols.length, bw = Math.min(46, step * 0.5);
+  const y = (v) => top + plotH - (v / max) * plotH;
+  const ticks = [0, Math.round(max / 2), max];
+  let svg = ticks.map((t) => `<line x1="${left}" x2="${W - 8}" y1="${y(t)}" y2="${y(t)}" class="ch-grid"/><text x="${left - 6}" y="${y(t) + 4}" class="ch-axis" text-anchor="end">${fmtNum(t)}</text>`).join('');
+  cols.forEach((c, i) => {
+    const cx = left + step * i + step / 2; let acc = 0;
+    const total = keys.reduce((s, k) => s + c[k], 0);
+    const segs = keys.filter((k) => c[k] > 0);
+    segs.forEach((k, j) => {
+      const y1 = y(acc + c[k]), y0 = y(acc); acc += c[k];
+      const h = Math.max(1, y0 - y1 - (j < segs.length - 1 ? 2 : 0));
+      const isTop = j === segs.length - 1;
+      svg += `<path d="${isTop ? roundTopRect(cx - bw / 2, y1, bw, h, Math.min(4, h)) : `M${cx - bw / 2},${y1 + (y0 - y1 - h)}h${bw}v${h}h${-bw}z`}" fill="${ESOP_COLORS[k]}" data-tip="${esc(`${c.label || fmtDMY(c.date)} · ${ESOP_LABEL[k]}: ${fmtNum(c[k])}`)}"/>`;
+    });
+    svg += `<text x="${cx}" y="${y(total) - 6}" class="ch-val" text-anchor="middle">${fmtNum(total)}</text>`;
+    svg += `<text x="${cx}" y="${H - bottom + 15}" class="ch-axis" text-anchor="middle">${esc(c.label || fmtDMY(c.date).slice(3))}</text>`;
+    svg += `<text x="${cx}" y="${H - bottom + 28}" class="ch-axis faint" text-anchor="middle">${fmtDMY(c.date)}</text>`;
+  });
+  // today marker, placed between the columns it falls between
+  const idx = cols.findIndex((c) => c.date > today);
+  const tx = idx === -1 ? W - 10 : idx === 0 ? left + 4 : left + step * idx;
+  svg += `<line x1="${tx}" x2="${tx}" y1="${top - 8}" y2="${H - bottom}" class="ch-today"/><text x="${tx + 4}" y="${top - 10}" class="ch-axis" style="fill:var(--text)">Today</text>`;
+  const legendKeys = keys.filter((k) => cols.some((c) => c[k] > 0));
+  return `<div class="ch-scroll"><svg class="chart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Vesting timeline">${svg}</svg></div>${legendKeys.length > 1 ? esopLegend(legendKeys) : ''}`;
+}
+const roundTopRect = (x, y, w, h, r) => `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}z`;
+// Stages: allocation → cliff → each vesting date → end of the exercise period
+function esopStagesHTML(allocations, rows, pos) {
+  const today = todayISO();
+  const items = [];
+  for (const a of allocations) {
+    items.push({ date: a.allocation_date, title: 'Allocated', sub: a.title || 'ESOP allocation', kind: 'done' });
+  }
+  for (const r of rows) {
+    const [l] = ESOP_TRANCHE[r.status];
+    items.push({ date: r.date, title: `${fmtNum(r.options)} option${r.options === 1 ? '' : 's'} vest${r.status === 'upcoming' ? '' : 'ed'}`, sub: `${r.label || ''}${r.label ? ' · ' : ''}${l}`, kind: r.status === 'upcoming' ? 'next' : r.status === 'returned' || r.status === 'lapsed' ? 'off' : 'done' });
+  }
+  if (pos?.noticeDate) items.push({ date: pos.noticeDate, title: 'Notice date', sub: 'Unvested options after this go back to the pool', kind: 'off' });
+  if (pos?.leaveDeadline) items.push({ date: pos.leaveDeadline, title: 'Exercise deadline after leaving', sub: 'Vested options not exercised by then lapse', kind: pos.leaveDeadline < today ? 'off' : 'next' });
+  for (const a of allocations) if (a.exercise_years) items.push({ date: addYearsISO(a.allocation_date, a.exercise_years), title: 'Exercise period ends', sub: `${a.exercise_years} years from allocation`, kind: 'next' });
+  items.sort((a, b) => a.date.localeCompare(b.date));
+  const ti = items.findIndex((i) => i.date > today);
+  if (ti !== -1) items.splice(ti, 0, { date: today, title: 'Today', kind: 'today' });
+  return `<ol class="stages">${items.map((i) => `<li class="${i.kind}"><span class="dot"></span><div><b>${esc(i.title)}</b><span>${fmtDMY(i.date)}${i.sub ? ` · ${esc(i.sub)}` : ''}</span></div></li>`).join('')}</ol>`;
+}
+function esopSchemeHTML(open = false) {
+  return `<details class="card fold"${open ? ' open' : ''}><summary class="card-head"><div><h3>ESOP scheme — summary</h3><p>The key terms of the Altius ESOP 2026 scheme</p></div><div class="right">${icon('arrowRight', 'sm')}</div></summary>
+    <div class="card-body"><div class="rules-grid">${ESOP_SCHEME.map(([t, items]) => `<div><h4 class="scheme-h">${t}</h4><ul class="rule-list">${items.map((i) => `<li>${i}</li>`).join('')}</ul></div>`).join('')}</div>
+    <p class="faint" style="font-size:12px;margin-top:10px">A summary only — the scheme document and the grant letter prevail.</p></div></details>`;
+}
+
+/* ---------- Admin data ---------- */
+async function loadEsopAdmin() {
+  await ensureAdmin();
+  const [allocations, grants, vesting, exercises, setting] = await Promise.all([
+    q(db.from('esop_allocations').select('*').is('removed_at', null).order('allocation_date')),
+    fetchAll(() => db.from('esop_grants').select('*').order('member_name')),
+    fetchAll(() => db.from('esop_vesting').select('*').order('vest_date')),
+    q(db.from('esop_exercises').select('*').is('removed_at', null).order('exercise_date')),
+    q(db.from('app_settings').select('value').eq('key', 'esop').maybeSingle()),
+  ]);
+  const live = new Set((allocations || []).map((a) => a.id));
+  const E = { allocations: allocations || [], grants: (grants || []).filter((g) => live.has(g.allocation_id)), vesting: (vesting || []).filter((v) => live.has(v.allocation_id)),
+    exercises: exercises || [], pool: Number(setting?.value?.pool || 2000) };
+  // One holder per employee (or per unmapped sheet name)
+  const holders = {};
+  const keyOf = (r) => r.employee_id || `name:${r.member_name.trim().toLowerCase()}`;
+  const holder = (r) => holders[keyOf(r)] || (holders[keyOf(r)] = { key: keyOf(r), employee_id: r.employee_id, names: new Set(), grants: [], tranches: [], exercises: [] });
+  for (const g of E.grants) { const h = holder(g); h.names.add(g.member_name.trim()); h.grants.push(g); }
+  for (const v of E.vesting) { const h = holder(v); h.names.add(v.member_name.trim()); h.tranches.push({ allocation_id: v.allocation_id, date: v.vest_date, label: v.label, options: v.options }); }
+  for (const x of E.exercises) { const h = holders[x.employee_id] || (holders[x.employee_id] = { key: x.employee_id, employee_id: x.employee_id, names: new Set(), grants: [], tranches: [], exercises: [] }); h.exercises.push({ ...x, date: x.exercise_date }); }
+  E.holders = Object.values(holders).map((h) => {
+    const emp = h.employee_id ? byId(h.employee_id) : null;
+    const pos = esopPosition({ tranches: h.tranches, exercises: h.exercises, allocations: E.allocations, profile: emp || {} });
+    return { ...h, emp, name: emp?.full_name || [...h.names][0] || '—', pos, grantedSheet: h.grants.reduce((s, g) => s + g.options, 0) };
+  }).sort((a, b) => b.pos.granted - a.pos.granted || a.name.localeCompare(b.name));
+  const tot = (f) => E.holders.reduce((s, h) => s + f(h.pos), 0);
+  E.totals = { granted: tot((p) => p.granted), vested: tot((p) => p.vested), exercised: tot((p) => p.exercised), exercisable: tot((p) => p.exercisable),
+    unvested: tot((p) => p.unvested), returned: tot((p) => p.returned) };
+  E.totals.outstanding = E.totals.granted - E.totals.returned;
+  E.totals.available = Math.max(0, E.pool - E.totals.outstanding);
+  E.types = {};
+  for (const g of E.grants) E.types[g.grant_type] = (E.types[g.grant_type] || 0) + g.options;
+  state.esop = E;
+  return E;
+}
+
+/* ---------- Excel parsing ---------- */
+const MONTHS3 = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function esopLabelToDate(v) {
+  if (v instanceof Date) return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}`;
+  if (typeof v === 'number' && v > 20000) { const d = new Date(Math.round((v - 25569) * 86400000)); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`; }
+  const m = String(v ?? '').trim().match(/^([A-Za-z]{3})[a-z]*[\s'’\-]*(\d{2}|\d{4})$/);
+  if (!m) return null;
+  const mi = MONTHS3.indexOf(m[1].toLowerCase()); if (mi < 0) return null;
+  const y = m[2].length === 2 ? 2000 + Number(m[2]) : Number(m[2]);
+  return `${y}-${pad(mi + 1)}-${pad(new Date(y, mi + 1, 0).getDate())}`; // end of that month
+}
+function esopGrantType(h) {
+  const s = String(h).toLowerCase();
+  if (s.includes('perform')) return 'Performance';
+  if (s.includes('time')) return 'Time-weighted';
+  if (s.includes('histor')) return 'Historical';
+  return String(h).replace(/\s+/g, ' ').trim();
+}
+async function parseEsopFile(file) {
+  await loadXLSX();
+  const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const A = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: false });
+  const cells = A.flat().filter((c) => c != null).map(String);
+  let allocationDate = null, title = '', exerciseYears = null;
+  for (const c of cells) {
+    const m = c.match(/allocation\s*date\s*:?\s*(\d{1,2})(?:st|nd|rd|th)?[\s\-\/]+([A-Za-z]+)[\s,\-\/]+(\d{4})/i);
+    if (m && !allocationDate) {
+      const mi = MONTHS3.indexOf(m[2].slice(0, 3).toLowerCase());
+      if (mi >= 0) { allocationDate = `${m[3]}-${pad(mi + 1)}-${pad(Number(m[1]))}`; title = c.replace(/\s*-\s*allocation\s*date.*$/i, '').trim() || c.trim(); }
+    }
+    const e = c.match(/exercise\s*period\s*:?\s*(\d+)\s*year/i);
+    if (e && exerciseYears == null) exerciseYears = Number(e[1]);
+  }
+  const hi = A.findIndex((r) => (r || []).some((c) => /member\s*name/i.test(String(c ?? ''))));
+  if (hi < 0) throw new Error('Could not find the “Member Name” header row — use the ESOP allocation template.');
+  const H = A[hi], nameCol = H.findIndex((c) => /member\s*name/i.test(String(c ?? '')));
+  const schedCol = H.findIndex((c) => /allocation\s*schedule|vesting\s*schedule/i.test(String(c ?? '')));
+  const notesRow = A[hi + 1] || [];
+  // Schedule columns: labels like Mar'27 in the header row or the row under it
+  const sched = [];
+  const maxLen = Math.max(H.length, notesRow.length);
+  for (let c = 0; c < maxLen; c++) {
+    if (c === nameCol || (schedCol >= 0 && c < schedCol)) continue;
+    const lab = esopLabelToDate(notesRow[c]) ? notesRow[c] : esopLabelToDate(H[c]) ? H[c] : null;
+    if (lab != null) sched.push({ col: c, label: lab instanceof Date ? fmtDMY(esopLabelToDate(lab)) : String(lab).trim(), date: esopLabelToDate(lab) });
+  }
+  const grantCols = [];
+  const lastGrant = schedCol >= 0 ? schedCol : sched.length ? sched[0].col : maxLen;
+  for (let c = 0; c < lastGrant; c++) {
+    if (c === nameCol || H[c] == null || String(H[c]).trim() === '' || /total/i.test(String(H[c]))) continue;
+    grantCols.push({ col: c, type: esopGrantType(H[c]), header: String(H[c]).trim(), note: String(notesRow[c] ?? '').replace(/\s+/g, ' ').trim() });
+  }
+  if (!grantCols.length) throw new Error('No grant columns found before the allocation schedule.');
+  if (!sched.length) throw new Error('No vesting schedule columns (like Mar\'27) found.');
+  const num = (v) => { const n = Number(String(v ?? '').replace(/[,\s]/g, '')); return Number.isFinite(n) ? Math.round(n) : 0; };
+  const members = []; let sheetTotal = null;
+  for (let r = hi + 1; r < A.length; r++) {
+    const row = A[r] || []; const name = String(row[nameCol] ?? '').replace(/\s+/g, ' ').trim();
+    if (!name) continue;
+    if (/^total/i.test(name)) { if (sheetTotal == null) sheetTotal = { grants: grantCols.map((g) => num(row[g.col])), sched: sched.map((s) => num(row[s.col])) }; if (/^total\s*$/i.test(name)) break; continue; }
+    const grants = grantCols.map((g) => ({ type: g.type, options: num(row[g.col]), note: g.note }));
+    const vesting = sched.map((s) => ({ date: s.date, label: s.label, options: num(row[s.col]) }));
+    if (!grants.some((g) => g.options) && !vesting.some((v) => v.options)) continue;
+    if (/vesting\s*period/i.test(name)) continue;
+    members.push({ member_name: name, grants, vesting, granted: grants.reduce((s, g) => s + g.options, 0), scheduled: vesting.reduce((s, v) => s + v.options, 0) });
+  }
+  if (!members.length) throw new Error('No members with options found under the header row.');
+  return { allocationDate, title, exerciseYears, grantCols, sched, members, sheetTotal };
+}
+const normName = (s) => String(s || '').toLowerCase().replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+function esopMatchMember(name, profiles) {
+  const n = normName(name); if (!n) return null;
+  const exact = profiles.filter((p) => normName(p.full_name) === n);
+  if (exact.length === 1) return exact[0];
+  const starts = profiles.filter((p) => normName(p.full_name).startsWith(n + ' ') || n.startsWith(normName(p.full_name) + ' '));
+  if (starts.length === 1) return starts[0];
+  const first = n.split(' ')[0], last = n.split(' ').slice(-1)[0];
+  const fl = profiles.filter((p) => { const w = normName(p.full_name).split(' '); return w[0] === first && (n.split(' ').length === 1 || w.slice(-1)[0] === last); });
+  return fl.length === 1 ? fl[0] : null;
+}
+
+/* ---------- Admin page ---------- */
 async function pageEsops() {
+  const E = await loadEsopAdmin();
+  const T = E.totals, today = todayISO();
+  const unmapped = E.holders.filter((h) => !h.employee_id && h.grants.length);
+  const stat = (label, value, foot, color) => `<div class="card stat"><div class="top"><span>${label}</span>${color ? `<i class="sw" style="background:${color}"></i>` : ''}</div><div class="value">${fmtNum(value)}</div><div class="foot">${foot}</div></div>`;
+  const pct = (v) => (E.pool ? `${((v / E.pool) * 100).toFixed(1)}% of the pool` : '');
+  const allTranches = E.holders.flatMap((h) => h.pos.rows);
+  const typeMax = Math.max(1, ...Object.values(E.types));
+  const empOptions = state.admin.profiles.filter((p) => p.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const mapSelect = (h, alloc) => `<select class="input input-sm" data-map="${esc([...h.names][0])}" data-alloc="${alloc}"><option value="">Not linked</option>${empOptions.map((p) => `<option value="${p.id}"${p.id === h.employee_id ? ' selected' : ''}>${esc(p.full_name)}${p.employee_code ? ` · ${esc(p.employee_code)}` : ''}</option>`).join('')}</select>`;
+  const maxGrant = Math.max(1, ...E.holders.map((h) => h.pos.granted));
   return {
-    title: 'ESOPs', crumbs: 'Employee stock options',
-    html: `<div class="card">${emptyState('sparkle', 'ESOPs — coming next', 'Share how ESOP grants, vesting and exercise should work, and this section will be built to match.')}</div>`,
+    title: 'ESOPs', crumbs: `Finance · employee stock options${E.allocations.length ? ` · ${E.allocations.map((a) => `allocated ${fmtDMY(a.allocation_date)}`).join(', ')}` : ''}`,
+    html: `
+      <div class="bar-row" style="margin-bottom:12px">
+        <span class="muted" style="font-size:12.5px">${E.allocations.length ? `${E.allocations.length} allocation${E.allocations.length > 1 ? 's' : ''} · ${E.holders.filter((h) => h.pos.granted).length} holders` : 'No allocation uploaded yet'}</span>
+        <div class="right" style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-sm" data-esop-template>${icon('download')}<span>Template</span></button>
+          <button class="btn btn-sm" data-esop-pool>${icon('edit')}<span>Edit pool</span></button>
+          <button class="btn btn-sm btn-primary" data-esop-upload>${icon('upload')}<span>Upload allocation Excel</span></button>
+        </div>
+      </div>
+      <div class="stats esop-stats">
+        ${stat('Total pool', E.pool, `${fmtNum(T.available)} available to grant`)}
+        ${stat('Granted', T.granted, pct(T.granted))}
+        ${stat('Vested', T.vested, `${fmtNum(T.exercisable)} can be exercised`, ESOP_COLORS.vested)}
+        ${stat('Unvested', T.unvested, T.unvested ? 'Vest on the schedule dates' : 'Nothing left to vest', ESOP_COLORS.unvested)}
+        ${stat('Exercised', T.exercised, T.exercised ? 'Converted to shares' : 'None exercised yet', ESOP_COLORS.exercised)}
+        ${stat('Returned to pool', T.returned, T.returned ? 'Cancelled on exit or lapsed' : 'Nothing returned', ESOP_COLORS.returned)}
+      </div>
+      ${unmapped.length ? `<div class="card"><div class="card-head"><div><h3>Link sheet names to employees</h3><p>${unmapped.length} name${unmapped.length > 1 ? 's' : ''} from the sheet could not be matched — link them so the employee sees the grant in their portal</p></div></div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Name in sheet</th><th class="num">Options</th><th>Employee</th></tr></thead><tbody>
+        ${unmapped.map((h) => `<tr><td>${esc(h.name)}</td><td class="num">${fmtNum(h.pos.granted)}</td><td>${mapSelect(h, h.grants[0].allocation_id)}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+      <div class="split">
+        <div class="card"><div class="card-head"><div><h3>Pool</h3><p>Where the ${fmtNum(E.pool)} options stand today</p></div></div>
+          <div class="card-body">
+            ${esopStackBar([{ key: 'exercised', value: T.exercised }, { key: 'vested', value: T.exercisable }, { key: 'unvested', value: T.unvested }, { key: 'available', value: T.available }], E.pool, { height: 26 })}
+            ${esopLegend(['exercised', 'vested', 'unvested', 'available'], { exercised: T.exercised, vested: T.exercisable, unvested: T.unvested, available: T.available })}
+            <p class="faint" style="font-size:12px;margin-top:8px">Available = pool − granted + returned (${fmtNum(E.pool)} − ${fmtNum(T.granted)} + ${fmtNum(T.returned)}). Vested here counts options not yet exercised.</p>
+            ${Object.keys(E.types).length ? `<h4 class="scheme-h" style="margin-top:14px">Granted by type</h4>
+            <div class="hbars">${Object.entries(E.types).sort((a, b) => b[1] - a[1]).map(([t, v]) => `<div class="hb"><span>${esc(t)}</span><div><i style="width:${(v / typeMax) * 100}%" data-tip="${esc(`${t}: ${fmtNum(v)} options`)}"></i></div><b>${fmtNum(v)}</b></div>`).join('')}</div>` : ''}
+          </div></div>
+        <div class="card"><div class="card-head"><div><h3>Vesting timeline</h3><p>Options vesting on each schedule date, all holders</p></div></div>
+          <div class="card-body">${esopTimelineChart(allTranches, { today })}</div></div>
+      </div>
+      <div class="card"><div class="card-head"><div><h3>Employee-wise</h3><p>Click a row for the tranche timeline, exercises and linking</p></div>
+        <div class="right">${esopLegend(['exercised', 'vested', 'unvested', 'returned'])}</div></div>
+        ${E.holders.length ? `<div class="table-wrap"><table class="table compact esop-table"><thead><tr><th>Employee</th>${Object.keys(E.types).map((t) => `<th class="num">${esc(t)}</th>`).join('')}<th class="num">Granted</th><th class="num">Vested</th><th class="num">Unvested</th><th class="num">Exercised</th><th class="num">Returned</th><th style="min-width:110px">Split</th><th>Next vesting</th></tr></thead><tbody>
+          ${E.holders.map((h, i) => { const p = h.pos; const byType = (t) => h.grants.filter((g) => g.grant_type === t).reduce((s, g) => s + g.options, 0);
+            return `<tr class="clickable" data-holder="${i}"><td><div class="name-line"><b>${esc(h.name)}</b>${h.emp?.employee_code ? `<span class="faint">${esc(h.emp.employee_code)}</span>` : ''}${!h.employee_id ? '<span class="chip amber">Not linked</span>' : ''}${h.emp && empState(h.emp) !== 'active' ? empChip(h.emp) : ''}</div></td>
+              ${Object.keys(E.types).map((t) => `<td class="num">${byType(t) ? fmtNum(byType(t)) : '—'}</td>`).join('')}
+              <td class="num"><b style="color:var(--text)">${fmtNum(p.granted)}</b></td><td class="num">${fmtNum(p.vested)}</td><td class="num">${fmtNum(p.unvested)}</td><td class="num">${fmtNum(p.exercised)}</td><td class="num">${p.returned ? fmtNum(p.returned) : '—'}</td>
+              <td><div style="width:${Math.max(18, (p.granted / maxGrant) * 100)}%">${esopStackBar([{ key: 'exercised', value: p.exercised }, { key: 'vested', value: p.exercisable }, { key: 'unvested', value: p.unvested }, { key: 'returned', value: p.returned }], p.granted, { height: 12, labels: false })}</div></td>
+              <td class="nowrap">${p.next ? `${fmtNum(p.next.options)} on ${fmtDMY(p.next.date)}` : '—'}</td></tr>`; }).join('')}
+          <tr class="total-row"><td><b>Total</b></td>${Object.keys(E.types).map((t) => `<td class="num"><b>${fmtNum(E.types[t])}</b></td>`).join('')}<td class="num"><b>${fmtNum(T.granted)}</b></td><td class="num"><b>${fmtNum(T.vested)}</b></td><td class="num"><b>${fmtNum(T.unvested)}</b></td><td class="num"><b>${fmtNum(T.exercised)}</b></td><td class="num"><b>${fmtNum(T.returned)}</b></td><td></td><td></td></tr>
+          </tbody></table></div>` : emptyState('pie', 'No ESOP allocation yet', 'Upload the allocation Excel (Member Name, grant columns, and the vesting schedule like Mar\'27, Mar\'28…).')}
+      </div>
+      ${E.allocations.length ? `<div class="card"><div class="card-head"><div><h3>Allocations</h3><p>Uploading a sheet with the same allocation date replaces that allocation</p></div></div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Allocation date</th><th>Title</th><th>Exercise period</th><th class="num">Options</th><th>File</th><th>Uploaded</th><th></th></tr></thead><tbody>
+        ${E.allocations.map((a) => `<tr><td class="nowrap">${fmtDMY(a.allocation_date)}</td><td>${esc(a.title || '—')}</td><td>${a.exercise_years ? `${a.exercise_years} years · till ${fmtDMY(addYearsISO(a.allocation_date, a.exercise_years))}` : '—'}</td>
+          <td class="num">${fmtNum(E.grants.filter((g) => g.allocation_id === a.id).reduce((s, g) => s + g.options, 0))}</td><td class="trunc">${esc(a.source_file_name || '')}</td><td class="nowrap faint">${fmtRelative(a.uploaded_at)}</td>
+          <td class="actions">${amSuper() ? `<button class="btn btn-sm btn-danger" data-esop-remove="${a.id}">${icon('trash')}<span>Remove</span></button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+      ${esopSchemeHTML()}`,
+    mount() {
+      $('[data-esop-upload]').addEventListener('click', pickEsopFile);
+      $('[data-esop-template]').addEventListener('click', downloadEsopTemplate);
+      $('[data-esop-pool]').addEventListener('click', editEsopPool);
+      $$('[data-holder]').forEach((tr) => tr.addEventListener('click', () => openEsopHolder(E.holders[Number(tr.dataset.holder)])));
+      $$('select[data-map]').forEach((s) => s.addEventListener('change', async () => {
+        try { await api.rpc('admin_map_esop_member', { p_allocation: s.dataset.alloc, p_member_name: s.dataset.map, p_employee: s.value || null }); toast('Linked'); render(); }
+        catch (e) { toast(friendlyError(e), 'error'); }
+      }));
+      $$('[data-esop-remove]').forEach((b) => b.addEventListener('click', async () => {
+        if (!(await confirmDialog({ title: 'Remove this allocation?', message: 'Its grants and vesting schedule stop counting. Exercises already recorded stay.', confirmText: 'Remove', danger: true }))) return;
+        await withBusy(b, '', async () => { try { await api.rpc('admin_remove_esop_allocation', { p_id: b.dataset.esopRemove }); toast('Allocation removed'); render(); } catch (e) { toast(friendlyError(e), 'error'); } });
+      }));
+    },
   };
 }
+async function editEsopPool() {
+  const { el, close } = openModal({ title: 'ESOP pool', subtitle: 'Total options in the scheme', size: 'sm',
+    body: `<div class="field"><label>Pool (options)</label><input class="input" type="number" min="1" step="1" value="${state.esop?.pool || 2000}" data-pool></div>`,
+    footer: '<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>Save</button>' });
+  $('[data-ok]', el).addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving', async () => {
+    const v = Math.round(Number($('[data-pool]', el).value));
+    if (!(v > 0)) return toast('Enter the number of options in the pool', 'error');
+    try { await api.rpc('admin_set_esop_pool', { p_pool: v }); close(); toast('Pool updated'); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+}
+function openEsopHolder(h) {
+  const E = state.esop, p = h.pos;
+  const allocs = E.allocations.filter((a) => h.grants.some((g) => g.allocation_id === a.id));
+  const { el, close } = openModal({ title: h.name, subtitle: `${h.emp?.employee_code ? `${esc(h.emp.employee_code)} · ` : ''}${fmtNum(p.granted)} options granted${h.emp ? ` · ${EMP_STATE[empState(h.emp)][0]}` : ' · not linked to an employee'}`, size: 'lg',
+    body: `
+      <div class="count-grid" style="margin-bottom:12px">${[['Granted', p.granted], ['Vested', p.vested], ['Can exercise', p.exercisable], ['Unvested', p.unvested], ['Exercised', p.exercised], ['Returned', p.returned]].map(([l, v]) => `<div><b>${fmtNum(v)}</b><span>${l}</span></div>`).join('')}</div>
+      ${p.noticeDate ? `<div class="alert alert-info" style="margin-bottom:12px">${icon('info')}<span>Notice date ${fmtDMY(p.noticeDate)}: unvested options after it go back to the pool.${p.leaveDeadline ? ` Vested options must be exercised by ${fmtDMY(p.leaveDeadline)}.` : ''}</span></div>` : ''}
+      ${esopTimelineChart(p.rows, { height: 170 })}
+      <h4 class="scheme-h" style="margin-top:14px">Tranches</h4>
+      <div class="table-wrap"><table class="table compact"><thead><tr><th>Vesting date</th><th>Schedule</th><th class="num">Options</th><th>Status</th><th class="num">Exercised</th><th>Exercise by</th></tr></thead><tbody>
+        ${p.rows.map((r) => { const [l, c] = ESOP_TRANCHE[r.status]; return `<tr><td class="nowrap">${fmtDMY(r.date)}</td><td>${esc(r.label || '')}</td><td class="num">${fmtNum(r.options)}</td><td><span class="chip ${c}">${l}</span></td><td class="num">${r.exercised ? fmtNum(r.exercised) : '—'}</td><td class="nowrap">${r.status === 'returned' ? '—' : fmtDMY(r.deadline)}</td></tr>`; }).join('')}
+      </tbody></table></div>
+      <h4 class="scheme-h" style="margin-top:14px">Grants</h4>
+      <div class="table-wrap"><table class="table compact"><thead><tr><th>Allocation</th><th>Type</th><th class="num">Options</th><th>Vesting</th></tr></thead><tbody>
+        ${h.grants.map((g) => `<tr><td class="nowrap">${fmtDMY(E.allocations.find((a) => a.id === g.allocation_id)?.allocation_date)}</td><td>${esc(g.grant_type)}</td><td class="num">${fmtNum(g.options)}</td><td>${esc(g.vesting_note || '')}</td></tr>`).join('')}
+      </tbody></table></div>
+      <h4 class="scheme-h" style="margin-top:14px">Exercises</h4>
+      ${h.exercises.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th class="num">Options</th><th class="num">Price / option</th><th>Note</th><th></th></tr></thead><tbody>
+        ${h.exercises.map((x) => `<tr><td class="nowrap">${fmtDMY(x.exercise_date)}</td><td class="num">${fmtNum(x.options)}</td><td class="num">${x.price != null ? fmtINR(x.price) : '—'}</td><td>${esc(x.note || '')}</td><td class="actions"><button class="btn btn-sm btn-danger" data-x-remove="${x.id}">${icon('trash')}</button></td></tr>`).join('')}</tbody></table></div>` : '<p class="muted" style="font-size:13px">No exercises recorded.</p>'}
+      ${h.employee_id ? `<div class="cal-form" style="margin-top:10px">
+        <div class="field"><label>Exercise date</label><input class="input" type="date" data-x-date value="${todayISO()}" max="${todayISO()}"></div>
+        <div class="field"><label>Options</label><input class="input" type="number" min="1" step="1" data-x-opts value="${p.exercisable || ''}"></div>
+        <div class="field"><label>Price / option (₹)</label><input class="input" type="number" min="0" step="0.01" data-x-price></div>
+        <div class="field" style="flex:1"><label>Note</label><input class="input" data-x-note placeholder="Optional"></div>
+        <button class="btn btn-primary" data-x-add ${p.exercisable ? '' : 'disabled title="Nothing vested to exercise"'}>${icon('plus')}<span>Record exercise</span></button></div>` : ''}
+      <h4 class="scheme-h" style="margin-top:14px">Linked employee</h4>
+      ${allocs.map((a) => `<div class="bar-row"><span class="muted" style="font-size:12.5px">Allocation ${fmtDMY(a.allocation_date)} · sheet name “${esc([...h.names][0] || h.name)}”</span>
+        <select class="input input-sm" data-link="${a.id}" style="max-width:280px"><option value="">Not linked</option>${state.admin.profiles.filter((x) => x.status === 'active' || x.id === h.employee_id).sort((x, y) => x.full_name.localeCompare(y.full_name)).map((x) => `<option value="${x.id}"${x.id === h.employee_id ? ' selected' : ''}>${esc(x.full_name)}${x.employee_code ? ` · ${esc(x.employee_code)}` : ''}</option>`).join('')}</select></div>`).join('')}
+      ${esopStagesHTML(allocs, p.rows, p).replace('<ol class="stages">', '<ol class="stages" style="margin-top:14px">')}`,
+  });
+  $('[data-x-add]', el)?.addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving', async () => {
+    const opts = Math.round(Number($('[data-x-opts]', el).value));
+    if (!(opts > 0)) return toast('Enter the number of options exercised', 'error');
+    const price = $('[data-x-price]', el).value;
+    try {
+      await api.rpc('admin_add_esop_exercise', { p_employee: h.employee_id, p_date: $('[data-x-date]', el).value, p_options: opts, p_price: price === '' ? null : Number(price), p_note: $('[data-x-note]', el).value || null });
+      close(); toast('Exercise recorded'); render();
+    } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  $$('[data-x-remove]', el).forEach((b) => b.addEventListener('click', async () => {
+    if (!(await confirmDialog({ title: 'Remove this exercise?', message: 'The options count as vested again.', confirmText: 'Remove', danger: true }))) return;
+    try { await api.rpc('admin_remove_esop_exercise', { p_id: b.dataset.xRemove }); close(); toast('Exercise removed'); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  $$('[data-link]', el).forEach((s) => s.addEventListener('change', async () => {
+    try { await api.rpc('admin_map_esop_member', { p_allocation: s.dataset.link, p_member_name: [...h.names][0] || h.name, p_employee: s.value || null }); close(); toast('Link updated'); render(); }
+    catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+}
+function pickEsopFile() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.xlsx,.xls,.csv';
+  input.addEventListener('change', async () => {
+    const file = input.files[0]; if (!file) return;
+    const busy = toastBusy(`Reading ${file.name}…`);
+    try { const parsed = await parseEsopFile(file); busy(); showEsopPreview(file, parsed); }
+    catch (e) { busy(); toast(friendlyError(e), 'error'); }
+  });
+  input.click();
+}
+function showEsopPreview(file, P) {
+  const profiles = state.admin.profiles.filter((p) => p.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const prev = state.esop?.holders || [];
+  for (const m of P.members) {
+    // keep an earlier manual link for the same sheet name, else match by name
+    const earlier = prev.find((h) => h.employee_id && [...h.names].some((n) => normName(n) === normName(m.member_name)));
+    m.emp = earlier?.emp || esopMatchMember(m.member_name, profiles);
+  }
+  const total = P.members.reduce((s, m) => s + m.granted, 0);
+  const mismatch = P.members.filter((m) => m.granted !== m.scheduled);
+  const sheetTotalOk = !P.sheetTotal || P.sheetTotal.grants.reduce((s, v) => s + v, 0) === total;
+  const replaces = (state.esop?.allocations || []).find((a) => a.allocation_date === P.allocationDate);
+  const { el, close } = openModal({ title: 'ESOP allocation — check before saving', subtitle: esc(file.name), size: 'lg',
+    body: `
+      <div class="cal-form" style="margin-bottom:10px">
+        <div class="field"><label>Allocation date</label><input class="input" type="date" data-a-date value="${P.allocationDate || ''}"></div>
+        <div class="field"><label>Exercise period (years)</label><input class="input" type="number" min="1" max="20" data-a-years value="${P.exerciseYears || ''}"></div>
+        <div class="field" style="flex:1"><label>Title</label><input class="input" data-a-title value="${esc(P.title || '')}"></div>
+      </div>
+      <div class="count-grid" style="margin-bottom:10px"><div><b>${P.members.length}</b><span>Members</span></div><div><b>${fmtNum(total)}</b><span>Options</span></div>
+        ${P.grantCols.map((g) => `<div><b>${fmtNum(P.members.reduce((s, m) => s + (m.grants.find((x) => x.type === g.type)?.options || 0), 0))}</b><span>${esc(g.type)}</span></div>`).join('')}
+        <div><b>${P.members.filter((m) => !m.emp).length}</b><span>Not linked</span></div></div>
+      ${replaces ? `<div class="alert alert-info" style="margin-bottom:10px">${icon('info')}<span>An allocation dated ${fmtDMY(replaces.allocation_date)} is already saved — saving replaces it.</span></div>` : ''}
+      ${!sheetTotalOk ? `<div class="alert alert-warn" style="margin-bottom:10px">${icon('alert')}<span>The sheet's Total row does not match the members (${fmtNum(P.sheetTotal.grants.reduce((s, v) => s + v, 0))} vs ${fmtNum(total)}).</span></div>` : ''}
+      ${mismatch.length ? `<div class="alert alert-warn" style="margin-bottom:10px">${icon('alert')}<span>Schedule does not add up to the grant for ${mismatch.map((m) => esc(m.member_name)).join(', ')} — the schedule columns are used for vesting.</span></div>` : ''}
+      <div class="table-wrap"><table class="table compact"><thead><tr><th>Name in sheet</th><th>Employee</th>${P.grantCols.map((g) => `<th class="num" title="${esc(g.header)}${g.note ? ` — ${esc(g.note)}` : ''}">${esc(g.type)}</th>`).join('')}<th class="num">Total</th>${P.sched.map((s) => `<th class="num">${esc(s.label)}</th>`).join('')}</tr></thead><tbody>
+        ${P.members.map((m, i) => `<tr><td class="nowrap">${esc(m.member_name)}</td><td><select class="input input-sm" data-m="${i}"><option value="">Not linked</option>${profiles.map((p) => `<option value="${p.id}"${m.emp?.id === p.id ? ' selected' : ''}>${esc(p.full_name)}${p.employee_code ? ` · ${esc(p.employee_code)}` : ''}</option>`).join('')}</select></td>
+          ${m.grants.map((g) => `<td class="num">${g.options || '—'}</td>`).join('')}<td class="num"><b style="color:var(--text)">${m.granted}</b></td>${m.vesting.map((v) => `<td class="num">${v.options || '—'}</td>`).join('')}</tr>`).join('')}
+      </tbody></table></div>
+      <p class="faint" style="font-size:12px;margin-top:8px">Vesting dates are the last day of each schedule month (${P.sched.map((s) => `${esc(s.label)} → ${fmtDMY(s.date)}`).join(', ')}). Unlinked members are saved and can be linked later.</p>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check')}<span>Save allocation</span></button>`,
+  });
+  $$('select[data-m]', el).forEach((s) => s.addEventListener('change', () => { P.members[Number(s.dataset.m)].emp = profiles.find((p) => p.id === s.value) || null; }));
+  $('[data-ok]', el).addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving', async () => {
+    const date = $('[data-a-date]', el).value, years = Number($('[data-a-years]', el).value) || null;
+    if (!date) return toast('Enter the allocation date', 'error');
+    try {
+      await api.rpc('admin_import_esop', { p_allocation_date: date, p_title: $('[data-a-title]', el).value, p_exercise_years: years, p_file_name: file.name,
+        p_rows: P.members.map((m) => ({ member_name: m.member_name, employee_id: m.emp?.id || null, grants: m.grants, vesting: m.vesting })) });
+      close(); toast(`Saved ${fmtNum(total)} options for ${P.members.length} members`);
+      location.hash = '#/esops'; render();
+    } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+}
+async function downloadEsopTemplate() {
+  try {
+    await loadXLSX();
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['ALTIUS ESOP 2026 - ALLOCATION DATE 2nd APRIL 2026'],
+      [null, null, null, null, 'Exercise Period : 4 years from Allocation Date'],
+      [null, '# of options'],
+      ['Member Name', 'Performance ESOP Allocated (H1 26)', 'Time weighted ESOP Overall', 'Historical Allocation', 'Allocation Schedule - 4 years'],
+      ['Vesting Period from allocation date', '25% each - 4 years', '25% each - 4 years', '50% - 2 years', "Mar'27", "Mar'28", "Mar'29", "Mar'30"],
+      ['Employee name', 4, 4, 2, 3, 3, 2, 2],
+      ['Total', 4, 4, 2, 3, 3, 2, 2],
+    ]);
+    ws['!cols'] = [{ wch: 34 }, { wch: 22 }, { wch: 22 }, { wch: 20 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    const help = XLSX.utils.aoa_to_sheet([
+      ['What', 'How to fill it'],
+      ['Title row', 'Must contain “ALLOCATION DATE <day> <Month> <Year>”, e.g. 2nd APRIL 2026'],
+      ['Exercise Period', '“Exercise Period : N years …” anywhere above the table'],
+      ['Member Name', 'As in the HRMS — names are matched to employees (you can link the rest on upload)'],
+      ['Grant columns', 'One column per grant type between Member Name and “Allocation Schedule”; the row under the header can hold the vesting note'],
+      ['Schedule columns', 'Month labels like Mar\'27 under “Allocation Schedule”: options vesting on the last day of that month'],
+      ['Total row', 'A row starting with “Total” ends the member list'],
+    ]);
+    help['!cols'] = [{ wch: 18 }, { wch: 100 }];
+    XLSX.utils.book_append_sheet(wb, help, 'How to fill');
+    XLSX.writeFile(wb, 'altius-esop-allocation-template.xlsx');
+  } catch (e) { toast(friendlyError(e), 'error'); }
+}
+
+/* ---------- Employee portal ---------- */
+async function pageMyEsop() {
+  const D = await api.rpc('my_esops');
+  if (D?.hidden) return { title: 'My ESOPs', crumbs: 'Employee stock options', html: `<div class="card">${emptyState('lock', 'Not shared yet', 'HR has not made ESOP details visible in the portal.')}</div>` };
+  const tranches = (D.vesting || []).map((v) => ({ allocation_id: v.allocation_id, date: v.date, label: v.label, options: v.options }));
+  const pos = esopPosition({ tranches, exercises: D.exercises || [], allocations: D.allocations || [], profile: D.profile || {} });
+  const stat = (label, value, foot, color) => `<div class="card stat"><div class="top"><span>${label}</span>${color ? `<i class="sw" style="background:${color}"></i>` : ''}</div><div class="value">${fmtNum(value)}</div><div class="foot">${foot}</div></div>`;
+  if (!pos.granted) return { title: 'My ESOPs', crumbs: 'Employee stock options', html: `<div class="card">${emptyState('pie', 'No ESOP grant yet', 'Options granted to you under the Altius ESOP scheme will show here.')}</div>${esopSchemeHTML(true)}` };
+  const types = {};
+  for (const g of D.grants || []) types[g.type] = (types[g.type] || 0) + Number(g.options);
+  return {
+    title: 'My ESOPs', crumbs: `Employee stock options · pool of ${fmtNum(D.pool)}`,
+    html: `
+      <div class="stats esop-stats">
+        ${stat('Granted', pos.granted, Object.entries(types).map(([t, v]) => `${t} ${fmtNum(v)}`).join(' · '))}
+        ${stat('Vested', pos.vested, pos.exercisable ? `${fmtNum(pos.exercisable)} can be exercised` : pos.vested ? 'All exercised' : 'First vesting after the 12-month cliff', ESOP_COLORS.vested)}
+        ${stat('Unvested', pos.unvested, pos.next ? `Next: ${fmtNum(pos.next.options)} on ${fmtDMY(pos.next.date)}` : 'Nothing left to vest', ESOP_COLORS.unvested)}
+        ${stat('Exercised', pos.exercised, pos.exercised ? 'Converted to shares' : 'None yet', ESOP_COLORS.exercised)}
+        ${pos.returned ? stat('Returned to pool', pos.returned, 'Cancelled on exit or lapsed', ESOP_COLORS.returned) : ''}
+      </div>
+      ${pos.noticeDate ? `<div class="alert alert-info">${icon('info')}<span>From your notice date ${fmtDMY(pos.noticeDate)} the unvested options go back to the pool.${pos.leaveDeadline ? ` Vested options can be exercised till ${fmtDMY(pos.leaveDeadline)}.` : ''}</span></div>` : ''}
+      <div class="card"><div class="card-head"><div><h3>Where your options stand</h3></div></div><div class="card-body">
+        ${esopStackBar([{ key: 'exercised', value: pos.exercised }, { key: 'vested', value: pos.exercisable }, { key: 'unvested', value: pos.unvested }, { key: 'returned', value: pos.returned }], pos.granted, { height: 26 })}
+        ${esopLegend(['exercised', 'vested', 'unvested', 'returned'].filter((k) => k !== 'returned' || pos.returned), { exercised: pos.exercised, vested: pos.exercisable, unvested: pos.unvested, returned: pos.returned })}
+      </div></div>
+      <div class="split">
+        <div class="card"><div class="card-head"><div><h3>Vesting timeline</h3><p>Options vesting on each date</p></div></div><div class="card-body">${esopTimelineChart(pos.rows)}</div></div>
+        <div class="card"><div class="card-head"><div><h3>Stages</h3><p>From allocation to the end of the exercise period</p></div></div><div class="card-body">${esopStagesHTML(D.allocations || [], pos.rows, pos)}</div></div>
+      </div>
+      <div class="card"><div class="card-head"><div><h3>Grants</h3></div></div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Allocated on</th><th>Type</th><th class="num">Options</th><th>Vesting</th></tr></thead><tbody>
+        ${(D.grants || []).map((g) => `<tr><td class="nowrap">${fmtDMY((D.allocations || []).find((a) => a.id === g.allocation_id)?.allocation_date)}</td><td>${esc(g.type)}</td><td class="num">${fmtNum(g.options)}</td><td>${esc(g.note || '')}</td></tr>`).join('')}
+        </tbody></table></div></div>
+      ${(D.exercises || []).length ? `<div class="card"><div class="card-head"><div><h3>Exercises</h3></div></div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th class="num">Options</th><th class="num">Price / option</th><th>Note</th></tr></thead><tbody>
+        ${D.exercises.map((x) => `<tr><td class="nowrap">${fmtDMY(x.date)}</td><td class="num">${fmtNum(x.options)}</td><td class="num">${x.price != null ? fmtINR(x.price) : '—'}</td><td>${esc(x.note || '')}</td></tr>`).join('')}</tbody></table></div></div>` : ''}
+      ${esopSchemeHTML()}`,
+  };
+}
+// Hover tooltips for chart marks (data-tip)
+(() => {
+  let tip = null;
+  document.addEventListener('mouseover', (e) => {
+    const t = e.target.closest?.('[data-tip]');
+    if (!t) { tip?.remove(); tip = null; return; }
+    if (!tip) { tip = document.createElement('div'); tip.className = 'ch-tip'; document.body.appendChild(tip); }
+    tip.textContent = t.getAttribute('data-tip');
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!tip) return;
+    const x = Math.min(e.clientX + 12, window.innerWidth - tip.offsetWidth - 8);
+    tip.style.left = `${x}px`; tip.style.top = `${e.clientY + 14}px`;
+  });
+})();
 
 /* =====================================================================
    TEAM PAGES (employee portal)
