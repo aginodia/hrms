@@ -470,6 +470,11 @@
   .toast svg.i { width: 16px; height: 16px; }
   .loading { display: grid; place-items: center; min-height: 240px; color: var(--muted); gap: 10px; }
   .loading.full { min-height: 100vh; }
+  .kv-list { display: grid; gap: 8px; }
+  .kv-list > div { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-bottom: 8px; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .kv-list > div:last-child { border-bottom: 0; padding-bottom: 0; }
+  .kv-list span { color: var(--muted); }
+  .kv-list b { color: var(--text); font-weight: 500; text-align: right; }
   .exit-fnf { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .exit-fnf .big { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 2px 0; color: var(--text); }
   #route-bar { position: fixed; top: 0; left: 0; height: 2px; width: 0; background: var(--accent); z-index: 60; opacity: 0; pointer-events: none; }
@@ -959,7 +964,7 @@ const api = {
   },
 };
 // Portal reads reused for 45 seconds while moving between pages (any change made in the HRMS clears them)
-const READ_RPCS = new Set(['my_portal', 'my_payslips', 'my_esops', 'my_exit', 'my_updates']);
+const READ_RPCS = new Set(['my_portal', 'my_payslips', 'my_esops', 'my_exit', 'my_updates', 'my_resignation']);
 const QUIET_RPCS = new Set(['drive_ticket', 'admin_drive_secret']);
 const rpcCache = new Map();
 let dataVersion = 0; // goes up after every change made through the HRMS
@@ -1766,6 +1771,7 @@ function adminCounts() {
     active: P.filter((p) => p.status === 'active' && isEmd(p)).length,
     changes: (state.admin.changeRequests || []).filter((x) => x.status === 'pending').length,
     queries: (state.admin.openQueries || []).length,
+    resign: (state.admin.resignations || []).length,
     // WFH employees added since this admin last opened the WFH page
     newWfh: (state.admin.empWfh || []).filter((w) => w.created_at > ((getSeen() || {}).adminWfh || '')).length,
   };
@@ -1781,7 +1787,7 @@ const NAV = {
       { key: 'dashboard', label: 'Dashboard', icon: 'grid' },
       { label: 'People' },
       { key: 'access', label: 'Access Control', icon: 'shield', badge: accessBadge },
-      { key: 'emd', label: 'Employee Master Data', icon: 'users' },
+      { key: 'emd', label: 'Employee Master Data', icon: 'users', badge: c.resign || 0 },
       { key: 'org', label: 'Org Structure', icon: 'network' },
       { label: 'Attendance' },
       { key: 'leaves', label: 'Leaves', icon: 'calendar' },
@@ -1809,6 +1815,7 @@ const NAV = {
     { key: 'calendar', label: 'Holidays', icon: 'calendar', badge: newBadge('calendar') },
     { key: 'wfh', label: 'WFH', icon: 'laptop', badge: newBadge('wfh') },
     { key: 'esop', label: 'My ESOPs', icon: 'pie' },
+    { key: 'resign', label: 'Resignation', icon: 'logout' },
     { key: 'kyc', label: 'My KYC', icon: 'fileCheck', badge: newBadge('kyc') || (KYC_OPEN.includes(state.profile?.kyc_status || 'not_started') ? 1 : 0) },
   ],
   exit: () => [{ label: 'Menu' }, { key: 'exit', label: 'My exit', icon: 'file' }],
@@ -1816,7 +1823,7 @@ const NAV = {
 const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, rules: pageRules, leaves: pageLeaves, wfh: pageAdminWfh, holidays: pageHolidays, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops, storage: pageStorage },
-  team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, wfh: pageMyWfh, esop: pageMyEsop, kyc: pageTeamKyc },
+  team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, wfh: pageMyWfh, esop: pageMyEsop, resign: pageMyResignation, kyc: pageTeamKyc },
   exit: { exit: pageMyExit },
 };
 const DEFAULT_PAGE = { admin: 'dashboard', team: 'home', exit: 'exit' };
@@ -1931,11 +1938,11 @@ const emptyState = (ico, title, text) => `<div class="empty"><span class="ico">$
    ===================================================================== */
 async function ensureAdmin(force = false) {
   if (state.admin.loaded && !force) return;
-  const [profiles, salaries, changeRequests, openQueries, recentWfh] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
-    api.openQueries().catch(() => []), api.recentWfh().catch(() => [])]);
+  const [profiles, salaries, changeRequests, openQueries, recentWfh, resignations] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
+    api.openQueries().catch(() => []), api.recentWfh().catch(() => []), q(db.from('resignation_requests').select('*').eq('status', 'pending')).catch(() => [])]);
   const empWfh = (recentWfh || []).filter((w) => !w.added_by || w.added_by === w.employee_id);
   { const seen = getSeen() || {}; if (!seen.adminWfh) { seen.adminWfh = new Date().toISOString(); setSeen(seen); } }
-  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh };
+  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh, resignations: resignations || [] };
 }
 const byId = (id) => state.admin.profiles.find((p) => p.id === id);
 const salariesOf = (id) => state.admin.salaries
@@ -2906,7 +2913,9 @@ async function pageEmd() {
               <button class="btn btn-sm" id="emd-export" ${all.length ? '' : 'disabled'} title="Export CSV">${icon('download', 'sm')}Export</button>
               <button class="btn btn-sm" id="emd-bulk">${icon('upload', 'sm')}Upload Excel</button>
               <button class="btn btn-sm btn-primary" id="emd-add">${icon('userPlus', 'sm')}Add employee</button>`,
-    html: `<div><nav class="tabs">${[['active', 'Active'], ['rt', 'Resigned & Terminated'], ['fnf', 'F&F completed']].map(([k, l]) => `<a href="#/emd" data-emd-tab="${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${tabs[k].length}</span></a>`).join('')}</nav></div>
+    html: `${(state.admin.resignations || []).length ? `<div class="card"><div class="card-head"><div><h3>Resignations to review</h3><p>Submitted by employees from their portal — open one to accept and set the notice period, or to decline</p></div><div class="right"><span class="chip amber">${state.admin.resignations.length}</span></div></div>
+      ${state.admin.resignations.map((r) => { const e = byId(r.employee_id); return e ? `<div class="list-row">${person(e, `Submitted ${fmtDMY(r.resignation_date)} · asks for ${fmtDMY(r.requested_last_day)}${r.reason ? ` · ${esc(r.reason)}` : ''}`)}<div class="right"><a class="btn btn-sm btn-primary" href="#/emd/${e.id}">Review</a></div></div>` : ''; }).join('')}</div>` : ''}
+      <div><nav class="tabs">${[['active', 'Active'], ['rt', 'Resigned & Terminated'], ['fnf', 'F&F completed']].map(([k, l]) => `<a href="#/emd" data-emd-tab="${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${tabs[k].length}</span></a>`).join('')}</nav></div>
       <div class="card">${all.length ? `<div class="table-wrap"><table class="table compact">
         <thead><tr><th>Name</th><th>Mail ID</th><th>Number</th><th>Designation</th><th>Reporting Manager</th><th class="num">Salary</th><th style="white-space:normal;min-width:84px">Last Increment</th><th></th></tr></thead>
         <tbody id="emd-body">${bodyHTML(filter(state.emdSearch))}</tbody></table></div>`
@@ -2956,7 +2965,7 @@ function employmentStatusCard(e) {
   const row = (inner, buttons) => `<div class="status-row">${inner}${self || !buttons ? '' : `<span class="status-actions">${buttons}</span>`}</div>`;
   let body;
   if (st === 'active') {
-    body = row(`${empChip(e)}<span class="muted" style="font-size:13px">Working — included in payroll and all finance sections.</span>`,
+    body = resignationRequestPanel(e) + row(`${empChip(e)}<span class="muted" style="font-size:13px">Working — included in payroll and all finance sections.</span>`,
       `<button class="btn btn-sm" data-notice>Resignation</button><button class="btn btn-sm btn-danger" data-emp-status="terminated">Terminated</button>`);
   } else if (st === 'notice') {
     const left = daysBetween(todayISO(), e.exit_date);
@@ -2971,18 +2980,18 @@ function employmentStatusCard(e) {
   return `<div class="card" id="emp-status-card"><div class="card-head"><div><h3>Status</h3></div></div><div class="card-body">${body}</div></div>`;
 }
 const NOTICE_PRESETS = [30, 45, 60, 90];
-function openNoticeDialog(e) {
+function openNoticeDialog(e, prefill = null) {
   const editing = !!e.resignation_date;
-  const resign0 = e.resignation_date || todayISO();
-  const days0 = editing ? daysBetween(e.resignation_date, e.exit_date) : 30;
-  const preset0 = editing && !NOTICE_PRESETS.includes(days0) ? 'manual' : String(days0);
+  const resign0 = e.resignation_date || prefill?.resign || todayISO();
+  const days0 = editing ? daysBetween(e.resignation_date, e.exit_date) : prefill ? daysBetween(prefill.resign, prefill.lwd) : 30;
+  const preset0 = (editing || prefill) && !NOTICE_PRESETS.includes(days0) ? 'manual' : String(days0);
   const dlg = openModal({
     title: editing ? 'Edit notice period' : 'Resignation', size: 'sm', subtitle: `${esc(e.full_name)} · ${esc(e.employee_code || '')}`,
     body: `<div class="grid" style="gap:14px">
         <div class="field"><label>Resignation date<span class="req">*</span></label><input class="input" type="date" id="rs-date" value="${resign0}"></div>
         <div class="field"><label>Notice period</label><select class="input" id="rs-preset">${NOTICE_PRESETS.map((n) => `<option value="${n}" ${String(n) === preset0 ? 'selected' : ''}>${n} days</option>`).join('')}<option value="manual" ${preset0 === 'manual' ? 'selected' : ''}>Manual — pick the last working day</option></select></div>
-        <div class="field"><label>Last working day<span class="req">*</span></label><input class="input" type="date" id="rs-lwd" value="${e.exit_date || addDaysISO(resign0, 30)}"><div class="hint" id="rs-info"></div></div>
-        <div class="field"><label>Note <span class="faint">(optional)</span></label><textarea class="input" id="rs-note" placeholder="e.g. Resignation mail received, moving cities">${esc(e.exit_note || '')}</textarea></div>
+        <div class="field"><label>Last working day<span class="req">*</span></label><input class="input" type="date" id="rs-lwd" value="${e.exit_date || prefill?.lwd || addDaysISO(resign0, 30)}"><div class="hint" id="rs-info"></div></div>
+        <div class="field"><label>Note <span class="faint">(optional)</span></label><textarea class="input" id="rs-note" placeholder="e.g. Resignation mail received, moving cities">${esc(e.exit_note || prefill?.note || '')}</textarea></div>
         <p class="muted" style="font-size:12.5px">The employee shows <b>On notice period</b> and stays Active (in payroll) until you click <b>Resigned</b>.</p></div>`,
     footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${editing ? 'Save notice' : 'Put on notice'}</button>`,
   });
@@ -3008,6 +3017,7 @@ function openNoticeDialog(e) {
 }
 function mountEmploymentStatus(e) {
   $('[data-notice]')?.addEventListener('click', () => openNoticeDialog(e));
+  mountResignationPanel(e);
   $('[data-withdraw]')?.addEventListener('click', async () => {
     if (!(await confirmDialog({ title: 'Withdraw resignation?', message: `${esc(e.full_name)} goes back to plain Active and the notice period is cleared.`, confirmText: 'Withdraw' }))) return;
     try { await api.rpc('admin_set_notice', { p_user: e.id, p_resign_date: null, p_last_day: null }); toast('Resignation withdrawn.'); state.fin.loaded = false; await refreshAdmin(); }
@@ -5632,6 +5642,128 @@ async function pageExpenseEmployee(id) {
 
 /* ---------- ESOPs ---------- */
 /* =====================================================================
+   Resignation — employees submit it from the portal, HR accepts (puts
+   them on notice) or rejects it, and both see where it stands.
+   ===================================================================== */
+const RESIGN_STATUS = { pending: ['With HR for review', 'amber'], accepted: ['Accepted', 'green'], rejected: ['Not accepted', 'red'], withdrawn: ['Withdrawn', 'gray'] };
+// Steps from submission to the end of access. R: my_resignation() result; X: my_exit() result (optional)
+function resignTrackerHTML(R, X) {
+  const p = { ...(R?.profile || {}), ...(X?.profile || {}) };
+  const r = R?.request || null;
+  const today = todayISO();
+  const docs = Object.fromEntries((X?.documents || []).map((d) => [d.kind, d]));
+  const onNotice = !!p.resignation_date;
+  const left = ['resigned', 'terminated'].includes(p.employment_status) || !!p.fnf_completed_at;
+  const lwd = p.exit_date || r?.last_day || r?.requested_last_day;
+  const steps = [];
+  const submitted = r && (r.status !== 'withdrawn' || onNotice) ? r : null;
+  steps.push({ t: submitted ? 'Resignation submitted' : 'Resignation recorded by HR', s: fmtDMY(submitted?.resignation_date || p.resignation_date), k: 'done' });
+  if (r?.status === 'rejected' && !onNotice) {
+    steps.push({ t: 'Not accepted by HR', s: `${fmtDMY(String(r.decided_at).slice(0, 10))}${r.admin_note ? ` · “${r.admin_note}”` : ''}`, k: 'off' });
+    return `<ol class="stages">${steps.map(stepHTML).join('')}</ol>`;
+  }
+  steps.push(onNotice ? { t: 'Accepted by HR', s: r?.decided_at && r.status === 'accepted' ? fmtDMY(String(r.decided_at).slice(0, 10)) : fmtDMY(p.resignation_date), k: 'done' }
+    : { t: 'HR review', s: 'Waiting for HR to accept and confirm your last working day', k: 'now' });
+  if (onNotice) {
+    const n = daysBetween(p.resignation_date, p.exit_date), togo = daysBetween(today, p.exit_date);
+    steps.push({ t: `Notice period · ${n} day${n === 1 ? '' : 's'}`, s: left || togo < 0 ? 'Served' : togo === 0 ? 'Last day today' : `${togo} day${togo === 1 ? '' : 's'} to go`, k: left || togo < 0 ? 'done' : 'now' });
+  } else steps.push({ t: 'Notice period', s: r?.requested_last_day ? `You asked for ${fmtDMY(r.requested_last_day)} as your last working day` : 'Starts once HR accepts', k: 'next' });
+  steps.push({ t: 'Last working day', s: lwd ? fmtDMY(lwd) : 'Confirmed by HR', k: left || (onNotice && lwd < today) ? 'done' : 'next' });
+  steps.push({ t: 'Relieved', s: left ? `${p.employment_status === 'terminated' ? 'Terminated' : 'Resigned'} · your portal shows only your exit documents` : 'After your last working day, your portal shows only your exit documents', k: left ? 'done' : 'next' });
+  steps.push({ t: 'Relieving & experience letters', s: docs.relieving || docs.experience ? `Issued${docs.relieving ? ` ${fmtDMY(String(docs.relieving.at).slice(0, 10))}` : ''}` : 'Issued by HR on or after your last working day', k: docs.relieving && docs.experience ? 'done' : left ? 'now' : 'next' });
+  const due = lwd ? addDaysISO(lwd, SETTLE_DAYS) : null;
+  steps.push({ t: 'Full & final settlement', s: X?.fnf ? `Settled ${fmtDMY(X.fnf.settled_on)}` : due ? `By ${fmtDMY(due)} — 60 days from your last working day` : '60 days from your last working day', k: X?.fnf ? 'done' : left ? 'now' : 'next' });
+  steps.push({ t: 'Access ends', s: p.access_until ? fmtDateTime(p.access_until) : `${ACCESS_AFTER_FNF_DAYS} days after the F&F`, k: 'next' });
+  return `<ol class="stages">${steps.map(stepHTML).join('')}</ol>`;
+}
+const stepHTML = (i) => `<li class="${i.k === 'now' ? 'today' : i.k}"><span class="dot"></span><div><b>${esc(i.t)}</b><span>${esc(i.s || '')}</span></div></li>`;
+
+async function pageMyResignation() {
+  const R = await api.rpc('my_resignation');
+  const p = R?.profile || {}, r = R?.request || null;
+  const onNotice = !!p.resignation_date;
+  const pending = r?.status === 'pending';
+  const canSubmit = !onNotice && !pending;
+  const status = onNotice ? ['On notice period', 'blue'] : r ? RESIGN_STATUS[r.status] : null;
+  const today = todayISO();
+  return {
+    title: 'Resignation', crumbs: onNotice ? `On notice · last working day ${fmtDMY(p.exit_date)}` : pending ? 'Submitted — with HR for review' : 'Submit your resignation to HR',
+    html: `
+      ${r?.status === 'withdrawn' && !onNotice ? `<div class="alert alert-info">${icon('info')}<span>You withdrew your resignation${r.decided_at ? ` on ${fmtDMY(String(r.decided_at).slice(0, 10))}` : ''}${r.admin_note ? ` — ${esc(r.admin_note)}` : ''}.</span></div>` : ''}
+      ${onNotice || (r && r.status !== 'withdrawn') ? `<div class="split">
+        <div class="card"><div class="card-head"><div><h3>Status</h3><p>${r ? `Submitted ${fmtDMY(r.resignation_date)}` : `Recorded by HR on ${fmtDMY(p.resignation_date)}`}</p></div>
+          <div class="right">${status ? `<span class="chip ${status[1]}">${status[0]}</span>` : ''}</div></div>
+          <div class="card-body">${resignTrackerHTML(R)}</div></div>
+        <div class="card"><div class="card-head"><div><h3>Details</h3></div></div><div class="card-body">
+          <div class="kv-list">
+            <div><span>Resignation date</span><b>${fmtDMY(onNotice ? p.resignation_date : r?.resignation_date)}</b></div>
+            ${r ? `<div><span>Last working day you asked for</span><b>${fmtDMY(r.requested_last_day)}</b></div>` : ''}
+            ${onNotice ? `<div><span>Last working day (confirmed)</span><b>${fmtDMY(p.exit_date)}</b></div><div><span>Notice period</span><b>${daysBetween(p.resignation_date, p.exit_date)} days</b></div>
+              <div><span>F&amp;F by</span><b>${fmtDMY(addDaysISO(p.exit_date, SETTLE_DAYS))}</b></div>` : ''}
+            ${r?.reason ? `<div><span>Reason</span><b>${esc(r.reason)}</b></div>` : ''}
+            ${r?.admin_note && r.status !== 'pending' ? `<div><span>Note from HR</span><b>${esc(r.admin_note)}</b></div>` : ''}
+          </div>
+          ${pending ? `<button class="btn btn-sm" id="rs-withdraw" style="margin-top:12px">Withdraw resignation</button>` : ''}
+          ${onNotice ? `<p class="muted" style="font-size:12.5px;margin-top:12px">To change your last working day or withdraw your resignation now, please speak to HR.</p>` : ''}
+        </div></div></div>` : ''}
+      ${canSubmit ? `<div class="card"><div class="card-head"><div><h3>${r ? 'Submit again' : 'Submit your resignation'}</h3><p>HR will review it and confirm your last working day</p></div></div>
+        <div class="card-body"><div class="grid g2" style="gap:12px;max-width:720px">
+          <div class="field"><label>Resignation date</label><input class="input" value="${fmtDMY(today)}" disabled></div>
+          <div class="field"><label>Notice period</label><select class="input" id="rs-preset">${NOTICE_PRESETS.map((n) => `<option value="${n}" ${n === 30 ? 'selected' : ''}>${n} days</option>`).join('')}<option value="manual">Pick a date</option></select></div>
+          <div class="field"><label>Last working day you are asking for<span class="req">*</span></label><input class="input" type="date" id="rs-lwd" min="${today}" value="${addDaysISO(today, 30)}"><div class="hint" id="rs-info"></div></div>
+          <div class="field" style="grid-column:1/-1"><label>Reason <span class="faint">(optional)</span></label><textarea class="input" id="rs-reason" placeholder="e.g. Higher studies, relocating"></textarea></div>
+        </div>
+        <label class="check" style="margin-top:10px;display:flex;gap:8px;align-items:flex-start;font-size:13px"><input type="checkbox" id="rs-ok"> <span>I understand that my resignation goes to HR, who will confirm my last working day. After my last working day my portal shows only my exit documents.</span></label>
+        <button class="btn btn-danger-solid" id="rs-submit" style="margin-top:12px">Submit resignation</button></div></div>` : ''}`,
+    mount() {
+      const pre = $('#rs-preset'), lwd = $('#rs-lwd');
+      const info = () => { if (!lwd) return; const n = lwd.value ? daysBetween(today, lwd.value) : null; $('#rs-info').textContent = n == null ? '' : n < 0 ? 'Cannot be in the past' : `${n} day(s) of notice · F&F by ${fmtDMY(addDaysISO(lwd.value, SETTLE_DAYS))}`; };
+      pre?.addEventListener('change', () => { if (pre.value !== 'manual') lwd.value = addDaysISO(today, Number(pre.value)); info(); });
+      lwd?.addEventListener('change', () => { pre.value = NOTICE_PRESETS.includes(daysBetween(today, lwd.value)) ? String(daysBetween(today, lwd.value)) : 'manual'; info(); });
+      info();
+      $('#rs-submit')?.addEventListener('click', async (ev) => {
+        if (!$('#rs-ok').checked) return toast('Tick the box to confirm', 'error');
+        if (!lwd.value) return toast('Pick your last working day', 'error');
+        if (!(await confirmDialog({ title: 'Submit your resignation?', message: `Your resignation goes to HR with <b>${fmtDMY(lwd.value)}</b> as the last working day you are asking for. You can withdraw it until HR accepts it.`, confirmText: 'Submit resignation', danger: true }))) return;
+        await withBusy(ev.currentTarget, 'Submitting…', async () => {
+          try { await api.rpc('my_submit_resignation', { p_last_day: lwd.value, p_reason: $('#rs-reason').value || null }); toast('Resignation submitted to HR'); render(); }
+          catch (e) { toast(friendlyError(e), 'error'); }
+        });
+      });
+      $('#rs-withdraw')?.addEventListener('click', async (ev) => {
+        if (!(await confirmDialog({ title: 'Withdraw your resignation?', message: 'HR will see that you withdrew it.', confirmText: 'Withdraw' }))) return;
+        await withBusy(ev.currentTarget, '', async () => {
+          try { await api.rpc('my_withdraw_resignation'); toast('Resignation withdrawn'); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+        });
+      });
+    },
+  };
+}
+
+/* ---------- HR side ---------- */
+const pendingResignationOf = (id) => (state.admin.resignations || []).find((x) => x.employee_id === id) || null;
+function resignationRequestPanel(e) {
+  const r = pendingResignationOf(e.id);
+  if (!r) return '';
+  return `<div class="alert alert-warn" style="margin-bottom:10px">${icon('alert')}<div style="flex:1"><b>Resignation submitted by ${esc(firstName(e.full_name))}</b> on ${fmtDMY(r.resignation_date)} · asks for <b>${fmtDMY(r.requested_last_day)}</b> as the last working day (${daysBetween(r.resignation_date, r.requested_last_day)} days)${r.reason ? ` · “${esc(r.reason)}”` : ''}
+    <div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-sm btn-primary" data-rs-accept="${r.id}">Accept &amp; set notice</button><button class="btn btn-sm" data-rs-reject="${r.id}">Don't accept</button></div></div></div>`;
+}
+function mountResignationPanel(e) {
+  const r = pendingResignationOf(e.id);
+  if (!r) return;
+  $('[data-rs-accept]')?.addEventListener('click', () => openNoticeDialog(e, { resign: r.resignation_date, lwd: r.requested_last_day, note: r.reason || '' }));
+  $('[data-rs-reject]')?.addEventListener('click', () => {
+    const { el, close } = openModal({ title: 'Not accepting the resignation', subtitle: esc(e.full_name), size: 'sm',
+      body: `<div class="field"><label>Note for ${esc(firstName(e.full_name))}<span class="req">*</span></label><textarea class="input" id="rs-note" placeholder="e.g. Let's discuss with your manager first"></textarea></div>`,
+      footer: '<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>Send</button>' });
+    $('[data-ok]', el).addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
+      try { await api.rpc('admin_reject_resignation', { p_id: r.id, p_note: $('#rs-note', el).value }); close(); toast('Saved — the employee sees your note'); await refreshAdmin(); }
+      catch (err) { toast(friendlyError(err), 'error'); }
+    }));
+  });
+}
+
+/* =====================================================================
    Exit: once someone is Resigned / Terminated their portal shows only
    their relieving letter, experience letter, last 6 salary slips and the
    F&F. After F&F they can sign in for 3 more days, then access ends.
@@ -5819,7 +5951,7 @@ async function completeFnf(e) {
 
 /* ---------- Employee: exit page ---------- */
 async function pageMyExit() {
-  const X = await api.rpc('my_exit');
+  const [X, R] = await Promise.all([api.rpc('my_exit'), api.rpc('my_resignation').catch(() => null)]);
   if (X?.ended) { setTimeout(endAccess, 0); return { title: 'Access ended', html: '' }; }
   if (!X?.left) { setTimeout(() => { state.profile = null; loadSelfAndRoute(); }, 0); return { title: '', html: '' }; }
   const p = X.profile, fnf = X.fnf;
@@ -5843,6 +5975,7 @@ async function pageMyExit() {
           ${(fnf.items || []).map((x) => `<tr><td>${esc(x.label)}</td><td>${x.type === 'earning' ? 'Earning' : 'Deduction'}</td><td class="num">${x.type === 'deduction' ? '− ' : ''}${fmtINR(x.amount)}</td></tr>`).join('')}
           <tr class="total-row"><td colspan="2"><b>Net ${Number(fnf.net) < 0 ? 'recoverable' : 'payable'}</b></td><td class="num"><b>${fmtINR(Math.abs(Number(fnf.net)))}</b></td></tr></tbody></table></div>
         ${fnf.note ? `<div class="card-body" style="border-top:1px solid var(--border);font-size:13px">${esc(fnf.note)}</div>` : ''}</div>` : ''}
+      <div class="card"><div class="card-head"><div><h3>Your exit, step by step</h3></div></div><div class="card-body">${resignTrackerHTML(R, X)}</div></div>
       <div class="card"><div class="card-head"><div><h3>Your letters</h3></div></div>
         ${docRow('relieving', 'HR issues it on or after your last working day')}
         ${docRow('experience', 'HR issues it on or after your last working day')}</div>
