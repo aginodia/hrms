@@ -217,12 +217,30 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 * **How payroll counts it:** an employee's own WFH replaces a day with no punches. A WFH added or confirmed by an admin always counts. Both are paid as a full day.
 * **The WFH page** lists every entry and how it was counted. Admins can **Reject** / **Restore** an entry or **Add WFH** for someone.
 
-**Leaves register** (admin menu → Attendance → Leaves).
-* Record leaves day by day: type the **Employee ID or name**, pick a date or a range, choose **Full day** or **Half day**, and add a note if needed.
-* Sundays and holidays are skipped. Adding a leave on a date that already has one changes it to the new type.
-* **Synced to payroll:** a full-day leave makes the day **L** and a half-day leave makes it **HD**. The day can still be changed in day-wise attendance.
-* **Day-wise page:** its Leaves card shows which no-punch days are in the register.
-* **The page** lists the month's leaves with a remove button, and a folded **By employee** summary of total leave days.
+**Leaves — long leaves with approval** (admin menu → Attendance → Leaves; employee portal → Leaves).
+* A leave has to be **more than one day**: at least 2 working days. Sundays and holidays are not counted. There is no single-day option.
+* **Employees apply** from their portal (from, to, reason). **HR can enter** a leave for an employee too. Both go to **To approve** — every leave needs an admin's approval.
+* **Approve** (optional note) or **Reject** (note required — the employee sees it). Nobody approves or rejects their own leave; another admin has to. Overlapping leaves are refused.
+* **Synced to payroll:** each approved working day becomes **L** in payroll. **Cancel leave** on an approved leave (note required) takes the days out again.
+* Employees see each leave's **status** (Waiting for approval / Approved / Rejected / Withdrawn / Cancelled) and HR's note, and can **withdraw** a leave while it is waiting.
+* **Leave log** on both sides: admins can filter by status and employee; employees see all their own leaves. Single days recorded before this change stay in payroll and are listed under **Earlier day-wise entries**.
+
+**Role Definition** (admin menu → People → Role Definition).
+* **Add a role** with its responsibilities (one per line). Edit or remove roles; a role given to employees has to be changed in EMD before it can be removed.
+* In **Employee Master Data** → an employee → **Role & responsibilities**: pick a role from the dropdown (its responsibilities show underneath), write a **customised role** just for that employee, or use **both**.
+* The employee sees their role and responsibilities in **My Profile**.
+
+**Review & Appraisal** (admin menu → People → Review & Appraisal; employee portal → My Appraisals).
+* Pick the **appraisal month** — the new salary applies from that month. Appraisals can happen more than once in a financial year; each month is kept separately and listed as a button.
+* The grid lists every active employee: current salary (from EMD), **Increment %** or **New salary** (type one, the other fills in), **Promotion** (new designation), **Rating** and **Review**.
+* **Excel template** downloads the sheet with every employee's ID and name (and anything already entered). Fill one row or all of them and **Upload Excel** — the rows fill the grid; empty cells keep what is there.
+* **Save** (after an upload or typing) saves and shows it in the employee's **My Appraisals** as *Proposed*. It stays editable — e.g. if the employee asks for a bigger raise, change it and Save again.
+* **Save & issue** (for everyone with a new salary / promotion, or **Issue** on one row) is final: the new salary goes into the salary history from that month (it becomes the current salary in EMD) and a promotion updates the designation. Issued rows are locked.
+* **Appraisal log**: every save, change (with old → new values), upload and issue, by month or all months. EMD shows each employee's appraisals. Nobody saves or issues their own appraisal.
+
+**Anonymous feedback** (employee portal → Feedback; admin menu → People → Feedback).
+* Employees pick a topic and write their feedback. The database stores only the topic, the message and the date — **no name, no account id, no time** — so admins see it as **Anonymous**. Admins can mark messages read / unread.
+* Note: Supabase's own short-lived request logs (visible only to the project owner in the Supabase dashboard) record that a signed-in account called the feedback function, the way they record every request; the HRMS never stores or shows it.
 
 **Day-wise attendance:** **Save changes** takes you back to the Payroll page, ready for the next person. The four summary cards (Half days, Missed punches, Leaves, Admin changes) start folded; click one to open it.
 
@@ -407,6 +425,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261021000000_doc_assets.sql` | `doc_assets` (the signatory signature, admins only) and `admin_set_doc_asset`; signatory title defaults to Authorized Signatory. |
 | `supabase/migrations/20261022000000_exit_flow_faster_rls.sql` | Exit flow (`my_exit`, `exit_documents`, `fnf_settlements`, `admin_complete_fnf` with statement lines, `admin_record_exit_doc`, 3-day access after F&F, portal calls closed after leaving) and faster row-level policies. |
 | `supabase/migrations/20261023000000_resignation_requests.sql` | Resignations from the portal: `resignation_requests`, `my_submit_resignation`, `my_withdraw_resignation`, `my_resignation`, `admin_reject_resignation`; `admin_set_notice` / `admin_set_employment_status` keep requests in step. |
+| `supabase/migrations/20261024000000_leaves_roles_appraisals_feedback.sql` | Long-leave approvals (`leave_requests`, `my_apply_leave`, `my_withdraw_leave`, `admin_add_leave_request`, `admin_decide_leave`, `admin_cancel_leave`; approved days go into `leave_records`), role definitions (`job_roles`, `profiles.job_role_id` / `custom_responsibilities`, `admin_save_job_role`, `admin_remove_job_role`, `admin_set_job_role`, `my_role`), appraisals (`appraisals`, `appraisal_events`, `admin_save_appraisals` with Save / Save & issue, `admin_remove_appraisal`, `my_appraisals`), anonymous `feedback` (`my_submit_feedback`, `admin_mark_feedback`). |
 | `drive-bridge/Code.gs` | Google Apps Script web app that stores HRMS files in Google Drive after checking the HRMS sign-in. |
 | `supabase/migrations/20261018000000_esop.sql` | ESOPs: allocations, grants, vesting tranches and exercises (`esop_*` tables), pool setting, `admin_import_esop`, `admin_map_esop_member`, `admin_add_esop_exercise`, `my_esops()`. |
 | `supabase/migrations/20261017000000_query_autoresolve_left_updates.sql` | Queries resolve automatically on push when their day changed (and carry over after a re-upload), no queries / WFH after leaving, `my_updates()` for the portal's New markers. |
@@ -439,4 +458,8 @@ Each line is filled in automatically, with the employee's **current salary** as 
 * `bonus_payments`: bonus and leave-encashment payments (date, amount, loan deduction); read-only once saved
 * `esop_allocations` / `esop_grants` / `esop_vesting` / `esop_exercises`: ESOP allocation uploads (with exercise price), grants per member and type, vesting tranches, and exercises
 * `hr_documents`: salary slips and grant letters saved to Google Drive (Drive file id only)
+* `leave_requests`: long leaves (from, to, working days, reason, who entered it, status, admin note); approved working days are written to `leave_records` with `leave_request_id`
+* `job_roles`: roles and responsibilities; `profiles.job_role_id` and `profiles.custom_responsibilities` hold each employee's role
+* `appraisals`: one per employee per appraisal month (current / new salary, increment %, promotion, rating, review, saved / issued); `appraisal_events` is the log
+* `feedback`: anonymous messages — topic, message, date and read status only
 * `expense_claims`: expenses synced from the Google Form responses sheet, matched to employees by Employee ID
