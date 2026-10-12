@@ -429,7 +429,7 @@ begin
   if p_section not in (1, 2) then raise exception 'Pick the section'; end if;
   if p_kind not in ('pdf', 'deck', 'video', 'webinar', 'link') then raise exception 'Pick the type'; end if;
   if coalesce(trim(p_title), '') = '' then raise exception 'Give it a title'; end if;
-  if p_kind = 'pdf' and coalesce(p_file_path, '') = '' then raise exception 'Upload the PDF'; end if;
+  if p_kind = 'pdf' and coalesce(p_file_path, '') = '' and p_id is null then raise exception 'Upload the PDF'; end if;
   if p_kind <> 'pdf' and coalesce(trim(p_url), '') !~* '^https?://' then raise exception 'Paste the link (starting with https://)'; end if;
   if p_id is null then
     insert into public.preboard_materials (section, kind, title, description, url, file_path, file_name, sort_order, created_by)
