@@ -451,7 +451,7 @@
     background: var(--surface); border-radius: 16px; box-shadow: var(--shadow-lg); width: 100%; max-height: calc(100vh - 48px);
     display: flex; flex-direction: column; animation: pop .18s ease-out;
   }
-  .modal-sm { max-width: 420px; } .modal-md { max-width: 560px; } .modal-lg { max-width: 980px; }
+  .modal-sm { max-width: 420px; } .modal-md { max-width: 560px; } .modal-lg { max-width: 980px; } .modal-xl { max-width: 1180px; width: 100%; }
   .modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px; border-bottom: 1px solid var(--border); }
   .modal-head h3 { font-size: 16px; }
   .modal-head p { color: var(--muted); font-size: 13px; margin-top: 2px; }
@@ -478,6 +478,34 @@
   .exit-fnf { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .exit-fnf .big { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 2px 0; color: var(--text); }
   .hint.err { color: var(--red); }
+  .pb-frame { position: relative; width: 100%; height: min(72vh, 760px); background: var(--surface-2); border-radius: var(--radius-sm); overflow: hidden; }
+  .pb-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .pb-modal .modal-body { padding: 12px; }
+  .pb-mat { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--border); }
+  .pb-mat:first-child { border-top: 0; }
+  .pb-mat.seen { background: color-mix(in srgb, var(--green-soft) 40%, transparent); }
+  .pb-mat-main { flex: 1; min-width: 0; font-size: 13.5px; }
+  .pb-mat-act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .pb-num { width: 22px; text-align: center; color: var(--faint); font-size: 12px; }
+  .pb-kind { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); flex: none; }
+  .pb-hero { display: flex; gap: 18px; padding: 22px; align-items: flex-start; }
+  .pb-hero h2 { margin: 2px 0 6px; font-size: 20px; }
+  .pb-hero p { margin: 0 0 10px; color: var(--text-2); }
+  .pb-rules { margin: 4px 0 14px; padding-left: 18px; display: grid; gap: 6px; font-size: 13.5px; color: var(--text-2); }
+  .pb-bar { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 16px 18px; flex-wrap: wrap; }
+  .pb-clock { text-align: right; } .pb-clock span { display: block; font-size: 18px; font-weight: 600; color: var(--text); } .pb-clock small { color: var(--muted); font-size: 12px; }
+  .pb-step { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; margin-right: 8px; flex: none; }
+  .pb-quiz { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 14px; }
+  .pb-q-t { font-weight: 500; color: var(--text); margin-bottom: 10px; display: flex; align-items: flex-start; }
+  .pb-opts { display: grid; gap: 6px; padding-left: 30px; }
+  .pb-opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer; font-size: 13.5px; }
+  .pb-opt:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .pb-opt input { margin-top: 3px; }
+  .pb-correct { color: var(--green); font-weight: 500; }
+  .pb-ans summary { cursor: pointer; padding: 6px 0; }
+  .pb-ans ol { margin: 4px 0 12px; padding-left: 22px; display: grid; gap: 6px; font-size: 13px; }
+  .pb-ans li.ok { color: var(--text); } .pb-ans li.bad { color: var(--red); }
+  @media (max-width: 640px) { .pb-hero { flex-direction: column; } .pb-mat { flex-wrap: wrap; } .pb-mat-act { width: 100%; } .pb-opts { padding-left: 0; } }
   .resp-list { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; color: var(--text-2); }
   .role-item { padding: 14px 18px; border-top: 1px solid var(--border); }
   .role-item:first-child { border-top: 0; }
@@ -792,6 +820,10 @@ const ICONS = {
   briefcase: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>',
   star: '<path d="m12 2 3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/>',
   message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  play: '<circle cx="12" cy="12" r="10"/><path d="m10 8 6 4-6 4z"/>',
+  arrowUp: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  arrowDown: '<path d="M12 5v14M19 12l-7 7-7-7"/>',
+  graduation: '<path d="M22 10 12 5 2 10l10 5 10-5z"/><path d="M6 12v5c3 2 9 2 12 0v-5"/>',
 };
 const icon = (name, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] || ''}</svg>`;
 const LOGO = `<span class="brand-mark"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 19 12 5l6 14M8.2 14h7.6"/></svg></span>`;
@@ -995,7 +1027,7 @@ const api = {
 };
 // Portal reads reused for 45 seconds while moving between pages (any change made in the HRMS clears them)
 const READ_RPCS = new Set(['my_portal', 'my_payslips', 'my_esops', 'my_exit', 'my_updates', 'my_resignation', 'my_role', 'my_appraisals']);
-const QUIET_RPCS = new Set(['drive_ticket', 'admin_drive_secret']);
+const QUIET_RPCS = new Set(['drive_ticket', 'admin_drive_secret', 'admin_preboard_refresh', 'my_preboard_view']);
 const rpcCache = new Map();
 let dataVersion = 0; // goes up after every change made through the HRMS
 // Reuse an admin page's data for a short while when nothing has changed since
@@ -1074,7 +1106,7 @@ function render() {
   // Resigned / Terminated: only the exit page; 3 days after F&F access ends
   if (hasLeft(p)) return accessEnded(p) ? endAccess() : renderShell('exit');
   switch (p.status) {
-    case 'pending':       return renderWaiting('pending');
+    case 'pending':       return state.preboard ? renderShell('pre') : renderWaiting('pending');
     case 'kyc_pending':   return renderKycForm();
     case 'kyc_submitted': return renderWaiting('submitted');
     case 'active':        return showKycPrompt(p) ? renderKycForm() : renderShell('team');
@@ -1107,6 +1139,8 @@ async function loadSelfAndRouteInner() {
   try {
     state.profile = await api.myProfile();
     if (state.recovery) return; // a password-recovery link arrived meanwhile
+    // A sign-up whose email HR added for pre-onboarding sees only Pre-onboarding until given access
+    state.preboard = state.profile?.status === 'pending' ? await q(db.rpc('my_preboarding')).catch(() => null) : null;
   } catch (e) {
     $('#app').innerHTML = `<div class="center-wrap"><div class="card status-card">
       <div class="big-ico" style="background:var(--red-soft);color:var(--red)">${icon('alert')}</div>
@@ -1128,7 +1162,7 @@ function resetSessionState() {
   state.dirty = false;
   state.emdSearch = '';
   state.admin = { loaded: false, profiles: [], salaries: [] };
-  state.drive = null; state.company = null; state.esop = null; state.driveTicket = null;
+  state.drive = null; state.company = null; state.esop = null; state.driveTicket = null; state.preboard = null; state.pbQuiz = null;
   rpcCache.clear(); state.pageCache = null;
 }
 
@@ -1823,6 +1857,7 @@ const NAV = {
       { key: 'org', label: 'Org Structure', icon: 'network' },
       { key: 'roles', label: 'Role Definition', icon: 'briefcase' },
       { key: 'appraisals', label: 'Review & Appraisal', icon: 'star' },
+      { key: 'preboarding', label: 'Pre-onboarding', icon: 'graduation' },
       { key: 'feedback', label: 'Feedback', icon: 'message', badge: c.feedback || 0 },
       { label: 'Attendance' },
       { key: 'leaves', label: 'Leaves', icon: 'calendar', badge: c.leaves || 0 },
@@ -1857,15 +1892,17 @@ const NAV = {
     { key: 'kyc', label: 'My KYC', icon: 'fileCheck', badge: newBadge('kyc') || (KYC_OPEN.includes(state.profile?.kyc_status || 'not_started') ? 1 : 0) },
   ],
   exit: () => [{ label: 'Menu' }, { key: 'exit', label: 'My exit', icon: 'file' }],
+  pre: () => [{ label: 'Before you join' }, { key: 'learn', label: 'Pre-onboarding', icon: 'graduation' }],
 };
 const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, rules: pageRules, leaves: pageLeaves, wfh: pageAdminWfh, holidays: pageHolidays, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops, storage: pageStorage,
-    roles: pageRoles, appraisals: pageAppraisals, feedback: pageFeedback },
+    roles: pageRoles, appraisals: pageAppraisals, feedback: pageFeedback, preboarding: pagePreboarding },
   team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, leaves: pageMyLeaves, wfh: pageMyWfh, esop: pageMyEsop, appraisal: pageMyAppraisals, feedback: pageMyFeedback, resign: pageMyResignation, kyc: pageTeamKyc },
   exit: { exit: pageMyExit },
+  pre: { learn: pageMyPreboarding },
 };
-const DEFAULT_PAGE = { admin: 'dashboard', team: 'home', exit: 'exit' };
+const DEFAULT_PAGE = { admin: 'dashboard', team: 'home', exit: 'exit', pre: 'learn' };
 
 function paintShell(kind, active, view) {
   const p = state.profile;
@@ -1895,10 +1932,10 @@ function paintShell(kind, active, view) {
   <div class="shell" data-kind="${kind}" data-uid="${esc(p.id)}" data-page="${esc(active)}">
     <div id="route-bar"></div>
     <aside class="sidebar">
-      <div class="brand">${LOGO}<div>Altius HRMS<small>${kind === 'admin' ? 'Admin console' : 'Employee portal'}</small></div></div>
+      <div class="brand">${LOGO}<div>Altius HRMS<small>${kind === 'admin' ? 'Admin console' : kind === 'pre' ? 'Pre-onboarding' : 'Employee portal'}</small></div></div>
       <nav class="nav">${navHTML}</nav>
       <div class="side-foot">
-        ${person(p, `<span class="role-tag">${kind === 'admin' ? ADMIN_LABEL[adminLevel(p)] || 'Admin' : kind === 'exit' ? 'Former employee' : 'Employee'}</span>`)}
+        ${person(p, `<span class="role-tag">${kind === 'admin' ? ADMIN_LABEL[adminLevel(p)] || 'Admin' : kind === 'exit' ? 'Former employee' : kind === 'pre' ? 'Candidate' : 'Employee'}</span>`)}
         <button class="icon-btn" data-action="signout" title="Sign out" aria-label="Sign out">${icon('logout')}</button>
       </div>
     </aside>
@@ -1978,18 +2015,20 @@ const emptyState = (ico, title, text) => `<div class="empty"><span class="ico">$
 async function ensureAdmin(force = false) {
   if (state.admin.loaded && !force) return;
   const today = todayISO();
-  const [profiles, salaries, changeRequests, openQueries, recentWfh, resignations, leavePending, leaveToday, feedbackNew] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
+  const [profiles, salaries, changeRequests, openQueries, recentWfh, resignations, leavePending, leaveToday, feedbackNew, preboard] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
     api.openQueries().catch(() => []), api.recentWfh().catch(() => []), q(db.from('resignation_requests').select('*').eq('status', 'pending')).catch(() => []),
     q(db.from('leave_requests').select('id, employee_id').eq('status', 'pending')).catch(() => []),
     q(db.from('leave_requests').select('employee_id, days, cancelled_days').eq('status', 'approved').lte('from_date', today).gte('to_date', today)).catch(() => []),
-    db.from('feedback').select('id', { count: 'exact', head: true }).eq('status', 'new').then((r) => r.count || 0, () => 0)]);
+    db.from('feedback').select('id', { count: 'exact', head: true }).eq('status', 'new').then((r) => r.count || 0, () => 0),
+    q(db.from('preboard_candidates').select('user_id, status, score_pct').is('removed_at', null).not('user_id', 'is', null)).catch(() => [])]);
   const empWfh = (recentWfh || []).filter((w) => !w.added_by || w.added_by === w.employee_id);
   { const seen = getSeen() || {}; if (!seen.adminWfh) { seen.adminWfh = new Date().toISOString(); setSeen(seen); } }
   // On leave today: an approved leave covering today (today not cancelled)
   const onLeave = new Set((leaveToday || []).filter((r) => r.days > 0 && !(r.cancelled_days || []).includes(today)).map((r) => r.employee_id));
-  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh, resignations: resignations || [], leavePending: leavePending || [], onLeave, feedbackNew };
+  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh, resignations: resignations || [], leavePending: leavePending || [], onLeave, feedbackNew, preboard: preboard || [] };
 }
 const byId = (id) => state.admin.profiles.find((p) => p.id === id);
+const pbAccessChip = (p) => { const c = (state.admin.preboard || []).find((x) => x.user_id === p.id); return c ? `<div class="chips-line" style="margin-top:4px"><span class="faint" style="font-size:12px">Pre-onboarding:</span> ${pbChipHTML(c.status)}${c.score_pct != null ? ` <span class="faint" style="font-size:12px">${Number(c.score_pct)}%</span>` : ''}</div>` : ''; };
 const onLeaveChip = (e) => (state.admin.onLeave?.has(e.id) ? '<span class="chip blue plain" title="On an approved leave today">On leave</span>' : '');
 const salariesOf = (id) => state.admin.salaries
   .filter((s) => s.employee_id === id)
@@ -2691,7 +2730,7 @@ async function pageAccess(r) {
   } else if (tab === 'requests') {
     table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Requested</th><th></th></tr></thead><tbody>
       ${rows.map((p) => `<tr>
-        <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
+        <td>${person(p)}${pbAccessChip(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
         <td class="nowrap muted" title="${esc(fmtDateTime(p.created_at))}">${fmtRelative(p.created_at)}</td>
         <td class="actions"><button class="btn btn-sm btn-danger" data-reject="${p.id}">${icon('x', 'sm')}Reject</button>
         <button class="btn btn-sm btn-primary" data-grant="${p.id}">${icon('check', 'sm')}Give access</button></td></tr>`).join('')}
@@ -5268,6 +5307,468 @@ async function pageMyAppraisals() {
   return {
     title: 'My Appraisals', crumbs: 'Your increments, promotions and reviews',
     html: list.length ? list.map(card).join('') : `<div class="card">${emptyState('star', 'No appraisals yet', 'When HR shares your appraisal it shows here — increment, promotion and review.')}</div>`,
+  };
+}
+
+/* =====================================================================
+   PRE-ONBOARDING — candidates learn the business before joining.
+   HR adds the candidate's email; signing up with it links them and starts
+   the clock (24 h to start, 3 days for reading + both quizzes, a 2-day
+   retake if below 80%, all within 6 days). Section 1 → Quiz 1 → Section 2
+   → Quiz 2 → result. Answers are checked in the database only.
+   ===================================================================== */
+const PB_BUCKET = 'preboarding';
+const PB_KIND = { pdf: ['PDF deck', 'file'], deck: ['Deck link', 'file'], video: ['YouTube video', 'play'], webinar: ['Webinar', 'laptop'], link: ['Link', 'external'] };
+const PB_STATUS = { waiting: ['Waiting for sign-up', 'gray'], mapped: ['Signed up — not started', 'amber'], in_progress: ['In progress', 'blue'], retake: ['Retake', 'violet'], passed: ['Passed', 'green'], failed: ['Not passed', 'red'], lapsed: ['Lapsed', 'gray'] };
+const pbChipHTML = (s) => { const [l, t] = PB_STATUS[s] || [s, 'gray']; return `<span class="chip ${t} plain nowrap">${l}</span>`; };
+const PB_DEFAULT_SECTIONS = { 1: 'The space & past exits', 2: 'Current offerings' };
+// Time left until a moment, e.g. "2 days 5 h left"
+function pbLeft(iso, nowMs = Date.now()) {
+  const ms = new Date(iso).getTime() - nowMs;
+  if (!(ms > 0)) return 'time is up';
+  const h = Math.floor(ms / 3600e3), d = Math.floor(h / 24), m = Math.floor((ms % 3600e3) / 60e3);
+  return d ? `${d} day${d === 1 ? '' : 's'} ${h % 24} h left` : h ? `${h} h ${m} min left` : `${m} min left`;
+}
+const ytId = (u) => { const m = String(u || '').match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([\w-]{6,})/); return m ? m[1] : null; };
+// Where a link can be shown inside the page (YouTube, Google Drive / Docs / Slides); otherwise null → opens in a new tab
+function pbEmbedSrc(url) {
+  const yt = ytId(url);
+  if (yt) return `https://www.youtube.com/embed/${yt}`;
+  let m = String(url || '').match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([\w-]+)/);
+  if (m) return `https://drive.google.com/file/d/${m[1]}/preview`;
+  m = String(url || '').match(/docs\.google\.com\/(presentation|document|spreadsheets)\/d\/([\w-]+)/);
+  if (m) return `https://docs.google.com/${m[1]}/d/${m[2]}/preview`;
+  return null;
+}
+const pbSignedUrl = async (path) => (await q(db.storage.from(PB_BUCKET).createSignedUrl(path, 3600))).signedUrl;
+// Opens a material inside the page (or in a new tab when it cannot be embedded)
+async function pbOpenMaterial(m, onViewed) {
+  let src = null;
+  try {
+    src = m.kind === 'pdf' ? await pbSignedUrl(m.file_path) : pbEmbedSrc(m.url);
+  } catch (e) { return toast(friendlyError(e), 'error'); }
+  if (!src) { window.open(m.url, '_blank', 'noopener'); onViewed?.(); return; }
+  const { el } = openModal({ title: m.title, subtitle: `${PB_KIND[m.kind][0]}${m.description ? ` · ${esc(m.description)}` : ''}`, size: 'xl',
+    body: `<div class="pb-frame"><iframe src="${esc(src)}" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>`,
+    footer: `${m.kind === 'pdf' ? '' : `<a class="btn" href="${esc(m.url)}" target="_blank" rel="noopener">${icon('external', 'sm')}Open in a new tab</a>`}<button class="btn btn-primary" data-close>Done</button>` });
+  el.classList.add('pb-modal');
+  onViewed?.();
+}
+
+/* ---------- HR: Pre-onboarding ---------- */
+async function pagePreboarding() {
+  await ensureAdmin();
+  await api.rpc('admin_preboard_refresh').catch(() => {});
+  const [cands, mats, qs, atts, setRow] = await cachedLoad('preboard', 20000, () => Promise.all([
+    q(db.from('preboard_candidates').select('*').is('removed_at', null).order('added_at', { ascending: false })),
+    q(db.from('preboard_materials').select('*').is('removed_at', null).order('sort_order')),
+    fetchAll(() => db.from('preboard_questions').select('*').is('removed_at', null).order('created_at')),
+    fetchAll(() => db.from('preboard_attempts').select('*').order('started_at')),
+    q(db.from('app_settings').select('value').eq('key', 'preboarding').maybeSingle()).catch(() => null),
+  ]));
+  const sections = { ...PB_DEFAULT_SECTIONS, ...(setRow?.value?.sections || {}) };
+  const tab = ['candidates', 'materials', 'questions'].includes(state.pbTab) ? state.pbTab : 'candidates';
+  const count = { candidates: cands.length, materials: mats.length, questions: qs.length };
+  const tabsHTML = `<div><nav class="tabs">${[['candidates', 'Candidates'], ['materials', 'Learning material'], ['questions', 'Question bank']].map(([k, l]) => `<a href="#/preboarding" data-pb-tab="${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${count[k]}</span></a>`).join('')}</nav></div>`;
+  const body = tab === 'candidates' ? pbCandidatesHTML(cands, atts) : tab === 'materials' ? pbMaterialsHTML(mats, sections) : pbQuestionsHTML(qs, sections);
+  return {
+    title: 'Pre-onboarding', crumbs: 'Candidates learn the business and take two quizzes before joining · pass mark 80%',
+    html: tabsHTML + body,
+    mount() {
+      $$('[data-pb-tab]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); state.pbTab = a.dataset.pbTab; render(); }));
+      if (tab === 'candidates') mountPbCandidates(cands, atts, qs);
+      if (tab === 'materials') mountPbMaterials(mats, sections);
+      if (tab === 'questions') mountPbQuestions(qs, sections);
+    },
+  };
+}
+
+function pbAttemptLine(atts, c, attempt) {
+  const A = atts.filter((a) => a.candidate_id === c.id && a.cycle === c.cycle && a.attempt === attempt);
+  if (!A.length) return '';
+  const s = (n) => { const a = A.find((x) => x.section === n); return a ? (a.submitted_at ? `${a.correct}/${a.total}` : 'taking') : '—'; };
+  const done = A.filter((a) => a.submitted_at);
+  const pct = done.length === 2 ? Math.round((done.reduce((x, a) => x + a.correct, 0) * 10000) / done.reduce((x, a) => x + a.total, 0)) / 100 : null;
+  return `<div class="nowrap"><span class="faint">Try ${attempt}:</span> Q1 ${s(1)} · Q2 ${s(2)}${pct != null ? ` · <b>${pct}%</b>` : ''}</div>`;
+}
+function pbCandidatesHTML(cands, atts) {
+  const clock = (c) => ({
+    waiting: '<span class="faint">Clock starts when they sign up</span>',
+    mapped: `Start by <b>${fmtDateTime(c.start_by)}</b><div class="faint">${pbLeft(c.start_by)}</div>`,
+    in_progress: `Due <b>${fmtDateTime(c.attempt_deadline)}</b><div class="faint">${pbLeft(c.attempt_deadline)}</div>`,
+    retake: `Retake due <b>${fmtDateTime(c.attempt_deadline)}</b><div class="faint">${pbLeft(c.attempt_deadline)}</div>`,
+    passed: `Passed ${fmtDateTime(c.result_at)}`,
+    failed: `Ended ${fmtDateTime(c.result_at)}`,
+    lapsed: `Did not start by ${fmtDateTime(c.start_by)}`,
+  })[c.status];
+  return `
+    <div class="card"><div class="card-head"><div><h3>Add candidates</h3><p>Only the email is needed. When the candidate signs up with this email, they are linked and the clock starts: 24 hours to start, 3 days to finish, one 2-day retake if needed — 6 days in all.</p></div></div>
+      <div class="card-body"><div class="cal-form"><textarea class="input" id="pb-emails" rows="2" placeholder="name@gmail.com — one per line, or separated by commas" style="flex:1;min-width:260px"></textarea>
+        <button class="btn btn-primary" id="pb-add">${icon('plus', 'sm')}Add</button></div></div></div>
+    <div class="card"><div class="card-head"><div><h3>Candidates</h3><p>${cands.length} candidate${cands.length === 1 ? '' : 's'} · when someone passes, give them access in <a href="#/access/requests">Access Control</a></p></div></div>
+      ${cands.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Candidate</th><th>Status</th><th>Clock</th><th>Scores</th><th>Added</th><th></th></tr></thead><tbody>
+        ${cands.map((c) => { const p = c.user_id ? byId(c.user_id) : null; return `<tr>
+          <td>${p ? `<b style="color:var(--text)">${esc(p.full_name)}</b><div class="faint" style="font-size:12px">${esc(c.email)}</div>` : `<span class="mono" style="font-size:13px">${esc(c.email)}</span>`}</td>
+          <td>${pbChipHTML(c.status)}${c.score_pct != null && ['passed', 'failed'].includes(c.status) ? `<div class="faint" style="font-size:12px">${Number(c.score_pct)}%</div>` : ''}${c.cycle > 1 ? `<div class="faint" style="font-size:11.5px">Restarted ×${c.cycle - 1}</div>` : ''}</td>
+          <td style="font-size:12.5px">${clock(c)}</td>
+          <td style="font-size:12.5px">${pbAttemptLine(atts, c, 1)}${pbAttemptLine(atts, c, 2)}${!atts.some((a) => a.candidate_id === c.id && a.cycle === c.cycle) ? '<span class="faint">—</span>' : ''}</td>
+          <td class="muted nowrap" style="font-size:12.5px">${fmtDMY(c.added_at.slice(0, 10))}</td>
+          <td class="actions">${atts.some((a) => a.candidate_id === c.id) ? `<button class="btn btn-sm" data-pb-detail="${c.id}">Answers</button>` : ''}
+            ${c.user_id && c.status !== 'passed' ? `<button class="btn btn-sm" data-pb-reset="${c.id}" title="Give a fresh 6 days">Restart</button>` : ''}
+            ${c.status === 'passed' && p?.status === 'pending' ? `<a class="btn btn-sm btn-primary" href="#/access/requests">Give access</a>` : ''}
+            <button class="btn btn-sm btn-ghost" data-pb-remove="${c.id}" title="Remove">${icon('trash', 'sm')}</button></td></tr>`; }).join('')}
+        </tbody></table></div>` : `<div class="card-body">${emptyState('userPlus', 'No candidates yet', 'Add a candidate’s email above. They sign up with it to start pre-onboarding.')}</div>`}
+    </div>`;
+}
+function mountPbCandidates(cands, atts, qs) {
+  $('#pb-add').addEventListener('click', async (ev) => {
+    const emails = $('#pb-emails').value.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+    if (!emails.length) return toast('Type at least one email', 'error');
+    try {
+      const r = await withBusy(ev.currentTarget, 'Adding…', () => api.rpc('admin_add_preboard_candidates', { p_emails: emails }));
+      toast(`${r.added} added${r.mapped ? ` · ${r.mapped} already signed up — their clock has started` : ''}${r.skipped?.length ? ` · skipped: ${r.skipped.map((s) => `${s.email} (${s.why})`).join(', ')}` : ''}`, r.added ? 'success' : 'error');
+      if (r.added) render();
+    } catch (e) { toast(friendlyError(e), 'error'); }
+  });
+  $$('[data-pb-remove]').forEach((b) => b.addEventListener('click', async () => {
+    const c = cands.find((x) => x.id === b.dataset.pbRemove);
+    if (!(await confirmDialog({ title: 'Remove this candidate?', message: `${esc(c.email)} is taken off pre-onboarding. Their attempts stay on record.`, confirmText: 'Remove', danger: true }))) return;
+    try { await withBusy(b, '', () => api.rpc('admin_remove_preboard_candidate', { p_id: c.id })); toast('Removed.'); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  $$('[data-pb-reset]').forEach((b) => b.addEventListener('click', async () => {
+    const c = cands.find((x) => x.id === b.dataset.pbReset);
+    if (!(await confirmDialog({ title: 'Restart pre-onboarding?', message: `${esc(c.email)} gets a fresh start: 24 hours to start and 6 days in all, with new questions. Earlier answers stay on record.`, confirmText: 'Restart' }))) return;
+    try { await withBusy(b, '', () => api.rpc('admin_reset_preboard_candidate', { p_id: c.id })); toast('Restarted — the new clock is running.'); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  $$('[data-pb-detail]').forEach((b) => b.addEventListener('click', () => {
+    const c = cands.find((x) => x.id === b.dataset.pbDetail);
+    const qById = new Map(qs.map((x) => [x.id, x]));
+    const A = atts.filter((a) => a.candidate_id === c.id).sort((x, y) => x.cycle - y.cycle || x.attempt - y.attempt || x.section - y.section);
+    const L = (i) => String.fromCharCode(65 + i);
+    openModal({ title: `Answers — ${esc(byId(c.user_id)?.full_name || c.email)}`, size: 'lg',
+      body: A.map((a) => `<details class="pb-ans" ${a === A[A.length - 1] ? 'open' : ''}><summary><b>${c.cycle > 1 ? `Round ${a.cycle} · ` : ''}Try ${a.attempt} · Quiz ${a.section}</b> — ${a.submitted_at ? `${a.correct}/${a.total} · ${fmtDateTime(a.submitted_at)}` : 'not submitted'}</summary>
+        <ol>${a.question_ids.map((id) => { const x = qById.get(id); const got = a.answers?.[id]; const ok = x && got != null && Number(got) === x.answer;
+          return `<li class="${a.submitted_at ? (ok ? 'ok' : 'bad') : ''}">${esc(x?.question || '(question removed)')}<div class="faint" style="font-size:12px">${x ? `Answer: ${L(x.answer)}. ${esc(x.options[x.answer])}${a.submitted_at ? ` · Chose: ${got != null ? `${L(Number(got))}. ${esc(x.options[Number(got)] ?? '')}` : '—'}` : ''}` : ''}</div></li>`; }).join('')}</ol></details>`).join(''),
+      footer: '<button class="btn btn-primary" data-close>Close</button>' });
+  }));
+}
+
+function pbMaterialsHTML(mats, sections) {
+  const list = (s) => mats.filter((m) => m.section === s);
+  const row = (m, i, arr) => `<div class="pb-mat" data-pb-mat="${m.id}"><span class="pb-num">${i + 1}</span>
+      <span class="pb-kind">${icon(PB_KIND[m.kind][1], 'sm')}</span>
+      <div class="pb-mat-main"><b>${esc(m.title)}</b> <span class="chip gray plain">${PB_KIND[m.kind][0]}</span>${m.description ? `<div class="faint" style="font-size:12.5px">${esc(m.description)}</div>` : ''}
+        <div class="faint mono" style="font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.kind === 'pdf' ? m.file_name || 'PDF' : m.url)}</div></div>
+      <span class="pb-mat-act"><button class="icon-btn" data-pb-up="${m.id}" title="Move up" ${i === 0 ? 'disabled' : ''}>${icon('arrowUp', 'sm')}</button><button class="icon-btn" data-pb-down="${m.id}" title="Move down" ${i === arr.length - 1 ? 'disabled' : ''}>${icon('arrowDown', 'sm')}</button>
+        <button class="btn btn-sm btn-ghost" data-pb-preview="${m.id}">${icon('eye', 'sm')}View</button><button class="btn btn-sm btn-ghost" data-pb-edit="${m.id}">${icon('edit', 'sm')}</button><button class="btn btn-sm btn-ghost" data-pb-mremove="${m.id}" title="Remove">${icon('trash', 'sm')}</button></span></div>`;
+  return `
+    <div class="card"><div class="card-head"><div><h3>Add learning material</h3><p>PDF decks are uploaded here; YouTube, Google Drive / Slides links play inside the page; other links open in a new tab</p></div></div>
+      <div class="card-body"><div class="grid g3" style="gap:12px">
+        <div class="field"><label>Section</label><select class="input" id="pbm-section"><option value="1">1 · ${esc(sections[1])}</option><option value="2">2 · ${esc(sections[2])}</option></select></div>
+        <div class="field"><label>Type</label><select class="input" id="pbm-kind">${Object.entries(PB_KIND).map(([k, [l]]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Title<span class="req">*</span></label><input class="input" id="pbm-title" maxlength="120" placeholder="e.g. Unlisted market 101"></div>
+        <div class="field" id="pbm-url-f" style="grid-column:span 2"><label>Link<span class="req">*</span></label><input class="input" id="pbm-url" placeholder="https://…"></div>
+        <div class="field" id="pbm-file-f" style="grid-column:span 2"><label>PDF<span class="req">*</span> <span class="faint">(up to 50 MB)</span></label><input class="input" type="file" id="pbm-file" accept="application/pdf,.pdf"></div>
+        <div class="field"><label>Short note <span class="faint">(optional)</span></label><input class="input" id="pbm-desc" maxlength="200" placeholder="e.g. 20 min watch"></div>
+      </div><button class="btn btn-primary" id="pbm-add" style="margin-top:12px">${icon('plus', 'sm')}Add</button></div></div>
+    ${[1, 2].map((s) => `<div class="card"><div class="card-head"><div><h3>Section ${s} · ${esc(sections[s])}</h3><p>${list(s).length} item${list(s).length === 1 ? '' : 's'} — shown to candidates in this order; use the arrows to sort</p></div></div>
+      ${list(s).length ? `<div class="pb-mats">${list(s).map(row).join('')}</div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Nothing in this section yet.</p></div>`}</div>`).join('')}
+    <div class="card"><div class="card-head"><div><h3>Section names</h3><p>Shown to candidates</p></div></div>
+      <div class="card-body"><div class="cal-form"><input class="input" id="pbs-1" value="${esc(sections[1])}" maxlength="80"><input class="input" id="pbs-2" value="${esc(sections[2])}" maxlength="80"><button class="btn" id="pbs-save">${icon('check', 'sm')}Save names</button></div></div></div>`;
+}
+async function pbUploadPdf(file) {
+  if (!file) throw new Error('Choose the PDF');
+  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') throw new Error('Only PDF files can be uploaded — share slides as a link instead');
+  if (file.size > 50 * 1024 * 1024) throw new Error('The PDF is larger than 50 MB');
+  const path = `materials/${Date.now()}-${file.name.replace(/[^\w.-]+/g, '_').slice(-80)}`;
+  await q(db.storage.from(PB_BUCKET).upload(path, file, { upsert: false, contentType: 'application/pdf' }));
+  return path;
+}
+function mountPbMaterials(mats, sections) {
+  const kind = $('#pbm-kind');
+  const sync = () => { const pdf = kind.value === 'pdf'; $('#pbm-url-f').style.display = pdf ? 'none' : ''; $('#pbm-file-f').style.display = pdf ? '' : 'none'; };
+  kind.addEventListener('change', sync); sync();
+  $('#pbm-add').addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Adding…', async () => {
+    try {
+      const k = kind.value, title = $('#pbm-title').value.trim(), url = $('#pbm-url').value.trim();
+      if (!title) throw new Error('Give it a title');
+      if (k !== 'pdf' && !/^https?:\/\//i.test(url)) throw new Error('Paste the link (starting with https://)');
+      if (k === 'video' && !ytId(url)) throw new Error('That does not look like a YouTube link');
+      const file = $('#pbm-file').files[0];
+      const path = k === 'pdf' ? await pbUploadPdf(file) : null;
+      await api.rpc('admin_save_preboard_material', { p_id: null, p_section: Number($('#pbm-section').value), p_kind: k, p_title: title, p_description: $('#pbm-desc').value, p_url: url || null, p_file_path: path, p_file_name: path ? file.name : null });
+      toast('Added.'); render();
+    } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  const move = (id, dir) => {
+    const m = mats.find((x) => x.id === id), arr = mats.filter((x) => x.section === m.section).map((x) => x.id), i = arr.indexOf(id), j = i + dir;
+    if (j < 0 || j >= arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    api.rpc('admin_reorder_preboard_materials', { p_ids: arr }).then(() => render(), (e) => toast(friendlyError(e), 'error'));
+  };
+  $$('[data-pb-up]').forEach((b) => b.addEventListener('click', () => move(b.dataset.pbUp, -1)));
+  $$('[data-pb-down]').forEach((b) => b.addEventListener('click', () => move(b.dataset.pbDown, 1)));
+  $$('[data-pb-preview]').forEach((b) => b.addEventListener('click', () => pbOpenMaterial(mats.find((x) => x.id === b.dataset.pbPreview))));
+  $$('[data-pb-mremove]').forEach((b) => b.addEventListener('click', async () => {
+    const m = mats.find((x) => x.id === b.dataset.pbMremove);
+    if (!(await confirmDialog({ title: `Remove “${esc(m.title)}”?`, message: 'Candidates will no longer see it.', confirmText: 'Remove', danger: true }))) return;
+    try {
+      await withBusy(b, '', () => api.rpc('admin_remove_preboard_material', { p_id: m.id }));
+      if (m.file_path) db.storage.from(PB_BUCKET).remove([m.file_path]).catch(() => {});
+      toast('Removed.'); render();
+    } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  $$('[data-pb-edit]').forEach((b) => b.addEventListener('click', () => {
+    const m = mats.find((x) => x.id === b.dataset.pbEdit);
+    const { el, close } = openModal({ title: 'Edit material', size: 'md',
+      body: `<div class="grid" style="gap:12px">
+        <div class="grid g2" style="gap:12px"><div class="field"><label>Section</label><select class="input" id="pbe-section"><option value="1" ${m.section === 1 ? 'selected' : ''}>1 · ${esc(sections[1])}</option><option value="2" ${m.section === 2 ? 'selected' : ''}>2 · ${esc(sections[2])}</option></select></div>
+          <div class="field"><label>Type</label><input class="input" value="${PB_KIND[m.kind][0]}" disabled></div></div>
+        <div class="field"><label>Title</label><input class="input" id="pbe-title" maxlength="120" value="${esc(m.title)}"></div>
+        ${m.kind === 'pdf' ? `<div class="field"><label>Replace the PDF <span class="faint">(optional · now ${esc(m.file_name || 'PDF')})</span></label><input class="input" type="file" id="pbe-file" accept="application/pdf,.pdf"></div>`
+          : `<div class="field"><label>Link</label><input class="input" id="pbe-url" value="${esc(m.url)}"></div>`}
+        <div class="field"><label>Short note</label><input class="input" id="pbe-desc" maxlength="200" value="${esc(m.description || '')}"></div></div>`,
+      footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Save</button>` });
+    $('[data-ok]', el).addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
+      try {
+        const file = $('#pbe-file', el)?.files[0];
+        const path = file ? await pbUploadPdf(file) : null;
+        await api.rpc('admin_save_preboard_material', { p_id: m.id, p_section: Number($('#pbe-section', el).value), p_kind: m.kind, p_title: $('#pbe-title', el).value,
+          p_description: $('#pbe-desc', el).value, p_url: $('#pbe-url', el)?.value || null, p_file_path: path, p_file_name: file ? file.name : null });
+        if (path && m.file_path) db.storage.from(PB_BUCKET).remove([m.file_path]).catch(() => {});
+        close(); toast('Saved.'); render();
+      } catch (e) { toast(friendlyError(e), 'error'); }
+    }));
+  }));
+  $('#pbs-save').addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Saving…', async () => {
+    try { await api.rpc('admin_save_preboard_sections', { p_s1: $('#pbs-1').value, p_s2: $('#pbs-2').value }); toast('Section names saved.'); render(); }
+    catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+}
+
+const PB_PER_SECTION = 20;
+function pbQuestionsHTML(qs, sections) {
+  const F = state.pbqFilter || (state.pbqFilter = { section: '', text: '' });
+  const n = (s) => qs.filter((x) => x.section === s).length;
+  const shown = qs.filter((x) => (!F.section || x.section === Number(F.section)));
+  const L = (i) => String.fromCharCode(65 + i);
+  return `
+    <div class="stats">${[1, 2].map((s) => `<div class="card stat"><div class="top"><span>Section ${s} · ${esc(sections[s])}</span></div><div class="value">${n(s)}</div>
+      <div class="foot">${n(s) >= PB_PER_SECTION ? `questions · each quiz draws ${PB_PER_SECTION}` : `<span style="color:var(--red)">needs at least ${PB_PER_SECTION} for a full quiz</span>`}</div></div>`).join('')}</div>
+    <div class="card"><div class="card-head"><div><h3>Question bank</h3><p>Upload the whole repository from Excel. Every quiz draws ${PB_PER_SECTION} questions per section — the least-used first, so everyone gets a fair rotation — and a retake avoids questions the candidate has already had.</p></div>
+      <div class="right"><button class="btn btn-sm" id="pbq-template">${icon('download', 'sm')}Excel template</button><button class="btn btn-sm btn-primary" id="pbq-upload">${icon('upload', 'sm')}Upload Excel</button></div></div>
+      <div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid var(--border)">
+        <select class="input" id="pbq-f-s" style="width:auto;height:34px"><option value="">Both sections</option><option value="1" ${F.section === '1' ? 'selected' : ''}>Section 1</option><option value="2" ${F.section === '2' ? 'selected' : ''}>Section 2</option></select>
+        <input class="input" id="pbq-f-t" placeholder="Search questions" value="${esc(F.text)}" style="max-width:320px;height:34px"></div>
+      ${shown.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Sec.</th><th>Question</th><th>Options (correct in green)</th><th class="num">Used</th><th></th></tr></thead><tbody>
+        ${shown.slice(0, 400).map((x) => `<tr data-pbq-row="${esc(x.question.toLowerCase())}" style="${F.text && !x.question.toLowerCase().includes(F.text.toLowerCase()) ? 'display:none' : ''}"><td>${x.section}</td><td class="wrap" style="min-width:240px">${esc(x.question)}</td>
+          <td style="font-size:12.5px;min-width:220px">${x.options.map((o, i) => `<div class="${i === x.answer ? 'pb-correct' : 'muted'}">${L(i)}. ${esc(o)}</div>`).join('')}</td>
+          <td class="num">${x.times_used}</td><td class="actions"><button class="btn btn-sm btn-ghost" data-pbq-remove="${x.id}" title="Remove">${icon('trash', 'sm')}</button></td></tr>`).join('')}
+        </tbody></table></div>${shown.length > 400 ? `<div class="card-body faint" style="font-size:12.5px">Showing 400 of ${shown.length} — search to narrow down.</div>` : ''}`
+        : `<div class="card-body">${emptyState('fileCheck', qs.length ? 'No question matches' : 'No questions yet', 'Download the template, fill in your questions and upload it.')}</div>`}
+    </div>`;
+}
+const PB_QCOLS = { section: ['section', 'sec', 'quiz', 'part'], question: ['question', 'questions', 'q'], answer: ['correctanswer', 'answer', 'correct', 'ans', 'key', 'rightanswer'] };
+function parsePbQuestions(aoa, sections) {
+  const norm = (h) => String(h || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const hi = aoa.slice(0, 15).findIndex((r) => r.some((c) => PB_QCOLS.question.includes(norm(c))));
+  if (hi < 0) throw new Error('Could not find the header row — use the Excel template (Section, Question, Option A…, Correct Answer).');
+  const head = aoa[hi].map(norm), col = {}, opt = [];
+  head.forEach((h, i) => {
+    for (const [k, al] of Object.entries(PB_QCOLS)) if (col[k] === undefined && al.includes(h)) col[k] = i;
+    const m = h.match(/^(?:option|opt|choice)([a-f1-6])$/); if (m) opt.push(i);
+  });
+  if (col.question === undefined || col.answer === undefined || opt.length < 2) throw new Error('The sheet needs Question, at least two Option columns and Correct Answer.');
+  const secOf = (v) => { const s = String(v ?? '').trim().toLowerCase(); if (/^(section\s*)?1$/.test(s) || s === sections[1].toLowerCase()) return 1; if (/^(section\s*)?2$/.test(s) || s === sections[2].toLowerCase()) return 2; return null; };
+  const rows = [], bad = [];
+  aoa.slice(hi + 1).forEach((r, i) => {
+    const question = String(r[col.question] ?? '').trim();
+    if (!question) return;
+    const options = opt.map((c) => String(r[c] ?? '').trim()).filter(Boolean);
+    const a = String(r[col.answer] ?? '').trim();
+    let answer = /^[a-f]$/i.test(a) ? a.toUpperCase().charCodeAt(0) - 65 : /^[1-6]$/.test(a) ? Number(a) - 1 : options.findIndex((o) => o.toLowerCase() === a.toLowerCase());
+    const section = col.section === undefined ? null : secOf(r[col.section]);
+    if (!section || options.length < 2 || !(answer >= 0 && answer < options.length)) { bad.push(hi + i + 2); return; }
+    rows.push({ section, question, options, answer });
+  });
+  return { rows, bad };
+}
+function mountPbQuestions(qs, sections) {
+  const F = state.pbqFilter;
+  $('#pbq-f-s').addEventListener('change', (e) => { F.section = e.target.value; render(); });
+  $('#pbq-f-t').addEventListener('input', (e) => {
+    F.text = e.target.value; const t = F.text.toLowerCase();
+    $$('[data-pbq-row]').forEach((tr) => { tr.style.display = !t || tr.dataset.pbqRow.includes(t) ? '' : 'none'; });
+  });
+  $$('[data-pbq-remove]').forEach((b) => b.addEventListener('click', async () => {
+    if (!(await confirmDialog({ title: 'Remove this question?', message: 'It will not be drawn in new quizzes. Past answers keep it.', confirmText: 'Remove', danger: true }))) return;
+    try { await withBusy(b, '', () => api.rpc('admin_remove_preboard_question', { p_id: b.dataset.pbqRemove })); toast('Removed.'); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  $('#pbq-template').addEventListener('click', async () => {
+    try {
+      await loadXLSX();
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([
+        ['Section', 'Question', 'Option A', 'Option B', 'Option C', 'Option D', 'Correct Answer'],
+        [1, 'Which exit route is most common for pre-IPO shares?', 'IPO', 'Buy-back', 'Secondary sale', 'Liquidation', 'A'],
+        [2, 'Which product lets investors buy unlisted shares on our platform?', 'Product X', 'Product Y', 'Product Z', 'None of these', 'B'],
+      ]);
+      ws['!cols'] = [{ wch: 9 }, { wch: 70 }, { wch: 24 }, { wch: 24 }, { wch: 24 }, { wch: 24 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'Questions');
+      const help = XLSX.utils.aoa_to_sheet([
+        ['Column', 'How to fill it'],
+        ['Section', `1 = ${sections[1]}, 2 = ${sections[2]}`],
+        ['Question', 'The question text. Upload as many as you like — each quiz draws 20 per section.'],
+        ['Option A – D', 'At least two options. You can add Option E / Option F columns.'],
+        ['Correct Answer', 'The letter of the right option (A, B, C …).'],
+        ['Re-uploading', 'A question with the same text in the same section is updated (e.g. a corrected answer), not added twice.'],
+        ['Replace', 'Tick “Replace” when uploading to take out the questions of those sections that are not in the file.'],
+      ]);
+      help['!cols'] = [{ wch: 18 }, { wch: 100 }];
+      XLSX.utils.book_append_sheet(wb, help, 'How to fill');
+      XLSX.writeFile(wb, 'altius-preonboarding-questions.xlsx');
+    } catch (e) { toast(friendlyError(e), 'error'); }
+  });
+  $('#pbq-upload').addEventListener('click', () => {
+    const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx,.xls,.csv';
+    input.addEventListener('change', async () => {
+      const file = input.files[0]; if (!file) return;
+      try {
+        await loadXLSX();
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const { rows, bad } = parsePbQuestions(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' }), sections);
+        if (!rows.length) throw new Error(`No questions could be read${bad.length ? ` — check rows ${bad.slice(0, 8).join(', ')}` : ''}.`);
+        const c1 = rows.filter((r) => r.section === 1).length, c2 = rows.length - c1;
+        const { el, close } = openModal({ title: 'Upload questions', subtitle: esc(file.name), size: 'sm',
+          body: `<div class="kv-list"><div><span>Section 1 · ${esc(sections[1])}</span><b>${c1}</b></div><div><span>Section 2 · ${esc(sections[2])}</span><b>${c2}</b></div>${bad.length ? `<div><span>Rows skipped (missing section, options or answer)</span><b style="color:var(--red)">${bad.slice(0, 10).join(', ')}${bad.length > 10 ? '…' : ''}</b></div>` : ''}</div>
+            <label class="check" style="display:flex;gap:8px;margin-top:12px;font-size:13px"><input type="checkbox" id="pbq-replace"> <span>Replace — take out questions of ${c1 && c2 ? 'both sections' : `section ${c1 ? 1 : 2}`} that are not in this file</span></label>`,
+          footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('upload', 'sm')}Upload ${rows.length}</button>` });
+        $('[data-ok]', el).addEventListener('click', (ev) => withBusy(ev.currentTarget, 'Uploading…', async () => {
+          try {
+            const r = await api.rpc('admin_import_preboard_questions', { p_rows: rows, p_replace: $('#pbq-replace', el).checked });
+            close(); toast(`${r.added} added · ${r.updated} updated${r.removed ? ` · ${r.removed} taken out` : ''}`); archiveUpload?.('Pre-onboarding', file); render();
+          } catch (e) { toast(friendlyError(e), 'error'); }
+        }));
+      } catch (e) { toast(friendlyError(e), 'error'); }
+    });
+    input.click();
+  });
+}
+
+/* ---------- Candidate: Pre-onboarding ---------- */
+async function pageMyPreboarding() {
+  const D = await q(db.rpc('my_preboarding'));
+  state.preboard = D;
+  if (!D) { setTimeout(() => loadSelfAndRoute(), 0); return { title: 'Pre-onboarding', html: `<div class="loading">${spinnerHTML}</div>` }; }
+  const skew = new Date(D.now).getTime() - Date.now();
+  const left = (iso) => pbLeft(iso, Date.now() + skew);
+  const S = { ...PB_DEFAULT_SECTIONS, ...(D.sections || {}) };
+  if (state.pbQuiz && ['in_progress', 'retake'].includes(D.status)) return pbQuizView(D, S);
+  state.pbQuiz = null;
+  const name = firstName(state.profile?.full_name);
+  const card = (ico, tone, title, text, extra = '') => `<div class="card pb-hero"><div class="big-ico" style="background:var(--${tone}-soft);color:var(--${tone})">${icon(ico)}</div><div><h2>${title}</h2><p>${text}</p>${extra}</div></div>`;
+  const rules = `<ul class="pb-rules">
+      <li>Two sections: <b>${esc(S[1])}</b> and <b>${esc(S[2])}</b> — decks, videos and webinars to go through.</li>
+      <li>After each section there is a quiz of ${D.per_section} questions (${D.per_section * 2} in all). Section 2 opens after Quiz 1.</li>
+      <li>You pass with <b>${D.pass_pct}%</b> or more across both quizzes.</li>
+      <li>From Start you have <b>${D.first_days} days</b> for the reading and both quizzes. If you score below ${D.pass_pct}%, you get one retake within <b>${D.retake_days} days</b>, with all the material open again.</li>
+      <li>Everything has to be finished by <b>${fmtDateTime(D.final_deadline)}</b>.</li></ul>`;
+  if (D.status === 'mapped') {
+    return { title: 'Pre-onboarding', crumbs: 'Before you join Altius',
+      html: card('star', 'violet', `Welcome, ${esc(name)}!`, `Before you join, take some time to learn about our business and the space we work in. Press <b>Start</b> by <b>${fmtDateTime(D.start_by)}</b> (${left(D.start_by)}) — otherwise this lapses.`,
+        `${rules}<button class="btn btn-primary" id="pb-start" style="margin-top:6px">${icon('arrowRight', 'sm')}Start</button>`),
+      mount() {
+        $('#pb-start').addEventListener('click', async (ev) => {
+          if (!(await confirmDialog({ title: 'Start pre-onboarding?', message: `Your ${D.first_days} days start now.`, confirmText: 'Start' }))) return;
+          try { await withBusy(ev.currentTarget, 'Starting…', () => api.rpc('my_preboard_start')); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+        });
+      } };
+  }
+  if (D.status === 'passed') return { title: 'Pre-onboarding', crumbs: 'Completed',
+    html: card('check', 'green', `Thank you, ${esc(name)}!`, `You have completed pre-onboarding with <b>${Number(D.score_pct)}%</b>. We are glad to have you — HR will be in touch about your joining and access to the HRMS.`) };
+  if (D.status === 'failed') return { title: 'Pre-onboarding', crumbs: 'Completed',
+    html: card('info', 'gray', `Thank you for your time, ${esc(name)}`, `Your final score was <b>${Number(D.score_pct ?? 0)}%</b> — the pass mark is ${D.pass_pct}%. HR will be in touch with you.`) };
+  if (D.status === 'lapsed') return { title: 'Pre-onboarding', crumbs: 'Lapsed',
+    html: card('clock', 'amber', 'The time to start has passed', `Pre-onboarding had to be started by ${fmtDateTime(D.start_by)}. Please contact HR if you would like another chance.`) };
+
+  // In progress / retake
+  const M = D.materials || [];
+  const q1 = D.quiz['1'], q2 = D.quiz['2'];
+  const needView = (s) => D.attempt === 1 && M.some((m) => m.section === s && !m.viewed);
+  const matRow = (m) => `<div class="pb-mat ${m.viewed ? 'seen' : ''}"><span class="pb-kind">${icon(PB_KIND[m.kind][1], 'sm')}</span>
+      <div class="pb-mat-main"><b>${esc(m.title)}</b> <span class="chip gray plain">${PB_KIND[m.kind][0]}</span>${m.description ? `<div class="faint" style="font-size:12.5px">${esc(m.description)}</div>` : ''}</div>
+      <span class="pb-mat-act">${m.viewed ? `<span class="chip green plain">${icon('check', 'sm')}Gone through</span>` : ''}<button class="btn btn-sm ${m.viewed ? '' : 'btn-primary'}" data-pb-open="${m.id}">${icon(m.kind === 'video' ? 'play' : 'eye', 'sm')}${m.viewed ? 'Open again' : 'Open'}</button></span></div>`;
+  const quizCard = (s, st) => {
+    const blocked = s === 2 && !q1.submitted ? 'Opens after Quiz 1' : needView(s) ? `Go through all ${M.filter((m) => m.section === s).length} items above first` : '';
+    return `<div class="pb-quiz ${st.submitted ? 'done' : ''}"><div><b>Quiz ${s}</b> · ${D.per_section} questions${st.submitted ? ' — submitted' : st.started ? ' — in progress' : ''}${blocked && !st.submitted ? `<div class="faint" style="font-size:12.5px">${blocked}</div>` : ''}</div>
+      ${st.submitted ? `<span class="chip green plain">${icon('check', 'sm')}Submitted</span>` : `<button class="btn btn-primary" data-pb-quiz="${s}" ${blocked ? 'disabled' : ''}>${st.started ? 'Continue quiz' : `Start Quiz ${s}`}</button>`}</div>`;
+  };
+  const sectionCard = (s, st) => {
+    const list = M.filter((m) => m.section === s);
+    const locked = s === 2 && !list.length && !q1.submitted && D.attempt === 1;
+    return `<div class="card pb-section"><div class="card-head"><div><h3><span class="pb-step">${s}</span>${esc(S[s])}</h3><p>${locked ? 'Opens after you submit Quiz 1' : `${list.filter((m) => m.viewed).length} of ${list.length} gone through`}</p></div></div>
+      ${locked ? '' : `${list.length ? `<div class="pb-mats">${list.map(matRow).join('')}</div>` : '<div class="card-body faint" style="font-size:13px">No material in this section.</div>'}`}
+      <div class="card-body" style="border-top:1px solid var(--border)">${locked ? `<div class="pb-quiz"><div><b>Quiz 2</b> · ${D.per_section} questions<div class="faint" style="font-size:12.5px">Opens after Quiz 1</div></div></div>` : quizCard(s, st)}</div></div>`;
+  };
+  return {
+    title: 'Pre-onboarding', crumbs: `${D.status === 'retake' ? 'Retake' : 'Learn about Altius'} · due ${fmtDateTime(D.attempt_deadline)}`,
+    html: `
+      <div class="card pb-bar"><div><b>${D.status === 'retake' ? 'Your retake' : `Welcome, ${esc(name)}`}</b><div class="muted" style="font-size:13px">${D.status === 'retake'
+        ? `Your first try scored <b>${Number(D.first_score ?? 0)}%</b> — the pass mark is ${D.pass_pct}%. Go through any material again and take both quizzes once more (new questions).`
+        : `Go through each section, then take its quiz. Pass mark ${D.pass_pct}% across both quizzes.`}</div></div>
+        <div class="pb-clock"><span>${left(D.attempt_deadline)}</span><small>Due ${fmtDateTime(D.attempt_deadline)}</small></div></div>
+      ${sectionCard(1, q1)}${sectionCard(2, q2)}`,
+    mount() {
+      $$('[data-pb-open]').forEach((b) => b.addEventListener('click', () => {
+        const m = M.find((x) => x.id === b.dataset.pbOpen);
+        pbOpenMaterial(m, () => {
+          if (m.viewed) return;
+          m.viewed = true;
+          api.rpc('my_preboard_view', { p_material: m.id }).catch(() => {});
+          const root = $('#modal-root');
+          const again = () => render();
+          if (root.children.length) new MutationObserver((_, obs) => { if (!root.children.length) { obs.disconnect(); again(); } }).observe(root, { childList: true }); else again();
+        });
+      }));
+      $$('[data-pb-quiz]').forEach((b) => b.addEventListener('click', () => withBusy(b, 'Loading…', async () => {
+        try { state.pbQuiz = await api.rpc('my_preboard_quiz', { p_section: Number(b.dataset.pbQuiz) }); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+      })));
+    },
+  };
+}
+function pbQuizView(D, S) {
+  const Q = state.pbQuiz, key = `pb-answers-${Q.attempt_id}`;
+  let ans = {}; try { ans = JSON.parse(localStorage.getItem(key) || '{}'); } catch { ans = {}; }
+  const L = (i) => String.fromCharCode(65 + i);
+  const answered = () => Q.questions.filter((x) => ans[x.id] != null).length;
+  return {
+    title: `Quiz ${Q.section} · ${S[Q.section]}`, crumbs: `${Q.questions.length} questions · due ${fmtDateTime(Q.deadline)}`,
+    actions: `<button class="btn btn-sm" id="pbq-back">${icon('arrowLeft', 'sm')}Back to material</button>`,
+    html: `<div class="card pb-bar"><div><b>Answer every question, then submit</b><div class="muted" style="font-size:13px">Your answers are kept on this device until you submit. You can submit once.</div></div>
+        <div class="pb-clock"><span id="pbq-count">${answered()} / ${Q.questions.length}</span><small>answered</small></div></div>
+      ${Q.questions.map((x, i) => `<div class="card pb-q" data-q="${x.id}"><div class="card-body"><div class="pb-q-t"><span class="pb-step">${i + 1}</span>${esc(x.question)}</div>
+        <div class="pb-opts">${x.options.map((o, k) => `<label class="pb-opt"><input type="radio" name="q-${x.id}" value="${k}" ${Number(ans[x.id]) === k && ans[x.id] != null ? 'checked' : ''}><span><b>${L(k)}.</b> ${esc(o)}</span></label>`).join('')}</div></div></div>`).join('')}
+      <div class="card"><div class="card-body" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><span class="muted" style="font-size:13px">Check your answers before submitting.</span>
+        <button class="btn btn-primary" id="pbq-submit">${icon('check', 'sm')}Submit Quiz ${Q.section}</button></div></div>`,
+    mount() {
+      $$('.pb-opt input').forEach((r) => r.addEventListener('change', () => {
+        ans[r.name.slice(2)] = Number(r.value);
+        try { localStorage.setItem(key, JSON.stringify(ans)); } catch { /* keep in memory */ }
+        $('#pbq-count').textContent = `${answered()} / ${Q.questions.length}`;
+      }));
+      $('#pbq-back').addEventListener('click', () => { state.pbQuiz = null; render(); });
+      $('#pbq-submit').addEventListener('click', async (ev) => {
+        const missing = Q.questions.length - answered();
+        if (!(await confirmDialog({ title: `Submit Quiz ${Q.section}?`, message: missing ? `<b>${missing} question${missing === 1 ? ' is' : 's are'} not answered</b> and will count as wrong.` : 'You cannot change your answers after submitting.', confirmText: 'Submit', danger: !!missing }))) return;
+        try {
+          const r = await withBusy(ev.currentTarget, 'Submitting…', () => api.rpc('my_preboard_submit', { p_section: Q.section, p_answers: ans }));
+          try { localStorage.removeItem(key); } catch { /* ignore */ }
+          state.pbQuiz = null;
+          toast(!r.done ? `Quiz ${Q.section} submitted — Section 2 is open now.` : r.passed ? 'Well done — you passed!' : r.retake ? `You scored ${Number(r.score_pct)}%. You have one more try.` : 'Submitted.');
+          render();
+        } catch (e) { toast(friendlyError(e), 'error'); }
+      });
+    },
   };
 }
 
