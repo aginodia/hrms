@@ -3098,7 +3098,7 @@ async function pageEmployee(r) {
     };
   }
   const [kyc, , roles, appraisals] = await Promise.all([api.kycFor(e.id), ensureFinance(), jobRolesLoad().catch(() => []),
-    q(db.from('appraisals').select('*').eq('employee_id', e.id).order('cycle_month', { ascending: false })).catch(() => [])]);
+    q(db.from('appraisals').select('*').eq('employee_id', e.id).is('removed_at', null).order('cycle_month', { ascending: false })).catch(() => [])]);
   const mgr = byId(e.reporting_manager_id);
   let uid = 0;
   const model = {
@@ -4875,7 +4875,7 @@ async function pageAppraisals() {
   const month = state.apprMonth || now.slice(0, 7);
   const mISO = `${month}-01`;
   const [all, events] = await cachedLoad('appraisals', 30000, () => Promise.all([
-    fetchAll(() => db.from('appraisals').select('*').order('cycle_month', { ascending: false })),
+    fetchAll(() => db.from('appraisals').select('*').is('removed_at', null).order('cycle_month', { ascending: false })),
     q(db.from('appraisal_events').select('*').order('created_at', { ascending: false }).range(0, 499)),
   ]));
   const inMonth = new Map(all.filter((a) => a.cycle_month === mISO).map((a) => [a.employee_id, a]));

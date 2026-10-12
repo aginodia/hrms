@@ -277,8 +277,12 @@ create table if not exists public.appraisals (
   updated_at           timestamptz not null default now(),
   issued_by            uuid references public.profiles (id) on delete set null,
   issued_at            timestamptz,
+  removed_at           timestamptz,
+  removed_by           uuid references public.profiles (id) on delete set null,
   unique (employee_id, cycle_month)
 );
+alter table public.appraisals add column if not exists removed_at timestamptz;
+alter table public.appraisals add column if not exists removed_by uuid references public.profiles (id) on delete set null;
 create index if not exists appraisals_month_idx on public.appraisals (cycle_month);
 alter table public.appraisals enable row level security;
 do $$ begin
@@ -329,7 +333,7 @@ begin
     select * into e from public.profiles where id = (x ->> 'employee_id')::uuid and status = 'active';
     if e.id is null then raise exception 'Employee not found'; end if;
     if e.id = auth.uid() then raise exception 'You cannot save your own appraisal — another admin has to'; end if;
-    select * into a from public.appraisals where employee_id = e.id and cycle_month = v_month for update;
+    select * into a from public.appraisals where employee_id = e.id and cycle_month = v_month and removed_at is null for update;
     if a.status = 'issued' then
       v_skipped := v_skipped || to_jsonb(e.full_name);
       continue;
@@ -364,7 +368,8 @@ begin
     on conflict (employee_id, cycle_month) do update
       set current_salary = excluded.current_salary, increment_pct = excluded.increment_pct, new_salary = excluded.new_salary,
           current_designation = excluded.current_designation, new_designation = excluded.new_designation,
-          rating = excluded.rating, review = excluded.review, updated_by = auth.uid(), updated_at = now()
+          rating = excluded.rating, review = excluded.review, updated_by = auth.uid(), updated_at = now(),
+          status = 'saved', removed_at = null, removed_by = null
     returning * into v_new;
 
     v_changes := (select coalesce(jsonb_object_agg(k, jsonb_build_object('from', to_jsonb(a) -> k, 'to', to_jsonb(v_new) -> k)), '{}'::jsonb)
@@ -406,21 +411,21 @@ begin
 end;
 $$;
 
--- Remove a saved (not issued) appraisal
+-- Remove a saved (not issued) appraisal — kept in the table with removed_at, like everything else
 create or replace function public.admin_remove_appraisal(p_id uuid)
 returns void language plpgsql security definer set search_path = public
 as $$
 declare a public.appraisals;
 begin
   if not public.is_admin() then raise exception 'Only admin can do this'; end if;
-  select * into a from public.appraisals where id = p_id;
+  select * into a from public.appraisals where id = p_id and removed_at is null;
   if a.id is null then raise exception 'Appraisal not found'; end if;
   if a.status = 'issued' then raise exception 'An issued appraisal cannot be removed — change the salary in EMD instead'; end if;
   if a.employee_id = auth.uid() then raise exception 'You cannot change your own appraisal'; end if;
   insert into public.appraisal_events (appraisal_id, employee_id, cycle_month, action, source, details, created_by)
   values (null, a.employee_id, a.cycle_month, 'changed', 'manual', jsonb_build_object('removed', true, 'new_salary', a.new_salary,
           'increment_pct', a.increment_pct, 'new_designation', a.new_designation), auth.uid());
-  delete from public.appraisals where id = p_id;
+  update public.appraisals set removed_at = now(), removed_by = auth.uid() where id = p_id;
 end;
 $$;
 
@@ -433,7 +438,7 @@ as $$
            'new_salary', a.new_salary, 'current_designation', a.current_designation, 'new_designation', a.new_designation,
            'rating', a.rating, 'review', a.review, 'status', a.status, 'updated_at', a.updated_at, 'issued_at', a.issued_at)
          order by a.cycle_month desc), '[]'::jsonb) end
-    from public.appraisals a where a.employee_id = auth.uid();
+    from public.appraisals a where a.employee_id = auth.uid() and a.removed_at is null;
 $$;
 
 -- ---------------------------------------------------------------------
