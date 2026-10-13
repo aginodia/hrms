@@ -478,6 +478,11 @@
   .exit-fnf { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .exit-fnf .big { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 2px 0; color: var(--text); }
   .hint.err { color: var(--red); }
+  .lv-strip { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; max-width: 420px; }
+  .lv-day { font-size: 10.5px; line-height: 1.5; padding: 0 6px; border-radius: 5px; background: var(--green-soft); color: var(--green); white-space: nowrap; }
+  .lv-day.x { background: var(--red-soft); color: var(--red); text-decoration: line-through; }
+  .lv-day.off { background: var(--gray-soft); color: var(--faint); }
+  .lv-day.muted { background: var(--gray-soft); color: var(--muted); }
   .pb-frame { position: relative; width: 100%; height: min(72vh, 760px); background: var(--surface-2); border-radius: var(--radius-sm); overflow: hidden; }
   .pb-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
   .pb-modal .modal-body { padding: 12px; }
@@ -739,11 +744,11 @@
 const SUPABASE_URL = 'https://bejhmbvwaexpafhkseod.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_Pv8a0r1Q8kNqqV34CcS5lw_dOaGpLZD';
 // false = the HRMS sends no emails at all: sign-in is email + password, admin approval is the gate,
-// a forgotten password is reset by an admin (Access Control → Reset password).
+// a forgotten password is reset with an emailed one-time code (EMAIL_RESET_OTP).
 // true = emailed one-time codes for sign-in, forgot password and change password (needs working SMTP in Supabase).
 const SEND_AUTH_EMAILS = false;
 // Forgot password → a 6-digit code is emailed (Supabase password-recovery email, needs custom SMTP in Supabase).
-// Sign-up and sign-in still send no emails; admins can still set a temporary password from Access Control.
+// Sign-up and sign-in still send no emails. Admins cannot set other people's passwords.
 const EMAIL_RESET_OTP = true;
 
 /* ===================================================================== */
@@ -899,7 +904,7 @@ function friendlyError(err) {
   // Supabase Auth answers 504 when sending the email (sign-up confirmation, sign-in code, reset code) hangs,
   // and "Error sending … email" when the mail server refuses it — both point at the SMTP settings.
   if (err?.status === 504 || err?.code === 'request_timeout' || /Error sending .*email/i.test(msg)) {
-    return 'The email with your code could not be sent right now. Please ask the HR admin to reset your password (Access Control → Reset password).';
+    return 'The email with your code could not be sent right now. Please try again in a few minutes, or tell the HR admin so they can check the email settings.';
   }
   if (/timed out/i.test(msg)) return 'The server took too long to respond. Check your connection and try again.';
   if (/Invalid API key|No API key/i.test(msg)) return 'The Supabase key in index.html is not valid for this project.';
@@ -1260,7 +1265,7 @@ function renderAuth(view) {
         <div class="form-msg"></div>
         <button class="btn btn-primary btn-block" type="submit">Send OTP</button>
       </form>
-      <p class="hint" style="margin-top:12px">No email? The HR admin can still set a temporary password for you.</p>
+      <p class="hint" style="margin-top:12px">The code goes to the email you use to sign in. No email after a few minutes? Check spam, then tell the HR admin.</p>
       <p class="auth-switch"><button class="link-btn" data-action="auth-view" data-view="login">Back to sign in</button></p>` : `
       <div class="big-ico" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin-bottom:18px">${icon('lock')}</div>
       <h2>Forgot your password?</h2>
@@ -2554,48 +2559,6 @@ function openDesignationDialog(p) {
     catch (err) { toast(friendlyError(err), 'error'); }
   });
 }
-// No reset emails: an admin sets a temporary password and passes it on; the person changes it after signing in.
-function openResetPasswordDialog(preset) {
-  const me = state.user.id;
-  const people = state.admin.profiles.filter((p) => !p.rejected_at && p.id !== me && p.email !== BASE_ADMIN_EMAIL && (amSuper() || p.role !== 'admin'))
-    .sort((a, b) => a.full_name.localeCompare(b.full_name));
-  const dlg = openModal({
-    title: 'Reset password', subtitle: 'Set a temporary password, then give it to the person. They can change it from My Profile after signing in.', size: 'sm',
-    body: `<div class="search" style="margin-bottom:10px">${icon('search')}<input class="input" id="rp-search" placeholder="Search name, Employee ID or email…" style="width:100%"></div>
-      <div class="elig-list" id="rp-list" style="max-height:260px">${people.map((e) => `<label class="elig-row" data-name="${esc((e.full_name + ' ' + (e.employee_code || '') + ' ' + e.email).toLowerCase())}">
-        <input type="radio" name="rp" value="${e.id}" ${preset === e.id ? 'checked' : ''}>${person(e, esc(e.email))}</label>`).join('') || '<p class="muted">No one to pick.</p>'}</div>
-      <div class="field" style="margin-top:14px"><label>Temporary password</label>
-        <div style="display:flex;gap:8px"><input class="input mono" id="rp-pw" value="${esc(genPassword())}" minlength="8" autocomplete="off" style="flex:1">
-        <button type="button" class="btn btn-sm" id="rp-new" title="New password">${icon('refresh', 'sm')}</button></div>
-        <div class="hint">At least 8 characters.</div></div>`,
-    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('lock', 'sm')}Set password</button>`,
-  });
-  $('#rp-search', dlg.el).addEventListener('input', (e) => { const t = e.target.value.trim().toLowerCase(); $$('.elig-row', dlg.el).forEach((r) => r.classList.toggle('hidden', !!t && !r.dataset.name.includes(t))); });
-  $('#rp-new', dlg.el).addEventListener('click', () => { $('#rp-pw', dlg.el).value = genPassword(); });
-  $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
-    const btn = ev.currentTarget;
-    const id = $('input[name=rp]:checked', dlg.el)?.value;
-    if (!id) return toast('Pick someone first.', 'error');
-    const pw = $('#rp-pw', dlg.el).value.trim();
-    if (pw.length < 8) return toast('The password must be at least 8 characters.', 'error');
-    const p = byId(id);
-    try {
-      await withBusy(btn, 'Saving…', () => api.rpc('admin_set_password', { p_user: id, p_password: pw }));
-      dlg.close();
-      const share = `Altius HRMS: ${location.origin + location.pathname}\nEmail: ${p.email}\nTemporary password: ${pw}`;
-      const done = openModal({
-        title: 'Password reset', size: 'sm', subtitle: `${esc(p.full_name)} can sign in with the new password now.`,
-        body: `<p class="muted" style="margin-bottom:10px">Share these sign-in details with them. They can change the password from My Profile → Change password.</p>
-          <pre class="share-box" id="rp-share">${esc(share)}</pre>`,
-        footer: `<button class="btn" id="rp-copy">${icon('copy', 'sm')}Copy</button><button class="btn btn-primary" data-close>Done</button>`,
-      });
-      $('#rp-copy', done.el).addEventListener('click', async () => {
-        try { await navigator.clipboard.writeText(share); toast('Copied.'); }
-        catch { const r = document.createRange(); r.selectNodeContents($('#rp-share', done.el)); getSelection().removeAllRanges(); getSelection().addRange(r); }
-      });
-    } catch (err) { toast(friendlyError(err), 'error'); }
-  });
-}
 const CHANGE_FIELDS = {
   full_name: 'Full name', phone: 'Phone', date_of_birth: 'Date of birth', bank_account_number: 'Bank account number', bank_ifsc: 'IFSC',
   emergency_name: 'Emergency contact name', emergency_relationship: 'Emergency contact relationship', emergency_phone: 'Emergency contact number',
@@ -2771,7 +2734,7 @@ async function pageAccess(r) {
   return {
     title: 'Access Control',
     crumbs: 'Sign-ups, KYC, change requests and admins',
-    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm" id="reset-pw">${icon('lock', 'sm')}Reset password</button><button class="btn btn-sm" id="bulk-emp">${icon('upload', 'sm')}Upload Excel</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
+    actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm" id="bulk-emp">${icon('upload', 'sm')}Upload Excel</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
     html: `
       <div><nav class="tabs tabs-wrap">${tabs.map(([k, l]) => `<a href="#/access/${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${lists[k].length}</span></a>`).join('')}</nav></div>
       ${tab === 'admins' ? `<div class="bar-row">${amSuper() ? `<button class="btn btn-sm btn-primary" id="give-admin">${icon('shield', 'sm')}Give admin access</button>` : '<span class="muted" style="font-size:12.5px">Only a Super Admin can change admins.</span>'}<a class="btn btn-sm btn-ghost" href="#/rules/admins" title="Rules and formulas">${icon('info', 'sm')}Rules</a></div>` : ''}
@@ -2782,7 +2745,6 @@ async function pageAccess(r) {
     mount() {
       $('#refresh-btn').addEventListener('click', (e) => withBusy(e.currentTarget, '', refreshAdmin));
       $('#add-emp').addEventListener('click', () => openOnboardDialog('add'));
-      $('#reset-pw').addEventListener('click', () => openResetPasswordDialog());
       $('#bulk-emp').addEventListener('click', openBulkMenu);
       $$('[data-grant]').forEach((b) => b.addEventListener('click', () => openOnboardDialog('grant', byId(b.dataset.grant))));
       $$('[data-reject]').forEach((b) => b.addEventListener('click', () => rejectDialog(byId(b.dataset.reject))));
@@ -3269,6 +3231,9 @@ async function pageEmployee(r) {
     mount() {
       mountEmploymentStatus(e);
       mountRoleCard(e, roles);
+      $$('[data-ap-hist-letter]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+        try { const f = await driveDownload(b.dataset.apHistLetter); saveBlob(f.blob, f.name || 'Appraisal letter.pdf'); } catch (err) { toast(friendlyError(err), 'error'); }
+      })));
       $('#emd-kyc-review')?.addEventListener('click', (ev) => openKycReview(e.id, ev.currentTarget));
       if (empState(e) === 'fnf') { // read-only after F&F
         $$('#emp-fields input, #emp-fields select, #salary-rows input, #salary-rows select, #salary-rows button, #add-salary').forEach((x) => { x.disabled = true; });
@@ -4584,6 +4549,20 @@ const leaveRange = (r) => `<span class="nowrap">${fmtDMY(r.from_date)} <span cla
 const leaveDaysCell = (r) => `<b>${r.days}</b>${(r.cancelled_days || []).length ? `<div class="faint nowrap" style="font-size:11.5px">${r.cancelled_days.length} cancelled</div>` : ''}`;
 const leaveBy = (r) => `${r.source === 'admin' ? 'Admin' : 'Employee'} · ${fmtDMY(r.created_at.slice(0, 10))}`;
 const shortDM = (iso) => { const d = parseISODate(iso); return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}`; };
+// Every day of a leave: on leave, cancelled (struck through, with who and when) or not counted (Sunday / holiday)
+function leaveDayStrip(r, hol) {
+  if (!r.from_date || !r.to_date) return '';
+  const who = new Map();
+  for (const c of r.cancellations || []) for (const d of c.days || []) who.set(d, c);
+  const out = [];
+  for (let d = parseISODate(r.from_date), i = 0; d <= parseISODate(r.to_date) && i < 100; i++, d.setDate(d.getDate() + 1)) {
+    const iso = lvIso(d), lbl = `${DAY_NAMES[d.getDay()].slice(0, 3)} ${pad(d.getDate())} ${MONTHS[d.getMonth()]}`;
+    if (d.getDay() === 0 || hol.has(iso)) out.push(`<span class="lv-day off" title="${d.getDay() === 0 ? 'Sunday' : 'Holiday'} — not counted">${lbl}</span>`);
+    else if ((r.cancelled_days || []).includes(iso)) { const c = who.get(iso); out.push(`<span class="lv-day x" title="Cancelled${c ? ` by ${c.by === 'admin' ? 'Admin' : 'Employee'} on ${fmtDMY(String(c.at).slice(0, 10))}${c.note ? ` — ${esc(c.note)}` : ''}` : ''}">${lbl}</span>`); }
+    else out.push(`<span class="lv-day ${['rejected', 'withdrawn'].includes(r.status) ? 'muted' : ''}" title="${r.status === 'pending' ? 'Asked for' : ['rejected', 'withdrawn', 'cancelled'].includes(r.status) ? LEAVE_STATUS[r.status][0] : 'On leave'}">${lbl}</span>`);
+  }
+  return `<div class="lv-strip">${out.join('')}</div>`;
+}
 const leaveCancelLines = (r) => (r.cancellations || []).map((c) => `<div>${c.by === 'admin' ? 'Admin' : 'Employee'} cancelled ${c.days.map(shortDM).join(', ')} · ${fmtDMY(String(c.at).slice(0, 10))}${c.note ? ` — “${esc(c.note)}”` : ''}</div>`).join('');
 // Checks shared by the employee form and the HR form; returns an error or null
 function leaveFormError(from, to, reason, hol) {
@@ -4697,7 +4676,7 @@ async function pageLeaves() {
       </div>
       <div class="card" id="lv-pending"><div class="card-head"><div><h3>To approve</h3><p>Leaves are tracked here — they are not linked to the salary sheet</p></div>${pending.length ? `<div class="right"><span class="chip amber">${pending.length} waiting</span></div>` : ''}</div>
         ${pending.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th>Leave</th><th class="num">Days</th><th>Reason</th><th>Entered by</th><th></th></tr></thead><tbody>
-          ${pending.map((r) => `<tr data-lv-row="${r.id}"><td>${nameCell(r)}</td><td>${leaveRange(r)}</td><td class="num">${leaveDaysCell(r)}</td><td class="wrap">${esc(r.reason || '')}</td>
+          ${pending.map((r) => `<tr data-lv-row="${r.id}"><td>${nameCell(r)}</td><td style="min-width:220px">${leaveRange(r)}${leaveDayStrip(r, hol)}</td><td class="num">${leaveDaysCell(r)}</td><td class="wrap">${esc(r.reason || '')}</td>
             <td class="muted nowrap" style="font-size:12.5px">${leaveBy(r)}</td>
             <td class="actions">${r.employee_id === me ? '<span class="faint" style="font-size:12px">Another admin approves your leave</span>'
               : `<button class="btn btn-sm btn-primary" data-lv-approve="${r.id}">${icon('check', 'sm')}Approve</button><button class="btn btn-sm" data-lv-reject="${r.id}">Reject</button>`}</td></tr>`).join('')}
@@ -4718,7 +4697,7 @@ async function pageLeaves() {
           <select class="input" id="lv-f-emp" style="height:32px;width:auto;max-width:220px"><option value="">All employees</option>${[...new Set(reqs.map((r) => r.employee_id))].map(who).filter(Boolean).sort((a, b) => a.full_name.localeCompare(b.full_name)).map((e) => `<option value="${e.id}" ${F.emp === e.id ? 'selected' : ''}>${esc(e.full_name)}</option>`).join('')}</select>
         </div></div>
         ${log.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th>Leave</th><th class="num">Days</th><th>Status</th><th>Reason</th><th>Entered by</th><th>Decision &amp; changes</th><th></th></tr></thead><tbody>
-          ${log.slice(0, 300).map((r) => `<tr><td>${nameCell(r)}</td><td>${leaveRange(r)}</td><td class="num">${leaveDaysCell(r)}</td><td>${leaveChip(r)}</td><td class="wrap">${esc(r.reason || '')}</td>
+          ${log.slice(0, 300).map((r) => `<tr><td>${nameCell(r)}</td><td style="min-width:220px">${leaveRange(r)}${leaveDayStrip(r, hol)}</td><td class="num">${leaveDaysCell(r)}</td><td>${leaveChip(r)}</td><td class="wrap">${esc(r.reason || '')}</td>
             <td class="muted nowrap" style="font-size:12.5px">${leaveBy(r)}</td>
             <td class="muted wrap" style="font-size:12.5px">${decisionCell(r)}</td>
             <td class="actions">${['pending', 'approved'].includes(r.status) && r.days > 0 ? `<button class="btn btn-sm btn-ghost" data-lv-cancel="${r.id}">Cancel days</button>` : ''}</td></tr>`).join('')}
@@ -4806,7 +4785,7 @@ async function pageMyLeaves() {
         <button class="btn btn-primary" id="ml-apply" style="margin-top:12px">${icon('calendar', 'sm')}Send for approval</button></div></div>
       <div class="card"><div class="card-head"><div><h3>My leaves</h3><p>Everything you applied for, and leaves HR entered for you · cancel one day, a few days or the whole leave</p></div></div>
         ${mine.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Leave</th><th class="num">Days</th><th>Status</th><th>Reason</th><th>Entered by</th><th>Notes</th><th></th></tr></thead><tbody>
-          ${mine.map((r) => `<tr><td>${leaveRange(r)}</td><td class="num">${leaveDaysCell(r)}</td><td>${leaveChip(r)}</td><td class="wrap">${esc(r.reason || '')}</td>
+          ${mine.map((r) => `<tr><td style="min-width:220px">${leaveRange(r)}${leaveDayStrip(r, hol)}</td><td class="num">${leaveDaysCell(r)}</td><td>${leaveChip(r)}</td><td class="wrap">${esc(r.reason || '')}</td>
             <td class="muted nowrap" style="font-size:12.5px">${leaveBy(r)}</td>
             <td class="wrap muted" style="font-size:12.5px">${r.admin_note ? `<div>HR: “${esc(r.admin_note)}”</div>` : ''}${leaveCancelLines(r)}${!r.admin_note && !(r.cancellations || []).length ? '<span class="faint">—</span>' : ''}</td>
             <td class="actions">${canCancel(r) ? `<button class="btn btn-sm" data-ml-cancel="${r.id}">Cancel days</button>` : ''}${r.status === 'pending' ? `<button class="btn btn-sm btn-ghost" data-ml-withdraw="${r.id}">Withdraw</button>` : ''}</td></tr>`).join('')}
@@ -4995,28 +4974,24 @@ async function pageAppraisals() {
   const now = todayISO();
   const month = state.apprMonth || now.slice(0, 7);
   const mISO = `${month}-01`;
-  const [allRows, events] = await cachedLoad('appraisals', 30000, () => Promise.all([
-    fetchAll(() => db.from('appraisals').select('*').order('cycle_month', { ascending: false })),
-    q(db.from('appraisal_events').select('*').order('created_at', { ascending: false }).range(0, 999)),
-  ]));
+  const allRows = await cachedLoad('appraisals', 30000, () => fetchAll(() => db.from('appraisals').select('*').order('cycle_month', { ascending: false })));
   const all = allRows.filter((a) => !a.removed_at);
   const inMonth = new Map(all.filter((a) => a.cycle_month === mISO).map((a) => [a.employee_id, a]));
-  const evsOf = (a) => events.filter((e) => e.employee_id === a.employee_id && e.cycle_month === a.cycle_month);
   const me = state.user.id;
   const byCode = (a, b) => String(a.employee_code || '~').localeCompare(String(b.employee_code || '~'), undefined, { numeric: true }) || a.full_name.localeCompare(b.full_name);
-  // Entry section: everyone who has no appraisal for this month yet
+  // New entries: everyone without an appraisal for this month yet
   const entryEmps = activeEmployees().filter((e) => !isRT(e) && !inMonth.has(e.id)).sort(byCode);
-  const savedList = [...inMonth.values()].map((a) => ({ a, e: byId(a.employee_id) })).filter((x) => x.e).sort((x, y) => byCode(x.e, y.e));
+  const withEmp = (list) => list.map((a) => ({ a, e: byId(a.employee_id) })).filter((x) => x.e);
+  const savedList = withEmp(all.filter((a) => a.status === 'saved')).sort((x, y) => y.a.cycle_month.localeCompare(x.a.cycle_month) || byCode(x.e, y.e));
+  const issuedAll = withEmp(all.filter((a) => a.status === 'issued'));
+  const issuedMonths = [...new Set(issuedAll.map((x) => x.a.cycle_month.slice(0, 7)))].sort().reverse();
+  const IM = issuedMonths.includes(state.apprIssuedMonth) ? state.apprIssuedMonth : '';
+  const issuedList = issuedAll.filter((x) => !IM || x.a.cycle_month.startsWith(IM)).sort((x, y) => y.a.cycle_month.localeCompare(x.a.cycle_month) || byCode(x.e, y.e));
   // Unsaved edits are kept while on this page; leaving it (and confirming) drops them
   if (!state.dirty && Object.keys(state.apprDraft?.rows || {}).length) state.apprDraft = null;
   if (!state.apprDraft || state.apprDraft.month !== month) state.apprDraft = { month, rows: {} };
   const draft = state.apprDraft.rows;
   for (const id of Object.keys(draft)) if (inMonth.has(id)) delete draft[id];
-  const months = [...new Set([month, ...all.map((a) => a.cycle_month.slice(0, 7))])].sort().reverse();
-  const monthStats = (m) => { const L = all.filter((a) => a.cycle_month.slice(0, 7) === m); return { saved: L.filter((a) => a.status === 'saved').length, issued: L.filter((a) => a.status === 'issued').length }; };
-  const logRows = allRows.filter((a) => state.apprLogAll || a.cycle_month === mISO)
-    .map((a) => { const evs = evsOf(a); return { a, evs, k: apStatusKey(a, evs), last: evs[0]?.created_at || a.updated_at }; })
-    .sort((x, y) => String(y.last).localeCompare(String(x.last)));
   const [yy, mm] = month.split('-').map(Number);
   const val = (v) => (apBlank(v) ? '' : esc(String(v)));
   const entryRow = (e) => {
@@ -5031,49 +5006,50 @@ async function pageAppraisals() {
       <td><input class="input ap-in" data-ap="rating" list="ap-ratings" placeholder="—" value="${val(v.rating)}" ${dis} style="width:140px"></td>
       <td><textarea class="input ap-in ap-review" data-ap="review" rows="1" placeholder="Review" ${dis}>${val(v.review)}</textarea></td></tr>`;
   };
-  const savedRow = ({ a, e }) => {
-    const k = apStatusKey(a, evsOf(a)), open = a.status !== 'issued' && e.id !== me;
-    return `<tr data-ap-saved="${a.id}">
+  const updated = (a) => a.created_at && a.updated_at && new Date(a.updated_at) - new Date(a.created_at) > 5000;
+  const savedRow = ({ a, e }) => `<tr data-ap-saved="${a.id}">
+      <td class="nowrap"><b>${fmtMonth(a.cycle_month)}</b></td>
       <td class="mono nowrap">${esc(e.employee_code || '—')}</td>
       <td><a href="#/emd/${e.id}"><b class="nowrap">${esc(e.full_name)}</b></a></td>
       <td class="num">${apSalaryCell(a)}</td>
       <td style="min-width:130px">${apDesigCell(a)}</td>
       <td class="nowrap">${esc(a.rating || '—')}</td>
       <td style="min-width:200px;max-width:320px">${reviewHTML(a.review, 'tight')}</td>
-      <td>${apStatusChip(k)}<div class="faint nowrap" style="font-size:11.5px" title="${esc(fmtDateTime(a.issued_at || a.updated_at))}">${fmtDMY(String(a.issued_at || a.updated_at).slice(0, 10))}</div></td>
-      <td class="actions">${open ? `<button class="btn btn-sm" data-ap-edit="${a.id}">Change</button><button class="btn btn-sm btn-primary" data-ap-issue="${a.id}">Issue</button><button class="btn btn-sm btn-ghost" data-ap-remove="${a.id}" title="Remove">${icon('trash', 'sm')}</button>` : ''}</td></tr>`;
-  };
+      <td>${apStatusChip(updated(a) ? 'updated' : 'saved')}<div class="faint nowrap" style="font-size:11.5px" title="${esc(fmtDateTime(a.updated_at))}">${fmtDMY(String(a.updated_at).slice(0, 10))}</div></td>
+      <td class="actions">${e.id === me ? '<span class="faint" style="font-size:12px">Another admin</span>' : `<button class="btn btn-sm" data-ap-edit="${a.id}">Change</button><button class="btn btn-sm btn-primary" data-ap-issue="${a.id}">Issue</button><button class="btn btn-sm btn-ghost" data-ap-cancel="${a.id}">Cancel</button>`}</td></tr>`;
+  const issuedRow = ({ a, e }) => `<tr>
+      <td class="nowrap"><b>${fmtMonth(a.cycle_month)}</b></td>
+      <td class="mono nowrap">${esc(e.employee_code || '—')}</td>
+      <td><a href="#/emd/${e.id}"><b class="nowrap">${esc(e.full_name)}</b></a></td>
+      <td class="num">${apSalaryCell(a)}</td>
+      <td style="min-width:130px">${apDesigCell(a)}</td>
+      <td class="nowrap">${esc(a.rating || '—')}</td>
+      <td class="nowrap muted" style="font-size:12.5px">${fmtDMY(String(a.issued_at).slice(0, 10))}</td>
+      <td class="actions"><button class="btn btn-sm" data-ap-letter="${a.id}">${icon('download', 'sm')}Letter</button>${a.letter_file_id ? '' : '<div class="faint" style="font-size:11px">not in Drive yet</div>'}</td></tr>`;
   const dirtyCount = Object.keys(draft).length;
-  const toIssue = savedList.filter(({ a, e }) => a.status === 'saved' && e.id !== me && (!apBlank(a.new_salary) || a.new_designation));
+  const toIssue = savedList.filter(({ a, e }) => e.id !== me && (!apBlank(a.new_salary) || a.new_designation));
   return {
     title: 'Review & Appraisal', crumbs: 'Increment, promotion and review per employee — by appraisal month',
-    actions: `<button class="btn btn-sm" id="ap-template">${icon('download', 'sm')}Excel template</button><button class="btn btn-sm" id="ap-upload">${icon('upload', 'sm')}Upload Excel</button>`,
+    actions: `<button class="btn btn-sm btn-primary" id="ap-add">${icon('plus', 'sm')}Add appraisal</button><button class="btn btn-sm" id="ap-template">${icon('download', 'sm')}Excel template</button><button class="btn btn-sm" id="ap-upload">${icon('upload', 'sm')}Upload Excel</button>`,
     html: `
-      <div class="card"><div class="card-head"><div><h3>Appraisal month</h3><p>The new salary applies from this month. Appraisals can happen more than once a year — each month is kept separately.</p></div>
-        <div class="right" style="display:flex;gap:8px;align-items:center"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;width:220px">${monthYearSelects('apm', yy, mm)}</div></div></div>
-        ${months.length > 1 || savedList.length ? `<div class="card-body" style="display:flex;gap:6px;flex-wrap:wrap">${months.map((m) => { const s = monthStats(m); return `<button class="btn btn-sm ${m === month ? 'btn-primary' : ''}" data-ap-month="${m}">${fmtMonth(m + '-01')}${s.saved || s.issued ? ` <span class="faint" style="font-weight:400">· ${s.issued ? `${s.issued} issued` : ''}${s.saved && s.issued ? ', ' : ''}${s.saved ? `${s.saved} saved` : ''}</span>` : ''}</button>`; }).join('')}</div>` : ''}
-      </div>
-      <div class="card" id="ap-grid"><div class="card-head"><div><h3>New entries — ${fmtMonth(mISO)}</h3><p>Type an increment % or the new salary (the other fills in). A raise and a promotion can each be given on their own — fill only what applies. <b>Save</b> moves the rows to Saved below and clears this section.</p></div>
-        <div class="right" style="display:flex;gap:6px;flex-wrap:wrap"><span class="chip ${dirtyCount ? 'amber' : 'gray'} plain" id="ap-dirty">${dirtyCount} filled</span>
+      <div class="card" id="ap-grid"><div class="card-head"><div><h3>New entries</h3><p>For the month picked here — the new salary applies from that month. Type an increment % or the new salary (the other fills in); a raise and a promotion can each be given on their own. <b>Save</b> moves the rows to Saved and clears this section.</p></div>
+        <div class="right" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;width:210px">${monthYearSelects('apm', yy, mm)}</div>
+          <span class="chip ${dirtyCount ? 'amber' : 'gray'} plain" id="ap-dirty">${dirtyCount} filled</span>
           <button class="btn btn-sm" id="ap-discard" ${dirtyCount ? '' : 'disabled'}>Clear</button>
           <button class="btn btn-sm btn-primary" id="ap-save" ${dirtyCount ? '' : 'disabled'}>${icon('check', 'sm')}Save</button></div></div>
         <datalist id="ap-ratings">${RATINGS.map((r) => `<option value="${r}"></option>`).join('')}</datalist>
         ${entryEmps.length ? `<div class="table-wrap"><table class="table compact ap-table"><thead><tr><th>EID</th><th>Employee</th><th class="num">Current salary</th><th>Increment %</th><th>New salary</th><th>New designation</th><th>Rating</th><th>Review</th></tr></thead>
-          <tbody>${entryEmps.map(entryRow).join('')}</tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Everyone has an appraisal for ${fmtMonth(mISO)} — change them in Saved below.</p></div>`}
+          <tbody>${entryEmps.map(entryRow).join('')}</tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Everyone has an appraisal for ${fmtMonth(mISO)}.</p></div>`}
       </div>
-      <div class="card" id="ap-saved"><div class="card-head"><div><h3>Saved — ${fmtMonth(mISO)}</h3><p>Shown to each employee in My Appraisals. Use <b>Change</b> if anything needs updating (e.g. the employee asks for more) · <b>Issue</b> is final and updates EMD.</p></div>
+      <div class="card" id="ap-saved"><div class="card-head"><div><h3>Saved</h3><p>${savedList.length} waiting · shown to each employee in My Appraisals. <b>Change</b> if anything needs updating · <b>Cancel</b> takes it back · <b>Issue</b> is final: updates EMD and makes the appraisal letter.</p></div>
         <div class="right">${toIssue.length ? `<button class="btn btn-sm btn-danger-solid" id="ap-issue-all">Save &amp; issue all (${toIssue.length})</button>` : ''}</div></div>
-        ${savedList.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>EID</th><th>Employee</th><th class="num">Salary</th><th>Designation</th><th>Rating</th><th>Review</th><th>Status</th><th></th></tr></thead>
-          <tbody>${savedList.map(savedRow).join('')}</tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Nothing saved for ${fmtMonth(mISO)} yet.</p></div>`}
+        ${savedList.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th>EID</th><th>Employee</th><th class="num">Salary</th><th>Designation</th><th>Rating</th><th>Review</th><th>Status</th><th></th></tr></thead>
+          <tbody>${savedList.map(savedRow).join('')}</tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Nothing waiting to be issued.</p></div>`}
       </div>
-      <div class="card"><div class="card-head"><div><h3>Appraisal log</h3><p>One line per appraisal with its current status${state.apprLogAll ? '' : ` · ${fmtMonth(mISO)}`} — open History for every change</p></div>
-        <div class="right"><label class="check" style="font-size:13px;display:flex;gap:6px;align-items:center"><input type="checkbox" id="ap-log-all" ${state.apprLogAll ? 'checked' : ''}> All months</label></div></div>
-        ${logRows.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Employee</th><th>Month</th><th>Status</th><th class="num">Salary</th><th>Designation</th><th>Last change</th><th></th></tr></thead><tbody>
-          ${logRows.map(({ a, evs, k, last }) => `<tr><td><b class="nowrap">${esc(byId(a.employee_id)?.full_name || '—')}</b></td><td class="nowrap">${fmtMonth(a.cycle_month)}</td><td>${apStatusChip(k)}</td>
-            <td class="num">${apSalaryCell(a)}</td><td>${apDesigCell(a)}</td>
-            <td class="nowrap muted" style="font-size:12.5px">${esc(firstName(byId(evs[0]?.created_by || a.updated_by)?.full_name || ''))} · ${fmtDMY(String(last).slice(0, 10))}</td>
-            <td><details class="ap-hist"><summary>History (${evs.length})</summary>${evs.map((ev) => `<div><span class="faint nowrap">${fmtDMY(ev.created_at.slice(0, 10))} · ${esc(firstName(byId(ev.created_by)?.full_name || ''))}</span> — <b>${ev.details?.removed ? 'Removed' : AP_ACTION[ev.action] || ev.action}</b>${ev.source === 'excel' ? ' (Excel)' : ''}: ${apEventSummary(ev)}</div>`).join('')}</details></td></tr>`).join('')}
-          </tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Nothing logged yet.</p></div>`}
+      <div class="card" id="ap-issued"><div class="card-head"><div><h3>Issued</h3><p>${issuedList.length} appraisal${issuedList.length === 1 ? '' : 's'}${IM ? ` in ${fmtMonth(IM + '-01')}` : ''} · final — salary and designation updated in EMD</p></div>
+        <div class="right"><select class="input" id="ap-im" style="height:32px;width:auto"><option value="">All months</option>${issuedMonths.map((m) => `<option value="${m}" ${m === IM ? 'selected' : ''}>${fmtMonth(m + '-01')}</option>`).join('')}</select></div></div>
+        ${issuedList.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th>EID</th><th>Employee</th><th class="num">Salary</th><th>Designation</th><th>Rating</th><th>Issued on</th><th>Appraisal letter</th></tr></thead>
+          <tbody>${issuedList.map(issuedRow).join('')}</tbody></table></div>` : `<div class="card-body"><p class="muted" style="font-size:13px">Nothing issued${IM ? ' in this month' : ' yet'}.</p></div>`}
       </div>`,
     mount() {
       const grid = $('#ap-grid');
@@ -5082,8 +5058,7 @@ async function pageAppraisals() {
         state.apprMonth = m; state.apprDraft = null; state.dirty = false; render();
       };
       $$('[data-m="apm"], [data-y="apm"]').forEach((s) => s.addEventListener('change', () => setMonth(`${$('[data-y="apm"]').value}-${pad(Number($('[data-m="apm"]').value))}`)));
-      $$('[data-ap-month]').forEach((b) => b.addEventListener('click', () => setMonth(b.dataset.apMonth)));
-      $('#ap-log-all').addEventListener('change', (e) => { state.apprLogAll = e.target.checked; render(); });
+      $('#ap-im').addEventListener('change', (e) => { state.apprIssuedMonth = e.target.value; render(); });
       const refreshBar = () => {
         for (const [id, d] of Object.entries(draft)) if (!apHasData(d)) { delete draft[id]; $(`[data-ap-row="${id}"]`)?.classList.remove('ap-dirty'); }
         const n = Object.keys(draft).length;
@@ -5104,90 +5079,185 @@ async function pageAppraisals() {
       });
       $('#ap-discard').addEventListener('click', () => { state.apprDraft = null; state.dirty = false; render(); });
       const payload = (id, v) => ({ employee_id: id, ...Object.fromEntries(AP_FIELDS.map((k) => [k, apBlank(v[k]) ? null : String(v[k])])) });
-      const send = async (rows, issue, btn, src) => {
-        let res = { saved: 0, issued: 0, skipped_issued: [] };
-        await withBusy(btn, issue ? 'Issuing…' : 'Saving…', async () => {
-          for (const [s, list] of Object.entries(src ? { [src]: rows } : { excel: rows.filter((r) => draft[r.employee_id]?._src === 'excel'), manual: rows.filter((r) => draft[r.employee_id]?._src !== 'excel') })) {
-            if (!list.length) continue;
-            const r = await api.rpc('admin_save_appraisals', { p_month: mISO, p_rows: list, p_issue: issue, p_source: s });
-            res = { saved: res.saved + r.saved, issued: res.issued + r.issued, skipped_issued: [...res.skipped_issued, ...(r.skipped_issued || [])] };
-          }
-        });
-        return res;
-      };
       $('#ap-save').addEventListener('click', async (ev) => {
         const rows = Object.entries(draft).map(([id, v]) => payload(id, v)).filter(apHasData);
         if (!rows.length) return;
+        const bySrc = { excel: rows.filter((r) => draft[r.employee_id]?._src === 'excel'), manual: rows.filter((r) => draft[r.employee_id]?._src !== 'excel') };
         try {
-          const r = await send(rows, false, ev.currentTarget);
+          let saved = 0;
+          await withBusy(ev.currentTarget, 'Saving…', async () => {
+            for (const [src, list] of Object.entries(bySrc)) if (list.length) saved += (await api.rpc('admin_save_appraisals', { p_month: mISO, p_rows: list, p_issue: false, p_source: src })).saved;
+          });
           state.apprDraft = null; state.dirty = false;
-          toast(`${r.saved} appraisal${r.saved === 1 ? '' : 's'} saved — moved to Saved and shown in the employee portal.`);
+          toast(`${saved} appraisal${saved === 1 ? '' : 's'} saved — moved to Saved and shown in the employee portal.`);
           await refreshAdmin();
         } catch (e) { toast(friendlyError(e), 'error'); }
       });
-      const confirmIssue = (list) => confirmDialog({ title: `Issue ${list.length} appraisal${list.length === 1 ? '' : 's'} for ${fmtMonth(mISO)}?`,
-        message: `This is final: a new salary becomes the current salary in EMD from ${fmtMonth(mISO)} and a promotion updates the designation. Issued appraisals cannot be changed here.
-          <div class="table-wrap" style="margin-top:10px;max-height:260px"><table class="table compact"><thead><tr><th>Employee</th><th class="num">Salary</th><th>Designation</th></tr></thead><tbody>
-          ${list.map((a) => `<tr><td>${esc(byId(a.employee_id)?.full_name || '')}</td><td class="num">${apSalaryCell(a)}</td><td>${apDesigCell(a)}</td></tr>`).join('')}</tbody></table></div>`,
-        confirmText: 'Save & issue', danger: true });
       const savedById = (id) => savedList.find((x) => x.a.id === id)?.a;
       $('#ap-issue-all')?.addEventListener('click', async (ev) => {
         const list = toIssue.map((x) => x.a);
-        if (!(await confirmIssue(list))) return;
-        try { const r = await send(list.map((a) => payload(a.employee_id, a)), true, ev.currentTarget, 'manual'); toast(`${r.issued} appraisal${r.issued === 1 ? '' : 's'} issued — EMD updated.`); await refreshAdmin(); }
+        if (!(await apConfirmIssue(list))) return;
+        try { const n = await withBusy(ev.currentTarget, 'Issuing…', () => apIssue(list)); toast(`${n} appraisal${n === 1 ? '' : 's'} issued — EMD updated.`); await refreshAdmin(); }
         catch (e) { toast(friendlyError(e), 'error'); }
       });
       $$('[data-ap-issue]').forEach((b) => b.addEventListener('click', async () => {
         const a = savedById(b.dataset.apIssue);
         if (apBlank(a.new_salary) && !a.new_designation) return toast('Add a new salary or designation (Change) before issuing.', 'error');
-        if (!(await confirmIssue([a]))) return;
-        try { await send([payload(a.employee_id, a)], true, b, 'manual'); toast(`Issued — ${byId(a.employee_id)?.full_name}'s EMD is updated.`); await refreshAdmin(); }
+        if (!(await apConfirmIssue([a]))) return;
+        try { await withBusy(b, 'Issuing…', () => apIssue([a])); toast(`Issued — ${byId(a.employee_id)?.full_name}'s EMD is updated.`); await refreshAdmin(); }
         catch (e) { toast(friendlyError(e), 'error'); }
       }));
-      $$('[data-ap-edit]').forEach((b) => b.addEventListener('click', () => openAppraisalEdit(savedById(b.dataset.apEdit), mISO, confirmIssue)));
-      $$('[data-ap-remove]').forEach((b) => b.addEventListener('click', async () => {
-        const a = savedById(b.dataset.apRemove);
-        if (!(await confirmDialog({ title: 'Remove this saved appraisal?', message: `${esc(byId(a.employee_id)?.full_name || '')} · ${fmtMonth(mISO)} — it disappears from the employee's portal and the employee goes back to New entries. The log keeps a record.`, confirmText: 'Remove', danger: true }))) return;
-        try { await withBusy(b, '', () => api.rpc('admin_remove_appraisal', { p_id: a.id })); toast('Appraisal removed.'); await refreshAdmin(); }
+      $$('[data-ap-edit]').forEach((b) => b.addEventListener('click', () => openAppraisalForm({ appraisal: savedById(b.dataset.apEdit) })));
+      $$('[data-ap-cancel]').forEach((b) => b.addEventListener('click', async () => {
+        const a = savedById(b.dataset.apCancel);
+        if (!(await confirmDialog({ title: 'Cancel this saved appraisal?', message: `${esc(byId(a.employee_id)?.full_name || '')} · ${fmtMonth(a.cycle_month)} — it is taken out of the employee's portal and they go back to New entries for that month.`, confirmText: 'Cancel appraisal', cancelText: 'Keep', danger: true }))) return;
+        try { await withBusy(b, '', () => api.rpc('admin_remove_appraisal', { p_id: a.id })); toast('Appraisal cancelled.'); await refreshAdmin(); }
         catch (e) { toast(friendlyError(e), 'error'); }
       }));
+      $$('[data-ap-letter]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
+        const a = issuedAll.find((x) => x.a.id === b.dataset.apLetter).a;
+        try {
+          if (a.letter_file_id) { const f = await driveDownload(a.letter_file_id); saveBlob(f.blob, f.name || apLetterName(a)); return; }
+          const r = await apMakeLetters([a], { download: true });
+          if (r.saved) { toast('Letter saved to Drive and downloaded.'); render(); }
+        } catch (e) { toast(friendlyError(e), 'error'); }
+      })));
+      $('#ap-add').addEventListener('click', () => openAppraisalForm({ month: mISO }));
       $('#ap-template').addEventListener('click', () => downloadAppraisalTemplate(mISO, entryEmps.filter((e) => e.id !== me), (id) => draft[id] || {}));
       $('#ap-upload').addEventListener('click', () => pickAppraisalFile(mISO, activeEmployees().filter((e) => !isRT(e)), inMonth));
     },
   };
 }
 
-// Change a saved appraisal (salary, designation, rating, review) — or save & issue it
-function openAppraisalEdit(a, mISO, confirmIssue) {
-  const e = byId(a.employee_id), cur = Number(a.current_salary) || apCurrentSalary(a.employee_id, mISO) || 0;
+function apConfirmIssue(list) {
+  return confirmDialog({ title: `Issue ${list.length} appraisal${list.length === 1 ? '' : 's'}?`,
+    message: `This is final: a new salary becomes the current salary in EMD from its appraisal month, a promotion updates the designation, and the appraisal letter is made (saved to Drive when connected).
+      <div class="table-wrap" style="margin-top:10px;max-height:260px"><table class="table compact"><thead><tr><th>Employee</th><th>Month</th><th class="num">Salary</th><th>Designation</th></tr></thead><tbody>
+      ${list.map((a) => `<tr><td>${esc(byId(a.employee_id)?.full_name || '')}</td><td class="nowrap">${fmtMonth(a.cycle_month)}</td><td class="num">${apSalaryCell(a)}</td><td>${apDesigCell(a)}</td></tr>`).join('')}</tbody></table></div>`,
+    confirmText: 'Save & issue', danger: true });
+}
+// Issues appraisals (grouped by month), then makes their letters. Returns how many were issued.
+async function apIssue(list) {
+  const months = [...new Set(list.map((a) => a.cycle_month))];
+  let issued = 0;
+  for (const m of months) {
+    const rows = list.filter((a) => a.cycle_month === m).map((a) => ({ employee_id: a.employee_id, ...Object.fromEntries(AP_FIELDS.map((k) => [k, apBlank(a[k]) ? null : String(a[k])])) }));
+    issued += (await api.rpc('admin_save_appraisals', { p_month: m, p_rows: rows, p_issue: true, p_source: 'manual' })).issued;
+  }
+  const fresh = await q(db.from('appraisals').select('*').eq('status', 'issued').is('removed_at', null).in('cycle_month', months).in('employee_id', list.map((a) => a.employee_id))).catch(() => []);
+  const r = await apMakeLetters(fresh.filter((a) => list.some((x) => x.employee_id === a.employee_id && x.cycle_month === a.cycle_month)));
+  if (r.failed.length) toast(`Letters not saved to Drive: ${r.failed.join(' · ')} — use “Letter” in Issued to download.`, 'error');
+  else if (!r.on && fresh.length) toast('Google Drive is not connected — download each letter with “Letter” in Issued.');
+  return issued;
+}
+const apLetterName = (a) => { const e = byId(a.employee_id) || {}; return `${e.full_name || 'Employee'}${e.employee_code ? ` - ${e.employee_code}` : ''} - Appraisal letter ${fmtMonth(a.cycle_month)}.pdf`; };
+// Builds appraisal letters; saves them to Drive (owned by the employee, so they can download it) when Drive is connected
+async function apMakeLetters(list, { download = false } = {}) {
+  const [on, signature] = await Promise.all([driveOn().catch(() => false), signatureImage().catch(() => null)]);
+  let saved = 0; const failed = [];
+  for (const a of list) {
+    const e = byId(a.employee_id);
+    if (!e) continue;
+    const blob = (await buildAppraisalLetter(a, e, { signature })).output('blob');
+    if (download) saveBlob(blob, apLetterName(a));
+    if (!on) continue;
+    try {
+      const f = await driveUpload({ folder: ['Appraisal letters', a.cycle_month.slice(0, 7)], name: apLetterName(a), blob, owner: a.employee_id });
+      await api.rpc('admin_record_appraisal_letter', { p_id: a.id, p_file_id: f.id, p_file_name: f.name });
+      saved += 1;
+    } catch (err) { failed.push(`${e.full_name}: ${friendlyError(err)}`); }
+  }
+  return { on, saved, failed };
+}
+// Appraisal (increment / promotion) letter on our letterhead
+async function buildAppraisalLetter(a, e, { date, signature } = {}) {
+  const [JsPDF, co] = await Promise.all([loadPDF(), companyInfo()]);
+  const doc = new JsPDF({ unit: 'mm', format: 'a4' });
+  const eff = `1 ${monthName(a.cycle_month)}`;
+  const raise = !apBlank(a.new_salary), promo = !!a.new_designation;
+  let y = pdfHeading(doc, raise && promo ? 'Letter of Promotion & Salary Revision' : promo ? 'Letter of Promotion' : 'Appraisal Letter', PDF.top, { underline: true, center: true }) + 6;
+  y = exitAddress(doc, { full_name: e.full_name, employee_code: e.employee_code, designation: a.current_designation || e.designation }, y, date || String(a.issued_at || new Date().toISOString()).slice(0, 10));
+  y = pdfRich(doc, `Dear ${e.full_name},`, y, { gap: 3 });
+  y = pdfRich(doc, `We are pleased to inform you that, following your performance review for **${monthName(a.cycle_month)}**, the management has approved the following with effect from **${eff}**.`, y, { gap: 3 });
+  const body = [];
+  if (raise) {
+    body.push(['Monthly salary', a.current_salary != null ? rsAmt(a.current_salary) : '—', rsAmt(a.new_salary)]);
+    body.push(['Annual salary', a.current_salary != null ? rsAmt(Number(a.current_salary) * 12) : '—', rsAmt(Number(a.new_salary) * 12)]);
+  }
+  if (promo) body.push(['Designation', a.current_designation || '—', a.new_designation]);
+  y = pdfTable(doc, y, { head: [['Particulars', 'Current', `Revised (from ${eff})`]], columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right', fontStyle: 'bold' } }, body });
+  if (raise && !apBlank(a.increment_pct)) y = pdfRich(doc, `This is an increase of **${Number(Number(a.increment_pct).toFixed(2))}%** on your current salary (${inrWords(Number(a.new_salary))} per month).`, y, { gap: 3 });
+  if (promo) y = pdfRich(doc, `We are also happy to promote you to the position of **${a.new_designation}**. We are confident you will carry out your new responsibilities with the same commitment.`, y, { gap: 3 });
+  if (a.rating) y = pdfRich(doc, `Your overall performance rating for this review is **${a.rating}**.`, y, { gap: 3 });
+  y = pdfRich(doc, 'All other terms and conditions of your employment remain unchanged. Please treat this letter and its contents as confidential.', y, { gap: 3 });
+  y = pdfRich(doc, `We appreciate your contribution and look forward to your continued growth with **${co.name}**.`, y, { gap: 10 });
+  exitSignature(doc, co, y, signature);
+  pdfDecorate(doc, co);
+  return doc;
+}
+
+// Add an appraisal for any employee and month, or change a saved one — or save & issue it
+function openAppraisalForm({ appraisal = null, month = null } = {}) {
+  const me = state.user.id;
+  const emps = activeEmployees().filter((e) => !isRT(e) && e.id !== me).sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const A = appraisal;
+  const m0 = parseISODate(A ? A.cycle_month : month || `${todayISO().slice(0, 7)}-01`);
   const num = (v) => (apBlank(v) ? '' : String(Number(v)));
-  const { el, close } = openModal({ title: `Change appraisal — ${e?.full_name || ''}`, subtitle: `${fmtMonth(mISO)} · current salary ${fmtINR(cur)} · ${esc(e?.designation || 'No designation')}`, size: 'md',
+  const { el, close } = openModal({ title: A ? `Change appraisal — ${byId(A.employee_id)?.full_name || ''}` : 'Add appraisal', size: 'md',
+    subtitle: A ? `${fmtMonth(A.cycle_month)} · current salary ${fmtINR(A.current_salary)}` : 'Type the increment % and the new salary is worked out (or type the new salary). A promotion can be given with or without a raise.',
     body: `<div class="grid" style="gap:14px">
+      <div class="grid g2" style="gap:12px">
+        <div class="field"><label>Employee<span class="req">*</span></label><select class="input" id="af-emp" ${A ? 'disabled' : ''}><option value="">Pick an employee</option>${emps.map((e) => `<option value="${e.id}" ${A?.employee_id === e.id ? 'selected' : ''}>${esc(e.full_name)}${e.employee_code ? ` · ${esc(e.employee_code)}` : ''}</option>`).join('')}${A && !emps.some((e) => e.id === A.employee_id) ? `<option value="${A.employee_id}" selected>${esc(byId(A.employee_id)?.full_name || '')}</option>` : ''}</select></div>
+        <div class="field"><label>Appraisal month <span class="faint">(new salary from)</span></label><div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">${monthYearSelects('afm', m0.getFullYear(), m0.getMonth() + 1)}</div></div>
+      </div>
+      <div class="kv-list" id="af-now"></div>
       <div><div class="section-title">Salary <span class="faint" style="text-transform:none;letter-spacing:0">(leave empty for a promotion without a raise)</span></div><div class="grid g2" style="gap:12px">
-        <div class="field"><label>Increment %</label><input class="input num" id="ae-pct" inputmode="decimal" value="${num(a.increment_pct)}"></div>
-        <div class="field"><label>New salary</label><input class="input num" id="ae-sal" inputmode="decimal" value="${num(a.new_salary)}"></div></div></div>
-      <div><div class="section-title">Designation <span class="faint" style="text-transform:none;letter-spacing:0">(can be changed on its own)</span></div>
-        <div class="field"><label>New designation <span class="faint">(now ${esc(e?.designation || '—')})</span></label><input class="input" id="ae-desig" placeholder="Same as now" value="${esc(a.new_designation || '')}"></div></div>
-      <div class="field"><label>Rating</label><input class="input" id="ae-rating" list="ap-ratings" value="${esc(a.rating || '')}"></div>
-      <div class="field"><label>Review <span class="faint">(each line or sentence shows as a bullet point)</span></label><textarea class="input" id="ae-review" rows="6">${esc(a.review || '')}</textarea>
-        <div class="ae-preview" id="ae-preview">${reviewHTML(a.review)}</div></div>
+        <div class="field"><label>Increment %</label><input class="input num" id="af-pct" inputmode="decimal" placeholder="e.g. 10" value="${num(A?.increment_pct)}"></div>
+        <div class="field"><label>New salary <span class="faint">(worked out from %)</span></label><input class="input num" id="af-sal" inputmode="decimal" placeholder="₹" value="${num(A?.new_salary)}"></div></div></div>
+      <div class="field"><label>New designation <span class="faint">(promotion — can be given on its own)</span></label><input class="input" id="af-desig" placeholder="Same as now" value="${esc(A?.new_designation || '')}"></div>
+      <div class="field"><label>Rating</label><input class="input" id="af-rating" list="af-ratings" value="${esc(A?.rating || '')}"><datalist id="af-ratings">${RATINGS.map((r) => `<option value="${r}"></option>`).join('')}</datalist></div>
+      <div class="field"><label>Review <span class="faint">(each line or sentence shows as a bullet point)</span></label><textarea class="input" id="af-review" rows="5">${esc(A?.review || '')}</textarea>
+        <div class="ae-preview" id="af-preview">${reviewHTML(A?.review)}</div></div>
     </div>`,
-    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-danger-solid" data-issue>Save &amp; issue</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Save changes</button>` });
-  const pct = $('#ae-pct', el), sal = $('#ae-sal', el);
-  pct.addEventListener('input', () => { pct.value = pct.value.replace(/[^\d.-]/g, ''); sal.value = apSalaryFromPct(cur, pct.value); });
-  sal.addEventListener('input', () => { sal.value = sal.value.replace(/[^\d.]/g, ''); pct.value = apPctFromSalary(cur, sal.value); });
-  $('#ae-review', el).addEventListener('input', (ev) => { $('#ae-preview', el).innerHTML = reviewHTML(ev.target.value); });
-  const row = () => ({ employee_id: a.employee_id, increment_pct: pct.value || null, new_salary: sal.value || null, new_designation: $('#ae-desig', el).value.trim() || null, rating: $('#ae-rating', el).value.trim() || null, review: $('#ae-review', el).value.trim() || null });
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-danger-solid" data-issue>Save &amp; issue</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Save</button>` });
+  if (A) $$('[data-m="afm"], [data-y="afm"]', el).forEach((s) => { s.disabled = true; });
+  const pct = $('#af-pct', el), sal = $('#af-sal', el);
+  const ctx = () => {
+    const id = A ? A.employee_id : $('#af-emp', el).value;
+    const mISO = A ? A.cycle_month : `${$('[data-y="afm"]', el).value}-${pad(Number($('[data-m="afm"]', el).value))}-01`;
+    const e = byId(id);
+    const cur = A && A.current_salary != null ? Number(A.current_salary) : (id ? apCurrentSalary(id, mISO) : null);
+    return { id, mISO, e, cur };
+  };
+  const showNow = () => {
+    const { e, cur, id, mISO } = ctx();
+    $('#af-now', el).innerHTML = e ? `<div><span>Current salary</span><b>${fmtINR(cur)}</b></div><div><span>Current designation</span><b>${esc(e.designation || '—')}</b></div>` : '';
+    if (pct.value && !A) sal.value = apSalaryFromPct(cur || 0, pct.value);
+  };
+  $('#af-emp', el).addEventListener('change', showNow);
+  $$('[data-m="afm"], [data-y="afm"]', el).forEach((s) => s.addEventListener('change', showNow));
+  showNow();
+  pct.addEventListener('input', () => { pct.value = pct.value.replace(/[^\d.-]/g, ''); sal.value = apSalaryFromPct(ctx().cur || 0, pct.value); });
+  sal.addEventListener('input', () => { sal.value = sal.value.replace(/[^\d.]/g, ''); pct.value = apPctFromSalary(ctx().cur || 0, sal.value); });
+  $('#af-review', el).addEventListener('input', (ev) => { $('#af-preview', el).innerHTML = reviewHTML(ev.target.value); });
   const go = async (btn, issue) => {
-    const r = row();
-    if (!apHasData(r)) return toast('Nothing left — use the bin to remove the appraisal instead.', 'error');
+    const { id, mISO, cur } = ctx();
+    if (!id) return toast('Pick the employee.', 'error');
+    const r = { employee_id: id, increment_pct: pct.value || null, new_salary: sal.value || null, new_designation: $('#af-desig', el).value.trim() || null, rating: $('#af-rating', el).value.trim() || null, review: $('#af-review', el).value.trim() || null };
+    if (!apHasData(r)) return toast('Fill in at least the increment, new salary or new designation.', 'error');
+    if (apBlank(r.new_salary) && !apBlank(r.increment_pct) && !(cur > 0)) return toast('This employee has no current salary in EMD — type the new salary instead.', 'error');
     if (issue) {
       if (apBlank(r.new_salary) && !r.new_designation) return toast('Add a new salary or designation before issuing.', 'error');
-      if (!(await confirmIssue([{ ...a, ...r, current_salary: cur }]))) return;
+      if (!(await apConfirmIssue([{ ...r, cycle_month: mISO, current_salary: cur, current_designation: byId(id)?.designation }]))) return;
     }
     try {
-      await withBusy(btn, issue ? 'Issuing…' : 'Saving…', () => api.rpc('admin_save_appraisals', { p_month: mISO, p_rows: [r], p_issue: issue, p_source: 'manual' }));
-      close(); toast(issue ? 'Issued — EMD is updated.' : 'Changes saved — the employee sees the update.'); await refreshAdmin();
+      const res = await withBusy(btn, issue ? 'Issuing…' : 'Saving…', async () => {
+        if (issue) { const n = await apIssue([{ ...r, cycle_month: mISO }]); return { issued: n, skipped_issued: n ? [] : [byId(id)?.full_name] }; }
+        return api.rpc('admin_save_appraisals', { p_month: mISO, p_rows: [r], p_issue: false, p_source: 'manual' });
+      });
+      if ((res.skipped_issued || []).length) return toast(`${byId(id)?.full_name} already has an issued appraisal for ${fmtMonth(mISO)} — pick another month.`, 'error');
+      close(); toast(issue ? 'Issued — EMD is updated and the appraisal letter is made.' : A ? 'Changes saved — the employee sees the update.' : 'Appraisal saved — it is in Saved and shown to the employee.');
+      await refreshAdmin();
     } catch (e) { toast(friendlyError(e), 'error'); }
   };
   $('[data-ok]', el).addEventListener('click', (ev) => go(ev.currentTarget, false));
@@ -5296,7 +5366,7 @@ function appraisalHistoryHTML(list) {
   return `<div class="card"><div class="card-head"><div><h3>Appraisals</h3><p>From <a href="#/appraisals">Review &amp; Appraisal</a></p></div></div>
     <div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th class="num">Salary</th><th>Designation</th><th>Rating</th><th>Review</th><th>Status</th></tr></thead><tbody>
     ${list.map((a) => `<tr><td class="nowrap">${fmtMonth(a.cycle_month)}</td><td class="num">${apSalaryCell(a)}</td><td>${apDesigCell(a)}</td><td>${esc(a.rating || '—')}</td>
-      <td style="min-width:220px;max-width:360px">${reviewHTML(a.review, 'tight')}</td><td>${apStatusChip(a.status === 'issued' ? 'issued' : 'saved')}</td></tr>`).join('')}
+      <td style="min-width:220px;max-width:360px">${reviewHTML(a.review, 'tight')}</td><td>${apStatusChip(a.status === 'issued' ? 'issued' : 'saved')}${a.letter_file_id ? `<div><button class="link-btn" style="font-size:12px" data-ap-hist-letter="${esc(a.letter_file_id)}">${icon('download', 'sm')}Letter</button></div>` : ''}</td></tr>`).join('')}
     </tbody></table></div></div>`;
 }
 
@@ -5310,10 +5380,16 @@ async function pageMyAppraisals() {
       ${a.new_designation ? kvCell('Promotion', `${esc(a.current_designation || '—')} → <b style="color:var(--text)">${esc(a.new_designation)}</b>`) : ''}
       ${a.rating ? kvCell('Rating', esc(a.rating)) : ''}
     </div>
-    ${a.review ? `<div class="section-title" style="margin-top:14px">Review</div>${reviewHTML(a.review, 'review-list')}` : ''}</div></div>`;
+    ${a.review ? `<div class="section-title" style="margin-top:14px">Review</div>${reviewHTML(a.review, 'review-list')}` : ''}
+    ${a.letter_file_id ? `<div style="margin-top:14px"><button class="btn btn-sm btn-primary" data-my-ap-letter="${esc(a.letter_file_id)}">${icon('download', 'sm')}Download appraisal letter</button></div>` : ''}</div></div>`;
   return {
     title: 'My Appraisals', crumbs: 'Your increments, promotions and reviews',
     html: list.length ? list.map(card).join('') : `<div class="card">${emptyState('star', 'No appraisals yet', 'When HR shares your appraisal it shows here — increment, promotion and review.')}</div>`,
+    mount() {
+      $$('[data-my-ap-letter]').forEach((b) => b.addEventListener('click', () => withBusy(b, 'Downloading…', async () => {
+        try { const f = await driveDownload(b.dataset.myApLetter); saveBlob(f.blob, f.name || 'Appraisal letter.pdf'); } catch (e) { toast(friendlyError(e), 'error'); }
+      })));
+    },
   };
 }
 
