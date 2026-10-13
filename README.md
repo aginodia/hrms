@@ -113,7 +113,7 @@ The login is created and the employee is added to EMD straight away. A sign-in s
 
 Rows with problems are left out. Fix them in the sheet and upload it again; people already added are skipped. Because email confirmation is on in Supabase, each new login sends a confirmation email. If Supabase's email limit is reached, the upload stops and the remaining rows show *Not added yet*. Upload the same file again later to add them.
 
-**Clearing test data.** `supabase/scripts/clear_test_data.sql` removes every user except the admin login (which keeps its Employee ID) and all KYC, salary, payroll, finance and log data. It keeps the settings. Run it once in the Supabase SQL Editor. It is not a migration, and it cannot be undone.
+**Clearing test data.** `supabase/scripts/clear_test_data.sql` removes every login except the ones in its KEEP list (the two admins by default) and every record: KYC, salaries, payroll, attendance, leaves, WFH, finance, ESOP allocations, appraisals, feedback, exits, documents, pre-onboarding candidates and the activity log. It keeps the setup: settings, the Drive link, signature/letterhead, roles, holidays, and the pre-onboarding materials and questions. Optional lines at the end clear those too. Run it once in the Supabase SQL Editor. It is not a migration, and it cannot be undone. Uploaded KYC files are deleted from Dashboard → Storage.
 
 **Give access (admin).** In Access Control → Signup Requests, **Give access** opens the same employment form: date of joining (defaults to today), Employee ID, designation, manager and starting salary. The person moves into EMD immediately.
 
