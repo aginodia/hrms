@@ -742,6 +742,9 @@ const SUPABASE_ANON_KEY = 'sb_publishable_Pv8a0r1Q8kNqqV34CcS5lw_dOaGpLZD';
 // a forgotten password is reset by an admin (Access Control → Reset password).
 // true = emailed one-time codes for sign-in, forgot password and change password (needs working SMTP in Supabase).
 const SEND_AUTH_EMAILS = false;
+// Forgot password → a 6-digit code is emailed (Supabase password-recovery email, needs custom SMTP in Supabase).
+// Sign-up and sign-in still send no emails; admins can still set a temporary password from Access Control.
+const EMAIL_RESET_OTP = true;
 
 /* ===================================================================== */
 const BASE_ADMIN_EMAIL = 'sayan.mullick@altiusinvestech.com';
@@ -896,7 +899,7 @@ function friendlyError(err) {
   // Supabase Auth answers 504 when sending the email (sign-up confirmation, sign-in code, reset code) hangs,
   // and "Error sending … email" when the mail server refuses it — both point at the SMTP settings.
   if (err?.status === 504 || err?.code === 'request_timeout' || /Error sending .*email/i.test(msg)) {
-    return 'The email with your code / link could not be sent — the mail (SMTP) settings in Supabase need to be fixed. Please tell the HR admin.';
+    return 'The email with your code could not be sent right now. Please ask the HR admin to reset your password (Access Control → Reset password).';
   }
   if (/timed out/i.test(msg)) return 'The server took too long to respond. Check your connection and try again.';
   if (/Invalid API key|No API key/i.test(msg)) return 'The Supabase key in index.html is not valid for this project.';
@@ -1249,14 +1252,15 @@ function renderAuth(view) {
         <button class="btn btn-primary btn-block" type="submit">Request access</button>
       </form>
       <p class="auth-switch">Already have an account? <button class="link-btn" data-action="auth-view" data-view="login">Sign in</button></p>`,
-    forgot: SEND_AUTH_EMAILS ? `
+    forgot: SEND_AUTH_EMAILS || EMAIL_RESET_OTP ? `
       <h2>Reset your password</h2>
-      <p class="sub">We'll email you a code to set a new password.</p>
+      <p class="sub">We'll email a one-time code (OTP) to your registered email. Enter it with your new password.</p>
       <form id="auth-form" novalidate>
         <div class="field"><label>Email</label><input class="input" type="email" name="email" placeholder="you@altiusinvestech.com" autocomplete="email" required></div>
         <div class="form-msg"></div>
-        <button class="btn btn-primary btn-block" type="submit">Send code</button>
+        <button class="btn btn-primary btn-block" type="submit">Send OTP</button>
       </form>
+      <p class="hint" style="margin-top:12px">No email? The HR admin can still set a temporary password for you.</p>
       <p class="auth-switch"><button class="link-btn" data-action="auth-view" data-view="login">Back to sign in</button></p>` : `
       <div class="big-ico" style="width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent);margin-bottom:18px">${icon('lock')}</div>
       <h2>Forgot your password?</h2>
@@ -1273,9 +1277,9 @@ function renderAuth(view) {
       </form>`,
     'forgot-code': `
       <h2>Set a new password</h2>
-      <p class="sub">If <b>${esc(state.resetCode?.email || '')}</b> has an account, a code is on its way. Enter it with your new password.</p>
+      <p class="sub">If <b>${esc(state.resetCode?.email || '')}</b> has an account, a one-time code is on its way — it can take a minute, check spam too. Enter it with your new password.</p>
       <form id="auth-form" novalidate>
-        <div class="field"><label>Code from the email</label><input class="input mono otp-input" name="token" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="••••••" required></div>
+        <div class="field"><label>OTP from the email</label><input class="input mono otp-input" name="token" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="••••••" required></div>
         <div class="field"><label>New password</label>${passwordField('password', 'At least 8 characters', 'new-password')}</div>
         <div class="field"><label>Confirm password</label>${passwordField('confirm', 'Re-enter password', 'new-password')}</div>
         <div class="form-msg"></div>

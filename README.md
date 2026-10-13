@@ -297,6 +297,25 @@ What employees see follows **Team Access**: job details, salary history and KYC 
 
 **Signing out.** **Sign out** is in the top bar on every page (and at the bottom of the sidebar). It ends the session on this device, even if the network call to Supabase fails. If a session expires, the app returns to the sign-in screen with a message.
 
+## Forgot password (email OTP)
+
+* On the sign-in page, **Forgot password?** → enter the email → a **6-digit one-time code** is emailed → enter it with a new password → signed in.
+* Admins can still set a temporary password for anyone from **Access Control → Reset password** (the base admin's password can only be changed by the base admin).
+* Sign-up and sign-in still send no emails. The switch is `EMAIL_RESET_OTP` in `index.html`.
+* **Needs email sending in Supabase** (one-time setup):
+  1. *Authentication → Emails → SMTP Settings* → enable custom SMTP (e.g. a Google Workspace mailbox: host `smtp.gmail.com`, port `465`, the mailbox as username and a Google **App password**; or Brevo / Resend). Supabase's built-in mailer only delivers to your own Supabase team's addresses.
+  2. *Authentication → Emails → Templates → Reset Password* → put the code in the email with `{{ .Token }}` (see the suggested template below).
+  3. Optional: *Authentication → Sign In / Providers → Email* → **Email OTP Expiration** 900 seconds (15 min). Keep **Confirm email** off.
+
+Suggested Reset Password template — subject `Your Altius HRMS password reset code`, body:
+
+```html
+<p>Hello,</p>
+<p>Your one-time code to reset your Altius HRMS password is:</p>
+<p style="font-size:24px;font-weight:bold;letter-spacing:4px">{{ .Token }}</p>
+<p>Enter it on the sign-in page with your new password. If you did not ask for this, ignore this email.</p>
+```
+
 ## Payroll (Module 3)
 
 **Admin → Payroll** has three tabs.
