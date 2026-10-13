@@ -285,7 +285,7 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 **Employee portal.**
 * **Home:** Employee ID, designation, manager, joining date, current salary, last net pay, loan remaining, and the KYC status.
 * **My Profile:** personal, employment, bank and emergency details, documents, salary history, change requests, and change password.
-* **My Pay:** monthly payroll (days, earned, PT, net pay), bonus and leave encashment, variable, and loans with the remaining balance.
+* **My Pay:** monthly payroll (days, earned, PT, net pay), bonus and leave encashment, variable, and loans with the amount repaid and the remaining balance. Clicking a loan opens its **repayment log**: every deduction from Variable or Bonus and every direct repayment, oldest first, with the balance after each one.
 
 What employees see follows **Team Access**: job details, salary history and KYC documents as before, plus new switches for *Monthly pay* and *Bonus, variable & loans*.
 
@@ -456,6 +456,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261026000000_preboarding.sql` | Pre-onboarding: `preboard_candidates` (linked by email at sign-up, clock and status), `preboard_materials`, `preboard_questions` (answers admin-only), `preboard_attempts`, `preboard_views`, the `preboarding` storage bucket, `my_preboarding` / `my_preboard_start` / `my_preboard_view` / `my_preboard_quiz` / `my_preboard_submit`, HR functions to add / restart / remove candidates, manage material and import questions. |
 | `supabase/migrations/20261027000000_appraisal_letters_no_admin_password.sql` | Appraisal letters (`appraisals.letter_file_id` / `letter_file_name` / `letter_at`, `admin_record_appraisal_letter`, `my_appraisals` returns the letter); `admin_set_password` can no longer be called. |
 | `supabase/migrations/20261028000000_bank_details_approval.sql` | Bank proof (`kyc_submissions.bank_doc_path`), `bank_requests` (each bank submission and its approval), `submit_kyc` requires the proof and queues the bank details, `submit_bank_details` / `withdraw_bank_request` (employee), `admin_decide_bank` (approve / send back), bank fields out of change requests, `my_portal` returns bank status. Existing verified KYCs count as verified bank details. |
+| `supabase/migrations/20261029000000_my_loans.sql` | `my_loans()`: the employee's own loans with the repayment log (Variable / Bonus deductions and direct repayments), for My Pay → loan page. Follows the *Bonus, variable & loans* switch in Team Access. Read only. |
 | `drive-bridge/Code.gs` | Google Apps Script web app that stores HRMS files in Google Drive after checking the HRMS sign-in. |
 | `supabase/migrations/20261018000000_esop.sql` | ESOPs: allocations, grants, vesting tranches and exercises (`esop_*` tables), pool setting, `admin_import_esop`, `admin_map_esop_member`, `admin_add_esop_exercise`, `my_esops()`. |
 | `supabase/migrations/20261017000000_query_autoresolve_left_updates.sql` | Queries resolve automatically on push when their day changed (and carry over after a re-upload), no queries / WFH after leaving, `my_updates()` for the portal's New markers. |

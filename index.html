@@ -1039,7 +1039,7 @@ const api = {
   },
 };
 // Portal reads reused for 45 seconds while moving between pages (any change made in the HRMS clears them)
-const READ_RPCS = new Set(['my_portal', 'my_payslips', 'my_esops', 'my_exit', 'my_updates', 'my_resignation', 'my_role', 'my_appraisals']);
+const READ_RPCS = new Set(['my_portal', 'my_loans', 'my_payslips', 'my_esops', 'my_exit', 'my_updates', 'my_resignation', 'my_role', 'my_appraisals']);
 const QUIET_RPCS = new Set(['drive_ticket', 'admin_drive_secret', 'admin_preboard_refresh', 'my_preboard_view']);
 const rpcCache = new Map();
 let dataVersion = 0; // goes up after every change made through the HRMS
@@ -1929,7 +1929,7 @@ const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, rules: pageRules, leaves: pageLeaves, wfh: pageAdminWfh, holidays: pageHolidays, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops, storage: pageStorage,
     roles: pageRoles, appraisals: pageAppraisals, feedback: pageFeedback, preboarding: pagePreboarding },
-  team: { home: pageTeamHome, profile: pageMyProfile, pay: pageMyPay, calendar: pageMyCalendar, leaves: pageMyLeaves, wfh: pageMyWfh, esop: pageMyEsop, appraisal: pageMyAppraisals, feedback: pageMyFeedback, resign: pageMyResignation, kyc: pageTeamKyc },
+  team: { home: pageTeamHome, profile: pageMyProfile, pay: (r) => (r.id ? pageMyLoan(r.id) : pageMyPay()), calendar: pageMyCalendar, leaves: pageMyLeaves, wfh: pageMyWfh, esop: pageMyEsop, appraisal: pageMyAppraisals, feedback: pageMyFeedback, resign: pageMyResignation, kyc: pageTeamKyc },
   exit: { exit: pageMyExit },
   pre: { learn: pageMyPreboarding },
 };
@@ -9003,13 +9003,41 @@ function openChangeRequest(P) {
   });
 }
 
+// My Pay → a loan: every repayment (Variable / Bonus deductions and direct repayments), oldest first
+async function pageMyLoan(loanId) {
+  const back = `<a class="btn btn-sm" href="#/pay">${icon('arrowLeft', 'sm')}Back to My Pay</a>`;
+  const l = ((await api.rpc('my_loans').catch(() => [])) || []).find((x) => x.id === loanId);
+  if (!l) return { title: 'Loan', crumbs: '<a href="#/pay">My Pay</a>', actions: back, html: `<div class="card">${emptyState('bank', 'Loan not found', 'It may have been removed, or loans are not shared in the portal.')}</div>` };
+  const from = (x) => x.kind === 'variable' ? `Deducted from Variable${x.month ? ` · ${fmtMonth(x.month)}` : ''}`
+    : x.kind === 'bonus' ? `Deducted from Bonus${x.label ? ` · ${esc(x.label)}` : ''}` : `Repayment${x.label ? ` · ${esc(x.label)}` : ''}`;
+  let running = Number(l.amount);
+  const rows = (l.log || []).map((x) => { running -= Number(x.amount); return { ...x, after: running }; });
+  const left = Number(l.remaining), repaid = Number(l.amount) - left;
+  return {
+    title: 'Loan', crumbs: `<a href="#/pay">My Pay</a> &nbsp;/&nbsp; Loan taken ${fmtDMY(l.taken_on)}`, actions: back,
+    html: `
+      <div class="stats">
+        <div class="card stat"><div class="top"><span>Loan amount</span></div><div class="value">${fmtINR(l.amount)}</div><div class="foot">Taken ${fmtDMY(l.taken_on)}${l.note ? ` · ${esc(l.note)}` : ''}</div></div>
+        <div class="card stat"><div class="top"><span>Repaid</span></div><div class="value">${fmtINR(repaid)}</div><div class="foot">${rows.length} payment${rows.length === 1 ? '' : 's'}</div></div>
+        <div class="card stat"><div class="top"><span>Remaining</span></div><div class="value" style="color:${left > 0 ? 'var(--text)' : 'var(--green)'}">${left > 0 ? fmtINR(left) : 'Repaid'}</div><div class="foot">${left > 0 ? 'Still to be repaid' : 'Fully repaid'}</div></div>
+      </div>
+      <div class="card"><div class="card-head"><div><h3>Repayment log</h3><p>Deductions from Variable / Bonus and direct repayments, oldest first</p></div></div>
+        <div class="table-wrap"><table class="table compact"><thead><tr><th>Date</th><th>Details</th><th class="num">Amount</th><th class="num">Remaining after</th></tr></thead><tbody>
+          <tr><td class="nowrap">${fmtDMY(l.taken_on)}</td><td>Loan taken</td><td class="num">${fmtINR(l.amount)}</td><td class="num">${fmtINR(l.amount)}</td></tr>
+          ${rows.map((x) => `<tr><td class="nowrap">${fmtDMY(String(x.on).slice(0, 10))}</td><td>${from(x)}</td><td class="num">− ${fmtINR(x.amount)}</td><td class="num"><b style="color:var(--text)">${fmtINR(x.after)}</b></td></tr>`).join('')}
+        </tbody></table></div>
+        ${rows.length ? '' : '<div class="card-body"><p class="muted" style="font-size:13px">No repayments yet.</p></div>'}</div>`,
+  };
+}
+
 // My Pay: monthly payroll, bonus & leave encashment, variable, loans
 async function pageMyPay() {
-  const [P, slips] = await Promise.all([loadPortal(), api.rpc('my_payslips').catch(() => [])]);
+  const [P, slips, loans] = await Promise.all([loadPortal(), api.rpc('my_payslips').catch(() => []), api.rpc('my_loans').catch(() => null)]);
   state.slips = slips || [];
   const vis = P.visibility;
   const none = (t) => `<div class="card-body"><p class="muted" style="font-size:13px">${t}</p></div>`;
   const loanTot = (P.loans || []).reduce((s, l) => s + Number(l.remaining), 0);
+  const loanRows = loans || P.loans || [];
   return {
     title: 'My Pay', crumbs: 'Your salary sheets and payouts as published by HR',
     html: `
@@ -9023,11 +9051,14 @@ async function pageMyPay() {
         ${(P.variable || []).length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Month</th><th class="num">Variable</th><th class="num">Loan deduction</th><th class="num">Net</th><th>Remarks</th></tr></thead><tbody>
           ${P.variable.map((v) => `<tr><td class="nowrap">${fmtMonth(v.month)}</td><td class="num">${fmtINR(v.amount)}</td><td class="num">${Number(v.loan_deduction) ? fmtINR(v.loan_deduction) : '—'}</td><td class="num"><b style="color:var(--text)">${fmtINR(Number(v.amount) - Number(v.loan_deduction))}</b></td><td>${esc(v.remarks || '')}</td></tr>`).join('')}
           </tbody></table></div>` : none('No variable payouts yet.')}</div>
-      <div class="card"><div class="card-head"><div><h3>Loans</h3><p>${(P.loans || []).length ? `${fmtINR(loanTot)} remaining in total` : ''}</p></div></div>
-        ${(P.loans || []).length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Taken on</th><th class="num">Amount</th><th class="num">Remaining</th></tr></thead><tbody>
-          ${P.loans.map((l) => `<tr><td class="nowrap">${fmtDMY(l.taken_on)}</td><td class="num">${fmtINR(l.amount)}</td><td class="num"><b style="color:${Number(l.remaining) > 0 ? 'var(--text)' : 'var(--green)'}">${Number(l.remaining) > 0 ? fmtINR(l.remaining) : 'Repaid'}</b></td></tr>`).join('')}
+      <div class="card"><div class="card-head"><div><h3>Loans</h3><p>${loanRows.length ? `${fmtINR(loanTot)} remaining in total${loans ? ' · click a loan to see every repayment' : ''}` : ''}</p></div></div>
+        ${loanRows.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Taken on</th><th class="num">Amount</th><th class="num">Repaid</th><th class="num">Remaining</th><th></th></tr></thead><tbody id="my-loan-body">
+          ${loanRows.map((l) => `<tr ${l.id ? `data-href="#/pay/${l.id}"` : ''}><td class="nowrap">${fmtDMY(l.taken_on)}</td><td class="num">${fmtINR(l.amount)}</td><td class="num">${fmtINR(Number(l.amount) - Number(l.remaining))}</td>
+            <td class="num"><b style="color:${Number(l.remaining) > 0 ? 'var(--text)' : 'var(--green)'}">${Number(l.remaining) > 0 ? fmtINR(l.remaining) : 'Repaid'}</b></td>
+            <td class="actions">${l.id ? `<a class="btn btn-sm" href="#/pay/${l.id}">Repayment log ${icon('arrowRight', 'sm')}</a>` : ''}</td></tr>`).join('')}
           </tbody></table></div>` : none('No loans.')}</div>` : ''}`,
     mount() {
+      $('#my-loan-body')?.addEventListener('click', (ev) => { const tr = ev.target.closest('tr[data-href]'); if (tr && !ev.target.closest('a, button')) location.hash = tr.dataset.href; });
       mountPayslipActions();
       $$('[data-slip]').forEach((b) => b.addEventListener('click', () => withBusy(b, '', async () => {
         const sl = state.slips[Number(b.dataset.slip)];
