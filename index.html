@@ -1829,7 +1829,7 @@ const kycOutstanding = (p) => p.status === 'active' && p.role === 'team' && !p.f
 function adminCounts() {
   const P = state.admin.profiles;
   return {
-    pending: P.filter((p) => p.status === 'pending').length,
+    pending: P.filter((p) => p.status === 'pending' && !isPbCandidate(p)).length,
     review: P.filter(kycToReview).length,
     awaiting: P.filter(kycOutstanding).length,
     active: P.filter((p) => p.status === 'active' && isEmd(p)).length,
@@ -2028,6 +2028,8 @@ async function ensureAdmin(force = false) {
   state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh, resignations: resignations || [], leavePending: leavePending || [], onLeave, feedbackNew, preboard: preboard || [] };
 }
 const byId = (id) => state.admin.profiles.find((p) => p.id === id);
+// In pre-onboarding (HR added their email and they signed up): kept out of Signup Requests until HR authorizes them from Pre-onboarding
+const isPbCandidate = (p) => p?.status === 'pending' && (state.admin.preboard || []).some((c) => c.user_id === p.id);
 const pbAccessChip = (p) => { const c = (state.admin.preboard || []).find((x) => x.user_id === p.id); return c ? `<div class="chips-line" style="margin-top:4px"><span class="faint" style="font-size:12px">Pre-onboarding:</span> ${pbChipHTML(c.status)}${c.score_pct != null ? ` <span class="faint" style="font-size:12px">${Number(c.score_pct)}%</span>` : ''}</div>` : ''; };
 const onLeaveChip = (e) => (state.admin.onLeave?.has(e.id) ? '<span class="chip blue plain" title="On an approved leave today">On leave</span>' : '');
 const salariesOf = (id) => state.admin.salaries
@@ -2078,7 +2080,7 @@ async function pageDashboard() {
   await ensureAdmin();
   const c = adminCounts();
   const P = state.admin.profiles;
-  const attention = P.filter((p) => p.status === 'pending' || kycToReview(p))
+  const attention = P.filter((p) => (p.status === 'pending' && !isPbCandidate(p)) || kycToReview(p))
     .sort((a, b) => new Date(b.kyc_submitted_at || b.created_at) - new Date(a.kyc_submitted_at || a.created_at)).slice(0, 6);
   const recent = P.filter((p) => p.status === 'active' && p.date_of_joining)
     .sort((a, b) => b.date_of_joining.localeCompare(a.date_of_joining)).slice(0, 6);
@@ -2686,7 +2688,7 @@ async function pageAccess(r) {
   const tab = r.id === 'nonemd' ? 'admins' : ['requests', 'kyc', 'awaiting', 'changes', 'admins', 'rejected'].includes(r.id) ? r.id : 'requests';
   const P = state.admin.profiles;
   const lists = {
-    requests: P.filter((p) => p.status === 'pending').sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
+    requests: P.filter((p) => p.status === 'pending' && !isPbCandidate(p)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
     kyc: P.filter(kycToReview).sort((a, b) => new Date(a.kyc_submitted_at) - new Date(b.kyc_submitted_at)),
     awaiting: P.filter(kycOutstanding).sort((a, b) => new Date(b.access_granted_at || b.created_at) - new Date(a.access_granted_at || a.created_at)),
     rejected: P.filter((p) => p.rejected_at).sort((a, b) => new Date(b.rejected_at) - new Date(a.rejected_at)),
@@ -2769,6 +2771,7 @@ async function pageAccess(r) {
     html: `
       <div><nav class="tabs tabs-wrap">${tabs.map(([k, l]) => `<a href="#/access/${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${lists[k].length}</span></a>`).join('')}</nav></div>
       ${tab === 'admins' ? `<div class="bar-row">${amSuper() ? `<button class="btn btn-sm btn-primary" id="give-admin">${icon('shield', 'sm')}Give admin access</button>` : '<span class="muted" style="font-size:12.5px">Only a Super Admin can change admins.</span>'}<a class="btn btn-sm btn-ghost" href="#/rules/admins" title="Rules and formulas">${icon('info', 'sm')}Rules</a></div>` : ''}
+      ${tab === 'requests' && P.some(isPbCandidate) ? `<div class="alert alert-info">${icon('info')}<span>${P.filter(isPbCandidate).length} candidate${P.filter(isPbCandidate).length === 1 ? ' is' : 's are'} in <a href="#/preboarding">Pre-onboarding</a> and not listed here — they can only use Pre-onboarding until you authorize them into Employee Master Data from there.</span></div>` : ''}
       <div class="card">${table}</div>
       ${tab === 'changes' && (state.admin.changeRequests || []).some((x) => x.status !== 'pending') ? `<div class="card"><div class="card-head"><div><h3>Decided</h3><p>Last 20 requests</p></div></div>
         ${changeRequestsHTML((state.admin.changeRequests || []).filter((x) => x.status !== 'pending').slice(0, 20), true)}</div>` : ''}`,
@@ -5405,17 +5408,17 @@ function pbCandidatesHTML(cands, atts) {
     <div class="card"><div class="card-head"><div><h3>Add candidates</h3><p>Only the email is needed. When the candidate signs up with this email, they are linked and the clock starts: 24 hours to start, 3 days to finish, one 2-day retake if needed — 6 days in all.</p></div></div>
       <div class="card-body"><div class="cal-form"><textarea class="input" id="pb-emails" rows="2" placeholder="name@gmail.com — one per line, or separated by commas" style="flex:1;min-width:260px"></textarea>
         <button class="btn btn-primary" id="pb-add">${icon('plus', 'sm')}Add</button></div></div></div>
-    <div class="card"><div class="card-head"><div><h3>Candidates</h3><p>${cands.length} candidate${cands.length === 1 ? '' : 's'} · when someone passes, give them access in <a href="#/access/requests">Access Control</a></p></div></div>
+    <div class="card"><div class="card-head"><div><h3>Candidates</h3><p>${cands.length} candidate${cands.length === 1 ? '' : 's'} · they can only use Pre-onboarding until you <b>Authorize → EMD</b></p></div></div>
       ${cands.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>Candidate</th><th>Status</th><th>Clock</th><th>Scores</th><th>Added</th><th></th></tr></thead><tbody>
         ${cands.map((c) => { const p = c.user_id ? byId(c.user_id) : null; return `<tr>
           <td>${p ? `<b style="color:var(--text)">${esc(p.full_name)}</b><div class="faint" style="font-size:12px">${esc(c.email)}</div>` : `<span class="mono" style="font-size:13px">${esc(c.email)}</span>`}</td>
-          <td>${pbChipHTML(c.status)}${c.score_pct != null && ['passed', 'failed'].includes(c.status) ? `<div class="faint" style="font-size:12px">${Number(c.score_pct)}%</div>` : ''}${c.cycle > 1 ? `<div class="faint" style="font-size:11.5px">Restarted ×${c.cycle - 1}</div>` : ''}</td>
+          <td>${p && p.status !== 'pending' ? '<span class="chip green plain nowrap" title="Authorized — now in Employee Master Data">In EMD</span> ' : ''}${pbChipHTML(c.status)}${c.score_pct != null && ['passed', 'failed'].includes(c.status) ? `<div class="faint" style="font-size:12px">${Number(c.score_pct)}%</div>` : ''}${c.cycle > 1 ? `<div class="faint" style="font-size:11.5px">Restarted ×${c.cycle - 1}</div>` : ''}</td>
           <td style="font-size:12.5px">${clock(c)}</td>
           <td style="font-size:12.5px">${pbAttemptLine(atts, c, 1)}${pbAttemptLine(atts, c, 2)}${!atts.some((a) => a.candidate_id === c.id && a.cycle === c.cycle) ? '<span class="faint">—</span>' : ''}</td>
           <td class="muted nowrap" style="font-size:12.5px">${fmtDMY(c.added_at.slice(0, 10))}</td>
           <td class="actions">${atts.some((a) => a.candidate_id === c.id) ? `<button class="btn btn-sm" data-pb-detail="${c.id}">Answers</button>` : ''}
-            ${c.user_id && c.status !== 'passed' ? `<button class="btn btn-sm" data-pb-reset="${c.id}" title="Give a fresh 6 days">Restart</button>` : ''}
-            ${c.status === 'passed' && p?.status === 'pending' ? `<a class="btn btn-sm btn-primary" href="#/access/requests">Give access</a>` : ''}
+            ${c.user_id && c.status !== 'passed' && p?.status === 'pending' ? `<button class="btn btn-sm" data-pb-reset="${c.id}" title="Give a fresh 6 days">Restart</button>` : ''}
+            ${p?.status === 'pending' ? `<button class="btn btn-sm ${c.status === 'passed' ? 'btn-primary' : ''}" data-pb-auth="${c.id}" title="Give access — adds them to Employee Master Data">Authorize → EMD</button>` : ''}
             <button class="btn btn-sm btn-ghost" data-pb-remove="${c.id}" title="Remove">${icon('trash', 'sm')}</button></td></tr>`; }).join('')}
         </tbody></table></div>` : `<div class="card-body">${emptyState('userPlus', 'No candidates yet', 'Add a candidate’s email above. They sign up with it to start pre-onboarding.')}</div>`}
     </div>`;
@@ -5434,6 +5437,12 @@ function mountPbCandidates(cands, atts, qs) {
     const c = cands.find((x) => x.id === b.dataset.pbRemove);
     if (!(await confirmDialog({ title: 'Remove this candidate?', message: `${esc(c.email)} is taken off pre-onboarding. Their attempts stay on record.`, confirmText: 'Remove', danger: true }))) return;
     try { await withBusy(b, '', () => api.rpc('admin_remove_preboard_candidate', { p_id: c.id })); toast('Removed.'); render(); } catch (e) { toast(friendlyError(e), 'error'); }
+  }));
+  $$('[data-pb-auth]').forEach((b) => b.addEventListener('click', async () => {
+    const c = cands.find((x) => x.id === b.dataset.pbAuth), p = byId(c.user_id);
+    if (!p) return toast('Their sign-up was not found — refresh the page.', 'error');
+    if (c.status !== 'passed' && !(await confirmDialog({ title: `${esc(p.full_name)} has not passed yet`, message: `Pre-onboarding status: <b>${PB_STATUS[c.status]?.[0] || c.status}</b>${c.score_pct != null ? ` (${Number(c.score_pct)}%)` : ''}. Authorize them into Employee Master Data anyway?`, confirmText: 'Continue', danger: true }))) return;
+    openOnboardDialog('grant', p);
   }));
   $$('[data-pb-reset]').forEach((b) => b.addEventListener('click', async () => {
     const c = cands.find((x) => x.id === b.dataset.pbReset);
