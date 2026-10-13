@@ -224,6 +224,7 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 * **Not linked to the salary sheet:** leaves are tracked and approved here only. Mark days in day-wise attendance as before.
 * **On leave:** an approved leave running today shows as *On leave* in the log, in the employee's portal and as a chip in Employee Master Data.
 * **Cancel days:** the employee (from today on) or HR (any day, with a note) can cancel one day, several days — the last day or a day in between — or the whole leave. The leave keeps its dates; the cancelled days are listed and the day count goes down. Cancelling every remaining day cancels the leave (or withdraws it if it was still waiting).
+* **Day by day:** each leave lists every day — on leave (green), cancelled (struck through; hover shows who cancelled it and when) and Sundays / holidays (grey, not counted).
 * **Entered by** shows *Employee* or *Admin* and the date. Employees see each leave's status, HR's notes and every cancellation, and can withdraw a leave while it is waiting.
 * **Leave log** on both sides; admins can filter by status (incl. On leave) and employee. Single days recorded in the old day-wise register stay in payroll and are listed under **Earlier day-wise entries**.
 
