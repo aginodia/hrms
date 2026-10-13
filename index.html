@@ -766,6 +766,9 @@ const DOCS = [
   { key: 'payslip',      col: 'payslip_path',      label: 'Last Payslip',         required: false },
   { key: 'leave_letter', col: 'leave_letter_path', label: 'Leave Letter',         required: false, hint: 'Relieving letter from previous employer' },
 ];
+// Bank proof: uploaded in the KYC's Bank details section; bank details are approved on their own
+const BANK_DOC = { key: 'bank', col: 'bank_doc_path', label: 'Bank proof', required: true, hint: 'Cancelled cheque, passbook front page or bank statement' };
+const KYC_FILES = [...DOCS, BANK_DOC];
 const RELATIONSHIPS = ['Father', 'Mother', 'Spouse', 'Brother', 'Sister', 'Son', 'Daughter', 'Friend', 'Other'];
 const STATUS = {
   pending:       { label: 'Signup request', tone: 'amber' },
@@ -1013,6 +1016,8 @@ const api = {
     .eq('key', 'team_visibility').select()),
   allProfiles: () => q(db.from('profiles').select('*').order('created_at', { ascending: false })),
   allChangeRequests: () => q(db.from('change_requests').select('*').order('created_at', { ascending: false })),
+  allBankRequests: () => q(db.from('bank_requests').select('*').order('created_at', { ascending: false }).limit(300)),
+  myBankRequests: () => q(db.from('bank_requests').select('*').eq('employee_id', state.user.id).order('created_at', { ascending: false }).limit(10)),
   openQueries: () => q(db.from('payroll_queries').select('id, run_id, employee_id, work_date').eq('status', 'open')),
   recentWfh: () => q(db.from('wfh_days').select('id, employee_id, added_by, created_at').eq('status', 'recorded').order('created_at', { ascending: false }).range(0, 199)),
   allSalaries: () => q(db.from('salary_history').select('employee_id, effective_month, amount').is('removed_at', null).order('effective_month')),
@@ -1580,6 +1585,10 @@ async function renderKycForm() {
   let existing = null, serverDraft = null;
   try { existing = await api.myKyc(); } catch { /* first submission */ }
   try { serverDraft = await api.myKycDraft(); } catch { /* nothing saved yet */ }
+  const bankReqs = await api.myBankRequests().catch(() => []);
+  // Verified bank details stay as they are here — they change from My KYC → Bank details
+  const bankOk = (bankReqs || []).some((b) => b.status === 'approved');
+  const bankBack = !bankOk && bankReqs?.[0]?.status === 'sent_back' ? bankReqs[0] : null;
   // A draft saved with "Save & finish later" wins over an older (sent back) submission
   if (serverDraft && existing && String(serverDraft.saved_at) < String(existing.submitted_at)) serverDraft = null;
   const sd = serverDraft?.data || {};
@@ -1593,14 +1602,15 @@ async function renderKycForm() {
     emergency_name: sd.emergency_name || existing?.emergency_name || '',
     emergency_relationship: sd.emergency_relationship || existing?.emergency_relationship || '',
     emergency_phone: sd.emergency_phone || existing?.emergency_phone || '',
-    files: Object.fromEntries(DOCS.map((d) => { const path = sd[d.col] || existing?.[d.col]; return [d.key, path ? { path, name: fileNameFromPath(path) } : null]; })),
+    files: Object.fromEntries(KYC_FILES.map((d) => { const path = sd[d.col] || existing?.[d.col]; return [d.key, path ? { path, name: fileNameFromPath(path) } : null]; })),
   };
   const draft = loadKycDraft();
   if (draft) {
     for (const key of Object.keys(k)) if (key !== 'files' && draft[key]) k[key] = draft[key];
-    for (const d of DOCS) if (draft.files?.[d.key]) k.files[d.key] = draft.files[d.key];
+    for (const d of KYC_FILES) if (draft.files?.[d.key]) k.files[d.key] = draft.files[d.key];
   }
-  const savedPaths = new Set(DOCS.flatMap((d) => [existing?.[d.col], sd[d.col]]).filter(Boolean));
+  if (bankOk) Object.assign(k, { bank_account_number: existing?.bank_account_number || '', bank_account_confirm: existing?.bank_account_number || '', bank_ifsc: existing?.bank_ifsc || '' });
+  const savedPaths = new Set(KYC_FILES.flatMap((d) => [existing?.[d.col], sd[d.col]]).filter(Boolean));
   const uploadedNow = new Set(); // files uploaded during this visit — removed again on Skip
   const persist = () => {
     const { bank_account_number, bank_account_confirm, ...safe } = k;
@@ -1648,12 +1658,18 @@ async function renderKycForm() {
       </section>
 
       <section class="card">
-        <div class="card-head"><div><h3>Bank details</h3><p>Your salary will be credited to this account.</p></div></div>
+        <div class="card-head"><div><h3>Bank details</h3><p>Your salary will be credited to this account. HR approves bank details separately, against the bank proof.</p></div>
+          ${bankOk ? '<div class="right"><span class="chip green plain">Verified</span></div>' : ''}</div>
+        ${bankOk ? `<div class="card-body"><div class="kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
+            ${kvCell('Account number', maskAccount(k.bank_account_number), 'mono')}${kvCell('IFSC', esc(k.bank_ifsc), 'mono')}</div>
+          <p class="muted" style="font-size:12.5px;margin-top:10px">${icon('lock', 'sm')} Already verified by HR. To use another account, go to <b>My KYC → Bank details</b> after submitting.</p></div>`
+        : `${bankBack ? `<div class="card-body" style="padding-bottom:0"><div class="alert alert-warn">${icon('alert')}<span><b>Bank details sent back:</b> ${esc(bankBack.admin_note || 'Please check them.')}</span></div></div>` : ''}
         <div class="card-body grid g3">
           <div class="field"><label>Account number<span class="req">*</span></label><input class="input mono" name="bank_account_number" inputmode="numeric" autocomplete="off" placeholder="e.g. 50100123456789" value="${esc(k.bank_account_number)}"></div>
           <div class="field"><label>Re-enter account number<span class="req">*</span></label><input class="input mono" name="bank_account_confirm" inputmode="numeric" autocomplete="off" placeholder="Confirm account number" value="${esc(k.bank_account_confirm)}"></div>
           <div class="field"><label>IFSC code<span class="req">*</span></label><input class="input mono" name="bank_ifsc" autocomplete="off" placeholder="e.g. HDFC0001234" maxlength="11" style="text-transform:uppercase" value="${esc(k.bank_ifsc)}"></div>
         </div>
+        <div class="card-body" style="padding-top:0"><div class="uploads" id="bank-upload">${uploadTile(BANK_DOC)}</div></div>`}
       </section>
 
       <section class="card">
@@ -1691,7 +1707,8 @@ async function renderKycForm() {
       bank_ifsc: v('bank_ifsc').toUpperCase(), emergency_name: v('emergency_name'), emergency_relationship: v('emergency_relationship'),
       emergency_phone: normPhone(v('emergency_phone')),
     };
-    for (const d of DOCS) payload[d.col] = k.files[d.key]?.path || '';
+    for (const d of KYC_FILES) payload[d.col] = k.files[d.key]?.path || '';
+    if (bankOk) Object.assign(payload, { bank_account_number: '', bank_ifsc: '', bank_doc_path: '' });
     if (!Object.values(payload).some(Boolean)) return toast('Nothing filled in yet — use Skip to come back later.', 'error');
     if (acc && !payload.bank_account_number) return toast('The two bank account numbers don’t match — fix or clear them before saving.', 'error');
     try {
@@ -1707,9 +1724,9 @@ async function renderKycForm() {
 
   const updateSteps = () => {
     const docsOk = DOCS.filter((d) => d.required).every((d) => k.files[d.key]);
-    const bankOk = /^\d{9,18}$/.test(k.bank_account_number) && k.bank_account_number === k.bank_account_confirm && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(k.bank_ifsc.toUpperCase());
+    const bankDone = bankOk || (/^\d{9,18}$/.test(k.bank_account_number) && k.bank_account_number === k.bank_account_confirm && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(k.bank_ifsc.toUpperCase()) && !!k.files.bank);
     const emOk = k.emergency_name && k.emergency_relationship && isPhone(k.emergency_phone);
-    const s = [['Personal', !!k.date_of_birth], ['Documents', docsOk], ['Bank', bankOk], ['Emergency contact', emOk]];
+    const s = [['Personal', !!k.date_of_birth], ['Documents', docsOk], ['Bank', bankDone], ['Emergency contact', emOk]];
     $('#kyc-steps').innerHTML = s.map(([t, ok], i) => `<span class="${ok ? 'ok' : ''}"><i>${ok ? icon('check', 'sm') : i + 1}</i>${t}</span>`).join('');
   };
   updateSteps();
@@ -1722,13 +1739,14 @@ async function renderKycForm() {
   });
 
   const rerenderTile = (key) => {
-    const d = DOCS.find((x) => x.key === key);
+    const d = KYC_FILES.find((x) => x.key === key);
     const old = $(`.upload[data-doc="${key}"]`);
     old.outerHTML = uploadTile(d);
     updateSteps();
   };
 
-  const uploadsEl = $('#uploads');
+  // Document tiles live in Documents and in Bank details (bank proof)
+  const uploadsEl = form;
   uploadsEl.addEventListener('click', (e) => {
     const pick = e.target.closest('[data-pick]');
     if (pick) { $(`[data-input="${pick.dataset.pick}"]`).click(); return; }
@@ -1763,7 +1781,7 @@ async function renderKycForm() {
     try {
       if (await driveOn()) {
         // Saved in Google Drive as "<Name> - <Document>.<ext>" in the employee's KYC folder
-        const f = await driveCall('upload', { kind: 'kyc', label: DOCS.find((d) => d.key === key).label, ext: ext === 'jpeg' ? 'jpg' : ext,
+        const f = await driveCall('upload', { kind: 'kyc', label: KYC_FILES.find((d) => d.key === key).label, ext: ext === 'jpeg' ? 'jpg' : ext,
           mime: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'), data: await blobToB64(file) });
         path = `${state.user.id}/drive/${f.id}`;
       } else await api.upload(path, file);
@@ -1772,7 +1790,7 @@ async function renderKycForm() {
       if (prev && !savedPaths.has(prev.path)) api.removeFiles([prev.path]).catch(() => {});
       k.files[key] = { path, name: file.name };
       persist();
-      toast(`${DOCS.find((d) => d.key === key).label} uploaded.`);
+      toast(`${KYC_FILES.find((d) => d.key === key).label} uploaded.`);
     } catch (err) {
       toast(`Upload failed: ${friendlyError(err)}`, 'error');
     }
@@ -1790,11 +1808,14 @@ async function renderKycForm() {
     for (const d of DOCS) {
       if (d.required && !k.files[d.key]) { errors.push(d.label); $(`.upload[data-doc="${d.key}"]`).classList.add('invalid'); }
     }
-    const acc = val('bank_account_number').replace(/\s/g, '');
-    const ifsc = val('bank_ifsc').toUpperCase();
-    if (!/^\d{9,18}$/.test(acc)) { errors.push('Valid account number (9–18 digits)'); mark('bank_account_number'); }
-    else if (acc !== val('bank_account_confirm').replace(/\s/g, '')) { errors.push('Account numbers must match'); mark('bank_account_confirm'); }
-    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) { errors.push('Valid IFSC code (e.g. HDFC0001234)'); mark('bank_ifsc'); }
+    const acc = bankOk ? k.bank_account_number : val('bank_account_number').replace(/\s/g, '');
+    const ifsc = bankOk ? k.bank_ifsc : val('bank_ifsc').toUpperCase();
+    if (!bankOk) {
+      if (!/^\d{9,18}$/.test(acc)) { errors.push('Valid account number (9–18 digits)'); mark('bank_account_number'); }
+      else if (acc !== val('bank_account_confirm').replace(/\s/g, '')) { errors.push('Account numbers must match'); mark('bank_account_confirm'); }
+      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) { errors.push('Valid IFSC code (e.g. HDFC0001234)'); mark('bank_ifsc'); }
+      if (!k.files.bank) { errors.push('Bank proof'); $('.upload[data-doc="bank"]')?.classList.add('invalid'); }
+    }
     if (!val('emergency_name')) { errors.push('Emergency contact name'); mark('emergency_name'); }
     if (!val('emergency_relationship')) { errors.push('Emergency contact relationship'); mark('emergency_relationship'); }
     if (!isPhone(val('emergency_phone'))) { errors.push('Valid emergency contact number'); mark('emergency_phone'); }
@@ -1813,7 +1834,7 @@ async function renderKycForm() {
       emergency_relationship: val('emergency_relationship'),
       emergency_phone: normPhone(val('emergency_phone')),
     };
-    for (const d of DOCS) payload[d.col] = k.files[d.key]?.path || null;
+    for (const d of KYC_FILES) payload[d.col] = k.files[d.key]?.path || null;
 
     const btn = $('button[type=submit]', form);
     try {
@@ -1843,6 +1864,7 @@ function adminCounts() {
     awaiting: P.filter(kycOutstanding).length,
     active: P.filter((p) => p.status === 'active' && isEmd(p)).length,
     changes: (state.admin.changeRequests || []).filter((x) => x.status === 'pending').length,
+    bank: (state.admin.bankRequests || []).filter((x) => x.status === 'pending' && x.employee_id !== state.user?.id).length,
     queries: (state.admin.openQueries || []).length,
     resign: (state.admin.resignations || []).length,
     leaves: (state.admin.leavePending || []).filter((r) => r.employee_id !== state.user?.id).length,
@@ -1856,7 +1878,7 @@ const newBadge = (k) => (state.newIn?.[k] && parseRoute().page !== k ? 'New' : 0
 const NAV = {
   admin: () => {
     const c = state.admin.loaded ? adminCounts() : {};
-    const accessBadge = (c.pending || 0) + (c.review || 0) + (c.changes || 0);
+    const accessBadge = (c.pending || 0) + (c.review || 0) + (c.changes || 0) + (c.bank || 0);
     return [
       { label: 'Overview' },
       { key: 'dashboard', label: 'Dashboard', icon: 'grid' },
@@ -2024,17 +2046,18 @@ const emptyState = (ico, title, text) => `<div class="empty"><span class="ico">$
 async function ensureAdmin(force = false) {
   if (state.admin.loaded && !force) return;
   const today = todayISO();
-  const [profiles, salaries, changeRequests, openQueries, recentWfh, resignations, leavePending, leaveToday, feedbackNew, preboard] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
+  const [profiles, salaries, changeRequests, openQueries, recentWfh, resignations, leavePending, leaveToday, feedbackNew, preboard, bankRequests] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
     api.openQueries().catch(() => []), api.recentWfh().catch(() => []), q(db.from('resignation_requests').select('*').eq('status', 'pending')).catch(() => []),
     q(db.from('leave_requests').select('id, employee_id').eq('status', 'pending')).catch(() => []),
     q(db.from('leave_requests').select('employee_id, days, cancelled_days').eq('status', 'approved').lte('from_date', today).gte('to_date', today)).catch(() => []),
     db.from('feedback').select('id', { count: 'exact', head: true }).eq('status', 'new').then((r) => r.count || 0, () => 0),
-    q(db.from('preboard_candidates').select('user_id, status, score_pct').is('removed_at', null).not('user_id', 'is', null)).catch(() => [])]);
+    q(db.from('preboard_candidates').select('user_id, status, score_pct').is('removed_at', null).not('user_id', 'is', null)).catch(() => []),
+    api.allBankRequests().catch(() => [])]);
   const empWfh = (recentWfh || []).filter((w) => !w.added_by || w.added_by === w.employee_id);
   { const seen = getSeen() || {}; if (!seen.adminWfh) { seen.adminWfh = new Date().toISOString(); setSeen(seen); } }
   // On leave today: an approved leave covering today (today not cancelled)
   const onLeave = new Set((leaveToday || []).filter((r) => r.days > 0 && !(r.cancelled_days || []).includes(today)).map((r) => r.employee_id));
-  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh, resignations: resignations || [], leavePending: leavePending || [], onLeave, feedbackNew, preboard: preboard || [] };
+  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh, resignations: resignations || [], leavePending: leavePending || [], onLeave, feedbackNew, preboard: preboard || [], bankRequests: bankRequests || [] };
 }
 const byId = (id) => state.admin.profiles.find((p) => p.id === id);
 // In pre-onboarding (HR added their email and they signed up): kept out of Signup Requests until HR authorizes them from Pre-onboarding
@@ -2600,6 +2623,64 @@ function mountChangeRequestActions() {
   }));
 }
 
+/* ---------- Bank details approval (Access Control → Bank details) ---------- */
+const BANK_TONE = { pending: ['amber', 'Waiting'], approved: ['green', 'Approved'], sent_back: ['red', 'Sent back'], withdrawn: ['gray', 'Withdrawn'] };
+const bankChipFor = (st) => { const [t, l] = BANK_TONE[st] || BANK_TONE.pending; return `<span class="chip ${t} plain">${l}</span>`; };
+// Bank status of an employee from their submissions: verified account + what is waiting
+function bankState(empId) {
+  const list = (state.admin.bankRequests || []).filter((x) => x.employee_id === empId);
+  return { verified: list.some((x) => x.status === 'approved'), pending: list.find((x) => x.status === 'pending'), latest: list[0] };
+}
+function bankStatusChip(empId) {
+  const b = bankState(empId);
+  if (b.pending) return '<span class="chip amber plain">Bank waiting</span>';
+  if (b.latest?.status === 'sent_back') return '<span class="chip red plain">Bank sent back</span>';
+  if (b.verified) return '<span class="chip green plain">Bank verified</span>';
+  return '<span class="chip gray plain">Bank not submitted</span>';
+}
+function bankRequestsHTML(list, decided = false) {
+  if (!list.length) return '';
+  return `<div class="cr-list">${list.map((r) => {
+    const e = byId(r.employee_id);
+    const own = r.employee_id === state.user.id;
+    return `<div class="cr-item">
+      <div class="cr-head">${e ? person(e, esc(e.employee_code || e.email)) : '—'}
+        <span class="chip ${r.source === 'kyc' ? 'violet' : 'blue'} plain">${r.source === 'kyc' ? 'From KYC' : 'Bank change'}</span>
+        <span class="muted" style="font-size:12.5px;margin-left:auto">${decided ? `${BANK_TONE[r.status]?.[1] || r.status} ${fmtRelative(r.decided_at)}` : `Submitted ${fmtRelative(r.created_at)}`}</span>
+        ${decided ? bankChipFor(r.status) : own ? '<span class="chip gray plain">Your own — another admin approves</span>'
+          : `<button class="btn btn-sm" data-bank-back="${r.id}">${icon('arrowLeft', 'sm')}Send back</button><button class="btn btn-sm btn-success" data-bank-ok="${r.id}">${icon('check', 'sm')}Approve</button>`}</div>
+      <table class="table compact cr-table"><thead><tr><th>Detail</th>${r.previous ? '<th>Now (verified)</th>' : ''}<th>${r.previous ? 'Asked for' : 'Submitted'}</th></tr></thead><tbody>
+        <tr><td>Account number</td>${r.previous ? `<td class="mono">${esc(r.previous.account_number || '—')}</td>` : ''}<td class="mono"><b style="color:var(--text)">${esc(r.account_number)}</b></td></tr>
+        <tr><td>IFSC</td>${r.previous ? `<td class="mono">${esc(r.previous.ifsc || '—')}</td>` : ''}<td class="mono"><b style="color:var(--text)">${esc(r.ifsc)}</b></td></tr>
+        <tr><td>Bank proof</td>${r.previous ? '<td></td>' : ''}<td>${r.doc_path ? `<button class="btn btn-sm" data-action="open-doc" data-path="${esc(r.doc_path)}" data-name="${esc(`${e?.full_name || 'Employee'} - Bank proof`)}">${icon('download', 'sm')}Download</button>` : '<span class="faint">Not uploaded (submitted before bank proof was asked for)</span>'}</td></tr>
+      </tbody></table>
+      ${r.note ? `<div class="muted" style="font-size:12.5px">Employee’s note: ${esc(r.note)}</div>` : ''}
+      ${r.admin_note ? `<div class="muted" style="font-size:12.5px">Admin’s note: ${esc(r.admin_note)}</div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+function mountBankRequestActions() {
+  $$('[data-bank-ok]').forEach((b) => b.addEventListener('click', async () => {
+    const r = (state.admin.bankRequests || []).find((x) => x.id === b.dataset.bankOk);
+    const e = r && byId(r.employee_id);
+    if (!(await confirmDialog({ title: 'Approve bank details?', message: `Salary for <b>${esc(e?.full_name || 'this employee')}</b> goes to account <b>${esc(r?.account_number || '')}</b> (${esc(r?.ifsc || '')}). Check it against the bank proof first.`, confirmText: 'Approve' }))) return;
+    try { await withBusy(b, 'Approving…', () => api.rpc('admin_decide_bank', { p_id: b.dataset.bankOk, p_approve: true })); toast('Bank details approved.'); await refreshAdmin(); }
+    catch (err) { toast(friendlyError(err), 'error'); }
+  }));
+  $$('[data-bank-back]').forEach((b) => b.addEventListener('click', () => {
+    const dlg = openModal({ title: 'Send bank details back', size: 'sm', subtitle: 'The employee sees your note and submits the bank details again with a proof.',
+      body: `<div class="field"><label>What needs to be fixed?<span class="req">*</span></label><textarea class="input" id="bank-note" placeholder="e.g. Account number doesn’t match the cheque — please upload a clear cancelled cheque"></textarea></div>`,
+      footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>Send back</button>` });
+    $('#bank-note', dlg.el).focus();
+    $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+      const note = $('#bank-note', dlg.el).value.trim();
+      if (!note) return $('#bank-note', dlg.el).classList.add('invalid');
+      try { await withBusy(ev.currentTarget, 'Sending…', () => api.rpc('admin_decide_bank', { p_id: b.dataset.bankBack, p_approve: false, p_note: note })); dlg.close(); toast('Bank details sent back to the employee.'); await refreshAdmin(); }
+      catch (err) { toast(friendlyError(err), 'error'); }
+    });
+  }));
+}
+
 /* ---------- Org Structure ---------- */
 // Reporting tree: Super Admins (management) at the top, everyone under their reporting manager.
 async function pageOrg() {
@@ -2652,7 +2733,7 @@ async function pageOrg() {
 /* ---------- Access Control ---------- */
 async function pageAccess(r) {
   await ensureAdmin();
-  const tab = r.id === 'nonemd' ? 'admins' : ['requests', 'kyc', 'awaiting', 'changes', 'admins', 'rejected'].includes(r.id) ? r.id : 'requests';
+  const tab = r.id === 'nonemd' ? 'admins' : ['requests', 'kyc', 'bank', 'awaiting', 'changes', 'admins', 'rejected'].includes(r.id) ? r.id : 'requests';
   const P = state.admin.profiles;
   const lists = {
     requests: P.filter((p) => p.status === 'pending' && !isPbCandidate(p)).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)),
@@ -2660,10 +2741,11 @@ async function pageAccess(r) {
     awaiting: P.filter(kycOutstanding).sort((a, b) => new Date(b.access_granted_at || b.created_at) - new Date(a.access_granted_at || a.created_at)),
     rejected: P.filter((p) => p.rejected_at).sort((a, b) => new Date(b.rejected_at) - new Date(a.rejected_at)),
     changes: (state.admin.changeRequests || []).filter((x) => x.status === 'pending'),
+    bank: (state.admin.bankRequests || []).filter((x) => x.status === 'pending').sort((a, b) => new Date(a.created_at) - new Date(b.created_at)),
     admins: P.filter((p) => p.role === 'admin' && p.status === 'active')
       .sort((a, b) => (adminLevel(a) === adminLevel(b) ? a.full_name.localeCompare(b.full_name) : adminLevel(a) === 'super' ? -1 : 1)),
   };
-  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['awaiting', 'KYC not submitted'], ['changes', 'Change requests'], ['admins', 'Admins'], ['rejected', 'Rejected']];
+  const tabs = [['requests', 'Signup Requests'], ['kyc', 'KYC Review'], ['bank', 'Bank details'], ['awaiting', 'KYC not submitted'], ['changes', 'Change requests'], ['admins', 'Admins'], ['rejected', 'Rejected']];
   const rows = lists[tab];
 
   let table;
@@ -2673,11 +2755,14 @@ async function pageAccess(r) {
       kyc: emptyState('fileCheck', 'Nothing to review', 'When employees submit their KYC, it will appear here.'),
       awaiting: emptyState('clock', 'Everyone has submitted KYC', 'Employees who skipped KYC (or were sent back) appear here until they submit it.'),
       rejected: emptyState('x', 'No rejected requests', 'Sign-ups and KYC submissions you reject are kept here, and can be restored.'),
+      bank: emptyState('bank', 'No bank details waiting', 'Bank details from the KYC form, and later bank changes from My KYC, come here with the bank proof. They are approved separately from the KYC.'),
       changes: emptyState('check', 'No change requests waiting', 'When an employee asks to change their details, the request appears here. Nothing changes until you approve it.'),
       admins: emptyState('shield', 'No admins', ''),
     }[tab];
   } else if (tab === 'changes') {
     table = changeRequestsHTML(rows);
+  } else if (tab === 'bank') {
+    table = bankRequestsHTML(rows);
   } else if (tab === 'admins') {
     const me = state.user.id, sup = amSuper();
     const levelChip = (p) => `<span class="chip ${adminLevel(p) === 'super' ? 'violet' : 'blue'} plain nowrap">${ADMIN_LABEL[adminLevel(p)]}</span>`;
@@ -2733,7 +2818,7 @@ async function pageAccess(r) {
 
   return {
     title: 'Access Control',
-    crumbs: 'Sign-ups, KYC, change requests and admins',
+    crumbs: 'Sign-ups, KYC, bank details, change requests and admins',
     actions: `<button class="btn btn-sm" id="refresh-btn">${icon('refresh', 'sm')}Refresh</button><button class="btn btn-sm" id="bulk-emp">${icon('upload', 'sm')}Upload Excel</button><button class="btn btn-sm btn-primary" id="add-emp">${icon('userPlus', 'sm')}Add employee</button>`,
     html: `
       <div><nav class="tabs tabs-wrap">${tabs.map(([k, l]) => `<a href="#/access/${k}" class="${k === tab ? 'active' : ''}">${l}<span class="count">${lists[k].length}</span></a>`).join('')}</nav></div>
@@ -2741,7 +2826,9 @@ async function pageAccess(r) {
       ${tab === 'requests' && P.some(isPbCandidate) ? `<div class="alert alert-info">${icon('info')}<span>${P.filter(isPbCandidate).length} candidate${P.filter(isPbCandidate).length === 1 ? ' is' : 's are'} in <a href="#/preboarding">Pre-onboarding</a> and not listed here — they can only use Pre-onboarding until you authorize them into Employee Master Data from there.</span></div>` : ''}
       <div class="card">${table}</div>
       ${tab === 'changes' && (state.admin.changeRequests || []).some((x) => x.status !== 'pending') ? `<div class="card"><div class="card-head"><div><h3>Decided</h3><p>Last 20 requests</p></div></div>
-        ${changeRequestsHTML((state.admin.changeRequests || []).filter((x) => x.status !== 'pending').slice(0, 20), true)}</div>` : ''}`,
+        ${changeRequestsHTML((state.admin.changeRequests || []).filter((x) => x.status !== 'pending').slice(0, 20), true)}</div>` : ''}
+      ${tab === 'bank' && (state.admin.bankRequests || []).some((x) => ['approved', 'sent_back'].includes(x.status)) ? `<div class="card"><div class="card-head"><div><h3>Decided</h3><p>Last 20</p></div></div>
+        ${bankRequestsHTML((state.admin.bankRequests || []).filter((x) => ['approved', 'sent_back'].includes(x.status)).slice(0, 20), true)}</div>` : ''}`,
     mount() {
       $('#refresh-btn').addEventListener('click', (e) => withBusy(e.currentTarget, '', refreshAdmin));
       $('#add-emp').addEventListener('click', () => openOnboardDialog('add'));
@@ -2749,6 +2836,7 @@ async function pageAccess(r) {
       $$('[data-grant]').forEach((b) => b.addEventListener('click', () => openOnboardDialog('grant', byId(b.dataset.grant))));
       $$('[data-reject]').forEach((b) => b.addEventListener('click', () => rejectDialog(byId(b.dataset.reject))));
       mountChangeRequestActions();
+      mountBankRequestActions();
       $$('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
         const p = byId(b.dataset.revoke);
         if (!(await confirmDialog({ title: 'Remove admin access?', message: `<b>${esc(p.full_name)}</b> becomes a normal employee: the admin console closes for them, they use the employee portal and appear in Employee Master Data.`, confirmText: 'Remove admin', danger: true }))) return;
@@ -2828,7 +2916,7 @@ function monthYearSelects(name, y, m) {
 
 function docListHTML(kyc, who) {
   const person = who || (kyc?.employee_id && state.admin?.profiles?.length ? byId(kyc.employee_id)?.full_name : '') || state.profile?.full_name || '';
-  return `<div class="doc-list">${DOCS.map((d) => {
+  return `<div class="doc-list">${KYC_FILES.map((d) => {
     const path = kyc?.[d.col];
     return `<div class="doc ${path ? '' : 'missing'}"><span class="ico">${icon(path ? 'file' : 'x')}</span>
       <div class="meta"><b>${esc(d.label)}</b><span>${path ? esc(isDrivePath(path) ? 'In Google Drive' : fileNameFromPath(path)) : d.required ? 'Missing' : 'Not provided (optional)'}</span></div>
@@ -2847,6 +2935,9 @@ function kycAdminCard(e) {
     <div class="card-body"><div class="status-row">${kycChip(e)}<span class="muted" style="font-size:13px">${text}</span>
       <span class="status-actions">${st === 'submitted' ? `<button class="btn btn-sm btn-primary" id="emd-kyc-review">${icon('eye', 'sm')}Review — approve or send back</button>`
         : st === 'approved' ? `<button class="btn btn-sm" id="emd-kyc-review">${icon('eye', 'sm')}View KYC</button>` : ''}</span></div>
+      <div class="status-row" style="margin-top:10px">${bankStatusChip(e.id)}<span class="muted" style="font-size:13px">${(() => { const b = bankState(e.id);
+        return b.pending ? `${b.pending.source === 'kyc' ? 'Bank details from the KYC' : 'A bank change'} is waiting. <a href="#/access/bank">Review in Bank details</a>.`
+          : b.latest?.status === 'sent_back' ? `Sent back${b.latest.admin_note ? `: “${esc(b.latest.admin_note)}”` : ''}.` : b.verified ? 'Bank account verified against the bank proof.' : 'Comes with the KYC.'; })()}</span></div>
       ${pend ? `<div class="alert alert-warn" style="margin-top:12px">${icon('alert')}<span>${esc(firstName(e.full_name))} asked to change ${Object.keys(pend.changes).map((k) => CHANGE_FIELDS[k] || k).join(', ')}. <a href="#/access/changes">Review the request</a>.</span></div>` : ''}
     </div></div>`;
 }
@@ -2870,7 +2961,8 @@ async function openKycReview(id, btn) {
               <div><div class="k">Phone</div><div class="v">${esc(p.phone || '—')}</div></div>
               <div><div class="k">Account number</div><div class="v mono">${esc(kyc.bank_account_number)}</div></div>
               <div><div class="k">IFSC</div><div class="v mono">${esc(kyc.bank_ifsc)}</div></div>
-            </div></div>
+            </div>
+            <div class="muted" style="font-size:12.5px;margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${bankStatusChip(id)}<span>Bank details are approved separately in <a href="#/access/bank" data-close-link>Access Control → Bank details</a>.</span></div></div>
           <div><div class="section-title">Emergency contact</div>
             <div class="kv">
               <div><div class="k">Name</div><div class="v">${esc(kyc.emergency_name)}</div></div>
@@ -2894,7 +2986,7 @@ async function openKycReview(id, btn) {
              <button class="btn btn-success" data-approve>${icon('check', 'sm')}Approve KYC</button>` : `<button class="btn" data-close>Close</button>`,
   });
 
-  $('[data-close-link]', el)?.addEventListener('click', () => close());
+  $$('[data-close-link]', el).forEach((a) => a.addEventListener('click', () => close()));
   $('[data-approve]', el)?.addEventListener('click', async (e) => {
     try {
       await withBusy(e.currentTarget, 'Approving…', () => api.rpc('admin_verify_kyc', { p_user: id }));
@@ -3211,7 +3303,7 @@ async function pageEmployee(r) {
           ${kyc ? `<div class="split" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
             <div>${docListHTML(kyc)}</div>
             <div class="grid" style="gap:22px">
-              <div><div class="section-title">Bank details</div><div class="kv">
+              <div><div class="section-title" style="display:flex;gap:8px;align-items:center">Bank details ${bankStatusChip(e.id)}</div><div class="kv">
                 <div><div class="k">Account number</div><div class="v mono">${esc(kyc.bank_account_number)}</div></div>
                 <div><div class="k">IFSC</div><div class="v mono">${esc(kyc.bank_ifsc)}</div></div></div></div>
               <div><div class="section-title">Emergency contact</div><div class="kv">
@@ -7848,14 +7940,14 @@ async function listKycStorage() {
 }
 async function pageStorage() {
   await ensureAdmin();
-  const [drive, co, kyc, sign, drafts, stored] = await Promise.all([driveSettings(true), companyInfo(true), q(db.from('kyc_submissions').select('*')).catch(() => []), signatureImage(),
-    q(db.from('kyc_drafts').select('data')).catch(() => []), listKycStorage().catch(() => null)]);
-  // Files still in Supabase storage: in use by a submitted KYC, in use by an unfinished draft, or not used at all
-  const usedPaths = new Set((kyc || []).flatMap((k) => DOCS.map((d) => k[d.col]).filter(Boolean)));
+  const [drive, co, kyc, sign, drafts, stored, bankDocs] = await Promise.all([driveSettings(true), companyInfo(true), q(db.from('kyc_submissions').select('*')).catch(() => []), signatureImage(),
+    q(db.from('kyc_drafts').select('data')).catch(() => []), listKycStorage().catch(() => null), q(db.from('bank_requests').select('doc_path').not('doc_path', 'is', null)).catch(() => [])]);
+  // Files still in Supabase storage: in use by a submitted KYC (or bank details), in use by an unfinished draft, or not used at all
+  const usedPaths = new Set([...(kyc || []).flatMap((k) => KYC_FILES.map((d) => k[d.col]).filter(Boolean)), ...(bankDocs || []).map((b) => b.doc_path)]);
   const draftText = JSON.stringify(drafts || []);
   const unusedFiles = (stored || []).filter((f) => !usedPaths.has(f) && !draftText.includes(f));
   const draftFiles = (stored || []).filter((f) => !usedPaths.has(f) && draftText.includes(f));
-  const cols = DOCS.map((d) => d.col);
+  const cols = KYC_FILES.map((d) => d.col);
   const inSupabase = (kyc || []).reduce((s, k) => s + cols.filter((c) => k[c] && !isDrivePath(k[c])).length, 0);
   const inDrive = (kyc || []).reduce((s, k) => s + cols.filter((c) => isDrivePath(k[c])).length, 0);
   const canEdit = amSuper();
@@ -7972,7 +8064,7 @@ async function pageStorage() {
           let moved = 0; const fails = [];
           for (const k of kyc) {
             const emp = byId(k.employee_id); const paths = {}; const old = [];
-            for (const d of DOCS) {
+            for (const d of KYC_FILES) {
               const p = k[d.col]; if (!p || isDrivePath(p)) continue;
               $('#kyc-move-msg').textContent = `Moving ${emp?.full_name || ''} — ${d.label}…`;
               try {
@@ -8704,7 +8796,7 @@ const KYC_INFO = {
   not_started: ['amber', 'alert', 'Complete your KYC', 'Upload your documents, bank details and emergency contact so HR can verify them.', 'Complete KYC'],
   sent_back: ['red', 'alert', 'KYC sent back — please fix', '', 'Fix and resubmit'],
   submitted: ['violet', 'clock', 'KYC submitted', 'HR is reviewing your documents. Nothing else is needed from you for now.', ''],
-  approved: ['green', 'check', 'KYC verified', 'HR has verified your KYC. To change a detail later, use “Request a change” in My Profile.', ''],
+  approved: ['green', 'check', 'KYC verified', 'HR has verified your KYC. To change a detail later, use “Request a change” in My Profile — bank details change below, with a bank proof.', ''],
 };
 function kycStatusCard(p, draft) {
   const st = p?.kyc_status || 'not_started';
@@ -8724,7 +8816,92 @@ document.addEventListener('click', (e) => {
 // #/kyc opens the form while KYC is open (see render); otherwise this shows its status.
 async function pageTeamKyc() {
   const P = await loadPortal();
-  return { title: 'My KYC', crumbs: 'Documents and details verified by HR', html: kycStatusCard(P.profile, P.draft) };
+  return { title: 'My KYC', crumbs: 'Documents and details verified by HR', html: kycStatusCard(P.profile, P.draft) + myBankCardHTML(P), mount: () => mountMyBank(P) };
+}
+
+// My KYC → Bank details: approved separately by HR, always with a bank proof
+function myBankCardHTML(P) {
+  const k = P.kyc, list = P.bank || [];
+  if (!k) return '';
+  const kycOpen = KYC_OPEN.includes(P.profile?.kyc_status || 'not_started');
+  const verified = list.some((b) => b.status === 'approved');
+  const pend = list.find((b) => b.status === 'pending');
+  const back = !pend && list[0]?.status === 'sent_back' ? list[0] : null;
+  const stateLine = pend ? ['amber', 'clock', `${pend.source === 'kyc' ? 'Bank details from your KYC are' : `Account ${maskAccount(pend.account_number)} (${esc(pend.ifsc)}) is`} waiting for HR approval.`]
+    : back ? ['red', 'alert', `Sent back by HR: ${esc(back.admin_note || 'please check your bank details.')}`]
+    : verified ? ['green', 'check', 'Verified by HR against your bank proof. Salary is credited here.'] : ['gray', 'info', 'Not verified yet.'];
+  const canSubmit = !pend && !kycOpen;
+  return `<div class="card"><div class="card-head"><div><h3>Bank details</h3><p>Approved by HR separately from the rest of your KYC</p></div>
+      <div class="right">${canSubmit ? `<button class="btn btn-sm ${back ? 'btn-primary' : ''}" id="bank-change">${icon(back ? 'refresh' : 'edit', 'sm')}${back ? 'Submit again' : verified ? 'Change bank account' : 'Submit bank details'}</button>` : ''}
+        ${pend && pend.source === 'change' ? `<button class="btn btn-sm" data-bank-withdraw="${pend.id}">Withdraw</button>` : ''}</div></div>
+    <div class="card-body">
+      <div class="status-row"><span class="chip ${stateLine[0]} plain">${icon(stateLine[1], 'sm')}${stateLine[0] === 'green' ? 'Verified' : stateLine[0] === 'amber' ? 'Waiting' : stateLine[0] === 'red' ? 'Sent back' : 'Not verified'}</span><span class="muted" style="font-size:13px">${stateLine[2]}</span></div>
+      <div class="kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-top:12px">
+        ${kvCell(verified ? 'Account number (current)' : 'Account number', maskAccount(k.bank_account_number), 'mono')}${kvCell('IFSC', esc(k.bank_ifsc), 'mono')}</div>
+      ${kycOpen && !pend ? '<p class="muted" style="font-size:12.5px;margin-top:10px">Your KYC is open — put the bank details and bank proof in the KYC form.</p>' : ''}
+      ${list.length ? `<div class="section-title" style="margin-top:16px">History</div><div class="table-wrap"><table class="table compact"><thead><tr><th>Submitted</th><th>Account</th><th>IFSC</th><th>From</th><th>Status</th><th>HR’s note</th></tr></thead><tbody>
+        ${list.map((b) => `<tr><td class="nowrap">${fmtDateTime(b.created_at)}</td><td class="mono">${maskAccount(b.account_number)}</td><td class="mono">${esc(b.ifsc)}</td><td>${b.source === 'kyc' ? 'KYC' : 'Change'}</td><td>${bankChipFor(b.status)}</td><td>${esc(b.admin_note || '')}</td></tr>`).join('')}
+      </tbody></table></div>` : ''}
+    </div></div>`;
+}
+function mountMyBank(P) {
+  $('#bank-change')?.addEventListener('click', () => openBankDialog(P));
+  $$('[data-bank-withdraw]').forEach((b) => b.addEventListener('click', async () => {
+    if (!(await confirmDialog({ title: 'Withdraw this bank change?', message: 'Your current bank details stay as they are.', confirmText: 'Withdraw' }))) return;
+    try { await withBusy(b, '', () => api.rpc('withdraw_bank_request', { p_id: b.dataset.bankWithdraw })); toast('Bank change withdrawn.'); render(); }
+    catch (err) { toast(friendlyError(err), 'error'); }
+  }));
+}
+function openBankDialog(P) {
+  let file = null;
+  const dlg = openModal({
+    title: 'Bank details', size: 'md', subtitle: 'HR checks these against the bank proof before salary goes to this account. Until then your current details stay.',
+    body: `<div class="grid" style="gap:14px">
+      <div class="grid g2" style="gap:12px">
+        <div class="field"><label>Account number<span class="req">*</span></label><input class="input mono" id="bk-acc" inputmode="numeric" autocomplete="off" placeholder="e.g. 50100123456789"></div>
+        <div class="field"><label>Re-enter account number<span class="req">*</span></label><input class="input mono" id="bk-acc2" inputmode="numeric" autocomplete="off" placeholder="Confirm account number"></div>
+        <div class="field"><label>IFSC code<span class="req">*</span></label><input class="input mono" id="bk-ifsc" maxlength="11" autocomplete="off" placeholder="e.g. HDFC0001234" style="text-transform:uppercase"></div>
+      </div>
+      <div class="field"><label>Bank proof<span class="req">*</span> <span class="faint">(cancelled cheque, passbook front page or bank statement · PDF or JPG, up to ${MAX_FILE_MB} MB)</span></label>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="btn btn-sm" id="bk-pick">${icon('upload', 'sm')}Choose file</button><span class="muted" id="bk-file" style="font-size:12.5px">No file chosen</span></div>
+        <input type="file" id="bk-input" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" hidden></div>
+      <div class="field"><label>Note for HR <span class="faint">(optional)</span></label><input class="input" id="bk-note" placeholder="e.g. Moved my salary account to SBI"></div>
+      <div id="bk-msg"></div></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Send for approval</button>`,
+  });
+  const el = dlg.el;
+  $('#bk-pick', el).addEventListener('click', () => $('#bk-input', el).click());
+  $('#bk-input', el).addEventListener('change', (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (!['pdf', 'jpg', 'jpeg'].includes(ext) || (f.type && !ALLOWED_TYPES.includes(f.type))) { e.target.value = ''; return toast('Only PDF or JPG files are allowed.', 'error'); }
+    if (f.size > MAX_FILE_MB * 1024 * 1024) { e.target.value = ''; return toast(`File is larger than ${MAX_FILE_MB} MB.`, 'error'); }
+    file = f; $('#bk-file', el).textContent = f.name;
+  });
+  $('[data-ok]', el).addEventListener('click', async (ev) => {
+    const fail = (t) => { $('#bk-msg', el).innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(t)}</span></div>`; };
+    const acc = $('#bk-acc', el).value.replace(/\s/g, ''), ifsc = $('#bk-ifsc', el).value.trim().toUpperCase();
+    if (!/^\d{9,18}$/.test(acc)) return fail('The account number should be 9–18 digits.');
+    if (acc !== $('#bk-acc2', el).value.replace(/\s/g, '')) return fail('The two account numbers don’t match.');
+    if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) return fail('Enter a valid IFSC (e.g. HDFC0001234).');
+    if (!file) return fail('Upload the bank proof.');
+    await withBusy(ev.currentTarget, 'Sending…', async () => {
+      const ext = (file.name.split('.').pop() || '').toLowerCase().replace('jpeg', 'jpg');
+      let path = `${state.user.id}/bank-${Date.now()}.${ext}`;
+      try {
+        if (await driveOn()) {
+          const f = await driveCall('upload', { kind: 'kyc', label: BANK_DOC.label, ext, mime: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'), data: await blobToB64(file) });
+          path = `${state.user.id}/drive/${f.id}`;
+        } else await api.upload(path, file);
+      } catch (err) { return fail(`Upload failed: ${friendlyError(err)}`); }
+      try {
+        await api.rpc('submit_bank_details', { p: { account_number: acc, ifsc, doc_path: path, note: $('#bk-note', el).value } });
+        dlg.close();
+        toast('Sent to HR. Salary moves to this account once it’s approved.');
+        render();
+      } catch (err) { fail(friendlyError(err)); }
+    });
+  });
 }
 
 async function pageMyProfile() {
@@ -8759,7 +8936,7 @@ async function pageMyProfile() {
         <div class="card-body kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
           ${kvCell('Employee ID', esc(me.employee_code || ''))}${kvCell('Designation', esc(me.designation || ''))}${kvCell('Reporting manager', esc(me.reporting_manager_name || ''))}${kvCell('Date of joining', me.date_of_joining ? fmtDate(me.date_of_joining) : '')}
         </div></div>` : ''}
-      ${k ? `<div class="card"><div class="card-head"><div><h3>Bank &amp; emergency contact</h3><p>From your KYC</p></div><div class="right">${kycChip(me)}</div></div>
+      ${k ? `<div class="card"><div class="card-head"><div><h3>Bank &amp; emergency contact</h3><p>From your KYC · bank details change in <a href="#/kyc">My KYC → Bank details</a></p></div><div class="right">${kycChip(me)}</div></div>
         <div class="card-body kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
           ${kvCell('Account number', maskAccount(k.bank_account_number), 'mono')}${kvCell('IFSC', esc(k.bank_ifsc), 'mono')}
           ${kvCell('Emergency contact', esc(k.emergency_name))}${kvCell('Relationship', esc(k.emergency_relationship))}${kvCell('Contact number', esc(k.emergency_phone))}
@@ -8795,12 +8972,11 @@ function openChangeRequest(P) {
     body: `<div class="grid" style="gap:16px">
       <div><div class="section-title">Personal</div><div class="grid g2" style="gap:12px">
         ${field('full_name', 'Full name', me.full_name)}${field('phone', 'Phone', me.phone, 'tel')}${field('date_of_birth', 'Date of birth', me.date_of_birth, 'date')}</div></div>
-      ${k && !kycOpen ? `<div><div class="section-title">Bank</div><div class="grid g2" style="gap:12px">
-        ${field('bank_account_number', 'Account number', k.bank_account_number)}${field('bank_ifsc', 'IFSC', k.bank_ifsc)}</div></div>
+      ${k && !kycOpen ? `<p class="muted" style="font-size:12.5px">Bank details change in <a href="#/kyc" data-close>My KYC → Bank details</a>, with a bank proof.</p>
       <div><div class="section-title">Emergency contact</div><div class="grid g3" style="gap:12px">
         ${field('emergency_name', 'Name', k.emergency_name)}${field('emergency_relationship', 'Relationship', k.emergency_relationship)}${field('emergency_phone', 'Contact number', k.emergency_phone, 'tel')}</div></div>`
         : `<p class="muted" style="font-size:12.5px">Bank and emergency details come from your KYC — fill them in the KYC form (${kycOpen ? 'still open for you' : 'not submitted yet'}).</p>`}
-      <div class="field"><label>Reason <span class="faint">(optional, for HR)</span></label><textarea class="input" id="cr-reason" placeholder="e.g. New bank account"></textarea></div>
+      <div class="field"><label>Reason <span class="faint">(optional, for HR)</span></label><textarea class="input" id="cr-reason" placeholder="e.g. New phone number"></textarea></div>
       <div id="cr-msg"></div></div>`,
     footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Send for approval</button>`,
   });

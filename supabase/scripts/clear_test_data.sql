@@ -15,7 +15,7 @@
 --         punches, code mappings, adjustments, results, queries, leaves,
 --         WFH, variable, bonus, loans, eligibility, expenses, ESOP
 --         allocations / grants / vesting / exercises, appraisals,
---         feedback, resignations, exits, F&F, HR documents, change
+--         feedback, resignations, exits, F&F, HR documents, bank details, change
 --         requests, pre-onboarding candidates and the activity log.
 -- =====================================================================
 begin;
@@ -67,6 +67,7 @@ delete from public.feedback;
 
 -- Profile changes, KYC, exits, documents
 delete from public.change_requests;
+do $$ begin if to_regclass('public.bank_requests') is not null then execute 'delete from public.bank_requests'; end if; end $$;
 delete from public.kyc_drafts;
 delete from public.kyc_submissions;
 delete from public.resignation_requests;

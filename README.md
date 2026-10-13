@@ -118,13 +118,17 @@ Rows with problems are left out. Fix them in the sheet and upload it again; peop
 **Give access (admin).** In Access Control → Signup Requests, **Give access** opens the same employment form: date of joining (defaults to today), Employee ID, designation, manager and starting salary. The person moves into EMD immediately.
 
 **KYC (employee).** When they sign in, the KYC form is shown with **Skip for now**. Skipping takes them into the HRMS. Home then shows a *Complete your KYC* card, and **My KYC** in the menu carries a badge. The form shows again at their next sign-in until it is submitted. Files must be PDF or JPG, up to 5 MB each.
-Required: Aadhaar, PAN, 10th marksheet, 12th marksheet, graduation marksheet, date of birth, bank account number + IFSC, and an emergency contact (name, relationship, number).
+Required: Aadhaar, PAN, 10th marksheet, 12th marksheet, graduation marksheet, date of birth, bank account number + IFSC with a **bank proof** (cancelled cheque, passbook front page or bank statement, uploaded in the Bank details section), and an emergency contact (name, relationship, number).
 Optional: last payslip and leave (relieving) letter.
 Files upload as soon as they're picked, and the form keeps a local draft, so a page refresh doesn't lose any work.
 
 **KYC review (admin).** Access Control has two KYC tabs:
 * **KYC Review** lists submitted KYCs. Open one, view the documents, then **Approve KYC** or **Send back** with a note. The employee sees the note and resubmits.
 * **KYC not submitted** lists employees who skipped the form or were sent back.
+
+**Bank details approval (admin).** Bank details are approved on their own, in Access Control → **Bank details**, not with the KYC. Each entry shows the account number, IFSC and a **Download** for the bank proof; for a later change it also shows the current verified account next to the new one. **Approve** makes it the salary account (salary slips use it). **Send back** needs a note, and the employee submits again. Approving the KYC doesn't approve the bank details, and the reverse is true too. An admin can't approve their own. EMD and the KYC review show the bank status (*Bank waiting / sent back / verified*).
+
+**Bank details (employee).** **My KYC → Bank details** shows the current account, its status, HR's note if it was sent back, and the history. Once the KYC is submitted, a new account (or a re-submission after a send back) goes in there: account number twice, IFSC and the bank proof. The current account stays until HR approves the new one, and a waiting change can be withdrawn. Once verified, the bank part of the KYC form is locked. Bank details are no longer part of **Request a change**.
 
 EMD rows carry a *KYC not submitted / sent back / to review* tag until the KYC is verified.
 
@@ -276,7 +280,7 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 
 **KYC: Save vs Skip.** The KYC form has **Save & finish later**, which stores whatever has been filled in, even if it's only the emergency contact. It isn't submitted, and the form reopens with those details. **Skip** stores nothing from that visit: anything typed and any files uploaded during it are discarded. Admins see each employee's KYC status on their EMD page, with **Review — approve or send back** once it's submitted, as well as in Access Control → KYC Review.
 
-**Change requests.** Once KYC is submitted, employees can't edit their details directly. In **My Profile → Request a change** they ask for a new name, phone, date of birth, bank account / IFSC or emergency contact. **Nothing changes until an admin approves it** in Access Control → **Change requests**. That tab shows each detail's current and requested value, with **Approve** or **Reject** (a reason is required to reject). The employee sees the outcome, and can withdraw a request while it's still waiting. Only one request can be waiting at a time.
+**Change requests.** Once KYC is submitted, employees can't edit their details directly. In **My Profile → Request a change** they ask for a new name, phone, date of birth or emergency contact (bank details change in My KYC → Bank details, with a bank proof). **Nothing changes until an admin approves it** in Access Control → **Change requests**. That tab shows each detail's current and requested value, with **Approve** or **Reject** (a reason is required to reject). The employee sees the outcome, and can withdraw a request while it's still waiting. Only one request can be waiting at a time.
 
 **Employee portal.**
 * **Home:** Employee ID, designation, manager, joining date, current salary, last net pay, loan remaining, and the KYC status.
@@ -451,6 +455,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261025000000_leave_cancel_days_no_payroll.sql` | Leaves no longer write to payroll (days already written by approved leaves are taken out again), `cancel_leave_days` for one / several / all days, `leave_requests.cancelled_days` and `cancellations`; overlap checks ignore cancelled days. |
 | `supabase/migrations/20261026000000_preboarding.sql` | Pre-onboarding: `preboard_candidates` (linked by email at sign-up, clock and status), `preboard_materials`, `preboard_questions` (answers admin-only), `preboard_attempts`, `preboard_views`, the `preboarding` storage bucket, `my_preboarding` / `my_preboard_start` / `my_preboard_view` / `my_preboard_quiz` / `my_preboard_submit`, HR functions to add / restart / remove candidates, manage material and import questions. |
 | `supabase/migrations/20261027000000_appraisal_letters_no_admin_password.sql` | Appraisal letters (`appraisals.letter_file_id` / `letter_file_name` / `letter_at`, `admin_record_appraisal_letter`, `my_appraisals` returns the letter); `admin_set_password` can no longer be called. |
+| `supabase/migrations/20261028000000_bank_details_approval.sql` | Bank proof (`kyc_submissions.bank_doc_path`), `bank_requests` (each bank submission and its approval), `submit_kyc` requires the proof and queues the bank details, `submit_bank_details` / `withdraw_bank_request` (employee), `admin_decide_bank` (approve / send back), bank fields out of change requests, `my_portal` returns bank status. Existing verified KYCs count as verified bank details. |
 | `drive-bridge/Code.gs` | Google Apps Script web app that stores HRMS files in Google Drive after checking the HRMS sign-in. |
 | `supabase/migrations/20261018000000_esop.sql` | ESOPs: allocations, grants, vesting tranches and exercises (`esop_*` tables), pool setting, `admin_import_esop`, `admin_map_esop_member`, `admin_add_esop_exercise`, `my_esops()`. |
 | `supabase/migrations/20261017000000_query_autoresolve_left_updates.sql` | Queries resolve automatically on push when their day changed (and carry over after a re-upload), no queries / WFH after leaving, `my_updates()` for the portal's New markers. |
@@ -466,7 +471,8 @@ Each line is filled in automatically, with the employee's **current salary** as 
 
 ### Data model
 * `profiles`: one row per user (name, email, phone, role, status, EID, designation, reporting manager, DOJ, DOB, rejection details, audit timestamps)
-* `kyc_submissions`: document paths, bank details and emergency contact (one row per employee)
+* `kyc_submissions`: document paths, bank details (the approved ones) with the bank proof, and emergency contact (one row per employee)
+* `bank_requests`: every bank-details submission (from the KYC or a later change) with its proof and the admin's decision
 * `salary_history`: `(employee_id, effective_month, amount)`, one row per revision; removed rows keep `removed_at` / `removed_by`
 * `app_settings`: `team_visibility` toggles, controlled by admin
 * Storage bucket `kyc-documents` (private): `<user_id>/<document>-<timestamp>.pdf|jpg`. Files open through 10-minute signed links.
