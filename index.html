@@ -2731,28 +2731,69 @@ function bankStatusChip(empId) {
   if (b.verified) return '<span class="chip green plain">Bank verified</span>';
   return '<span class="chip gray plain">Bank not submitted</span>';
 }
-function bankRequestsHTML(list, decided = false) {
-  if (!list.length) return '';
-  return `<div class="cr-list">${list.map((r) => {
-    const e = byId(r.employee_id);
-    const own = r.employee_id === state.user.id;
-    return `<div class="cr-item">
-      <div class="cr-head">${e ? person(e, esc(e.employee_code || e.email)) : '—'}
-        <span class="chip ${r.source === 'kyc' ? 'violet' : 'blue'} plain">${r.source === 'kyc' ? 'From KYC' : r.previous ? 'Bank change' : 'New bank details'}</span>
-        <span class="muted" style="font-size:12.5px;margin-left:auto">${decided ? `${BANK_TONE[r.status]?.[1] || r.status} ${fmtRelative(r.decided_at)}` : `Submitted ${fmtRelative(r.created_at)}`}</span>
-        ${decided ? bankChipFor(r.status) : own ? '<span class="chip gray plain">Your own — another admin approves</span>'
-          : `<button class="btn btn-sm" data-bank-back="${r.id}">${icon('arrowLeft', 'sm')}Send back</button>${r.doc_path ? `<button class="btn btn-sm btn-success" data-bank-ok="${r.id}">${icon('check', 'sm')}Approve</button>`
-            : '<button class="btn btn-sm btn-success" disabled title="No bank proof yet — send it back to ask for one">Approve</button>'}`}</div>
-      <table class="table compact cr-table"><thead><tr><th>Detail</th>${r.previous ? '<th>Now (verified)</th>' : ''}<th>${r.previous ? 'Asked for' : 'Submitted'}</th></tr></thead><tbody>
-        <tr><td>Account number</td>${r.previous ? `<td class="mono">${esc(r.previous.account_number || '—')}</td>` : ''}<td class="mono"><b style="color:var(--text)">${esc(r.account_number)}</b></td></tr>
-        <tr><td>IFSC</td>${r.previous ? `<td class="mono">${esc(r.previous.ifsc || '—')}</td>` : ''}<td class="mono"><b style="color:var(--text)">${esc(r.ifsc)}</b></td></tr>
-        <tr><td>Bank proof</td>${r.previous ? '<td></td>' : ''}<td>${r.doc_path ? `<button class="btn btn-sm" data-action="open-doc" data-path="${esc(r.doc_path)}" data-name="${esc(`${e?.full_name || 'Employee'} - Bank proof`)}">${icon('download', 'sm')}Download</button>` : '<span style="color:var(--red)">Not uploaded — send it back to ask for the bank proof</span>'}</td></tr>
-      </tbody></table>
-      ${r.note ? `<div class="muted" style="font-size:12.5px">Employee’s note: ${esc(r.note)}</div>` : ''}
-      ${r.admin_note ? `<div class="muted" style="font-size:12.5px">Admin’s note: ${esc(r.admin_note)}</div>` : ''}
-    </div>`;
-  }).join('')}</div>`;
+// One row per employee: their latest bank entry. History has every step; Changed = a different account than the one verified before.
+const bankChanged = (r) => !!(r?.previous && (r.previous.account_number !== r.account_number || r.previous.ifsc !== r.ifsc));
+function bankTableHTML() {
+  const by = new Map();
+  for (const r of state.admin.bankRequests || []) { if (!by.has(r.employee_id)) by.set(r.employee_id, []); by.get(r.employee_id).push(r); }
+  const rows = [...by.entries()].map(([id, list]) => ({ e: byId(id), list, latest: list[0] })).filter((x) => x.e)
+    .sort((a, b) => (a.latest.status === 'pending') !== (b.latest.status === 'pending') ? (a.latest.status === 'pending' ? -1 : 1) : String(b.latest.created_at).localeCompare(String(a.latest.created_at)));
+  if (!rows.length) return emptyState('bank', 'No bank details yet', 'Employees add their bank details (with a bank proof) from Bank details in their portal — separate from the KYC. They appear here for approval.');
+  return `<div class="table-wrap"><table class="table compact"><thead><tr><th>Emp</th><th>Emp Code</th><th>Ac No</th><th>IFSC</th><th>Bank Proof</th><th>History</th><th>Changed</th><th>Status</th><th></th></tr></thead><tbody>
+    ${rows.map(({ e, list, latest: r }) => {
+      const own = r.employee_id === state.user.id;
+      return `<tr>
+        <td>${person(e)}</td><td class="nowrap">${esc(e.employee_code || '—')}</td>
+        <td class="mono nowrap">${esc(r.account_number)}</td><td class="mono nowrap">${esc(r.ifsc)}</td>
+        <td>${r.doc_path ? `<button class="btn btn-sm" data-action="open-doc" data-path="${esc(r.doc_path)}" data-name="${esc(`${e.full_name} - Bank proof`)}">${icon('download', 'sm')}View</button>` : '<span style="color:var(--red);font-size:12.5px">Not uploaded</span>'}</td>
+        <td><button class="btn btn-sm" data-bank-history="${e.id}">History (${list.length})</button></td>
+        <td><span class="chip ${bankChanged(r) ? 'amber' : 'gray'} plain" title="${bankChanged(r) ? `Changed from ${esc(r.previous.account_number)} (${esc(r.previous.ifsc)})` : 'Same account as before (or first one)'}">${bankChanged(r) ? 'Y' : 'N'}</span></td>
+        <td class="nowrap">${bankChipFor(r.status)}<div class="faint" style="font-size:11.5px">${fmtRelative(r.decided_at || r.created_at)}</div></td>
+        <td class="actions">${r.status !== 'pending' ? '' : own ? '<span class="chip gray plain">Your own — another admin approves</span>'
+          : `<button class="btn btn-sm" data-bank-back="${r.id}">Send back</button>${r.doc_path ? `<button class="btn btn-sm btn-success" data-bank-ok="${r.id}">${icon('check', 'sm')}Approve</button>`
+            : '<button class="btn btn-sm btn-success" disabled title="No bank proof yet — send it back to ask for one">Approve</button>'}`}</td></tr>`;
+    }).join('')}
+  </tbody></table></div>`;
 }
+// Every step of one employee's bank details, newest first: submitted (new / change), approved, sent back, withdrawn
+function bankLogRows(list, { admin, mask } = {}) {
+  const acct = (v) => (mask ? acctSpan(v) : `<span class="mono">${esc(v || '—')}</span>`);
+  const who = (id, fallback) => (admin && id ? esc(byId(id)?.full_name || fallback) : fallback);
+  const ev = [];
+  for (const r of list) {
+    const ch = bankChanged(r);
+    ev.push({ at: r.created_at, what: r.previous ? (ch ? 'Bank account change asked' : 'Same account sent again (with proof)') : 'Bank details submitted', r,
+      detail: ch ? `<span class="faint">${acct(r.previous.account_number)} (${esc(r.previous.ifsc)}) →</span><br>${acct(r.account_number)} (${esc(r.ifsc)})` : `${acct(r.account_number)} (${esc(r.ifsc)})`,
+      by: admin ? 'Employee' : 'You', note: r.note });
+    if (r.decided_at && r.status !== 'pending') {
+      const tone = { approved: ['green', ch ? 'Approved — bank account changed' : 'Approved'], sent_back: ['red', 'Sent back'], withdrawn: ['gray', 'Withdrawn'] }[r.status] || ['gray', r.status];
+      ev.push({ at: r.decided_at, what: `<span class="chip ${tone[0]} plain">${tone[1]}</span>`, r, detail: `${acct(r.account_number)} (${esc(r.ifsc)})`,
+        by: r.status === 'withdrawn' ? (admin ? 'Employee' : 'You') : who(r.decided_by, 'HR'), note: r.admin_note });
+    }
+  }
+  ev.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return ev.map((x) => `<tr><td class="nowrap">${fmtDateTime(x.at)}</td><td>${x.what}</td><td style="font-size:12.5px">${x.detail}</td>
+    <td>${(admin ? x.r.doc_path : x.r.has_doc) ? (admin ? `<button class="icon-btn" data-action="open-doc" data-path="${esc(x.r.doc_path)}" data-name="Bank proof" title="Download bank proof">${icon('download', 'sm')}</button>` : 'Yes') : '—'}</td>
+    <td class="nowrap">${x.by}</td><td>${esc(x.note || '')}</td></tr>`).join('');
+}
+function openBankHistory(empId) {
+  const e = byId(empId); const list = (state.admin.bankRequests || []).filter((x) => x.employee_id === empId);
+  const cur = state.admin.bankDetails?.get(empId);
+  openModal({ title: `Bank history — ${e?.full_name || ''}`, size: 'lg',
+    subtitle: cur ? `Current salary account: ${esc(cur.account_number)} (${esc(cur.ifsc)}) · verified ${fmtDMY(String(cur.verified_at).slice(0, 10))}` : 'No verified bank account yet',
+    body: list.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>When</th><th>What</th><th>Account</th><th>Proof</th><th>By</th><th>Note</th></tr></thead><tbody>${bankLogRows(list, { admin: true })}</tbody></table></div>`
+      : emptyState('bank', 'No bank details yet', ''),
+    footer: '<button class="btn" data-close>Close</button>' });
+}
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-bank-history]'); if (b) openBankHistory(b.dataset.bankHistory); });
+// Employee side: account numbers show the last 4 digits; the eye shows them in full
+const acctSpan = (v) => `<span class="mono acct" data-full="${esc(v || '')}">${maskAccount(v)}</span>`;
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-acct-eye]'); if (!b) return;
+  const show = b.dataset.shown !== '1'; b.dataset.shown = show ? '1' : '0';
+  b.innerHTML = `${icon(show ? 'eyeOff' : 'eye', 'sm')}${show ? 'Hide numbers' : 'Show full numbers'}`;
+  $$('.acct').forEach((x) => { x.textContent = show ? x.dataset.full : maskAccount(x.dataset.full); });
+});
 function mountBankRequestActions() {
   $$('[data-bank-ok]').forEach((b) => b.addEventListener('click', async () => {
     const r = (state.admin.bankRequests || []).find((x) => x.id === b.dataset.bankOk);
@@ -2843,7 +2884,9 @@ async function pageAccess(r) {
   const rows = lists[tab];
 
   let table;
-  if (!rows.length) {
+  if (tab === 'bank') {
+    table = bankTableHTML();
+  } else if (!rows.length) {
     table = {
       requests: emptyState('inbox', 'No signup requests', 'New sign-ups will appear here for you to give access or reject.'),
       kyc: emptyState('fileCheck', 'Nothing to review', 'When employees submit their KYC, it will appear here.'),
@@ -2855,8 +2898,6 @@ async function pageAccess(r) {
     }[tab];
   } else if (tab === 'changes') {
     table = changeRequestsHTML(rows);
-  } else if (tab === 'bank') {
-    table = bankRequestsHTML(rows);
   } else if (tab === 'admins') {
     const me = state.user.id, sup = amSuper();
     const levelChip = (p) => `<span class="chip ${adminLevel(p) === 'super' ? 'violet' : 'blue'} plain nowrap">${ADMIN_LABEL[adminLevel(p)]}</span>`;
@@ -2926,8 +2967,7 @@ async function pageAccess(r) {
       ${tab === 'bank' && P.some(bankProofMissing) ? `<div class="card"><div class="card-head"><div><h3>Bank details or proof missing</h3><p>No verified bank details with a bank proof, and nothing waiting — ${bankProofOverdue() ? `flagged since ${fmtDMY(BANK_PROOF_DUE)}` : `flagged from ${fmtDMY(BANK_PROOF_DUE)}`}. They add it from Home or Bank details in their portal (no KYC needed).</p></div>
           <div class="right"><span class="chip ${bankProofOverdue() ? 'red' : 'amber'}">${P.filter(bankProofMissing).length}</span></div></div>
         ${P.filter(bankProofMissing).sort((a, b) => a.full_name.localeCompare(b.full_name)).map((e) => `<div class="list-row">${person(e, esc(e.employee_code || e.email))}<div class="right">${bankProofChip(e)}<a class="btn btn-sm" href="#/emd/${e.id}">Open in EMD</a></div></div>`).join('')}</div>` : ''}
-      ${tab === 'bank' && (state.admin.bankRequests || []).some((x) => ['approved', 'sent_back'].includes(x.status)) ? `<div class="card"><div class="card-head"><div><h3>Decided</h3><p>Last 20</p></div></div>
-        ${bankRequestsHTML((state.admin.bankRequests || []).filter((x) => ['approved', 'sent_back'].includes(x.status)).slice(0, 20), true)}</div>` : ''}`,
+`,
     mount() {
       $('#refresh-btn').addEventListener('click', (e) => withBusy(e.currentTarget, '', refreshAdmin));
       $('#add-emp').addEventListener('click', () => openOnboardDialog('add'));
@@ -3422,7 +3462,7 @@ async function pageEmployee(r) {
       ${appraisalHistoryHTML(appraisals)}
 
       ${e.role === 'team' ? (() => { const bs = bankState(e.id), cur = bs.current;
-        return `<div class="card"><div class="card-head"><div><h3>Bank details</h3><p>Separate from the KYC · approved in <a href="#/access/bank">Access Control → Bank details</a></p></div><div class="right">${bankStatusChip(e.id)}</div></div>
+        return `<div class="card"><div class="card-head"><div><h3>Bank details</h3><p>Separate from the KYC · approved in <a href="#/access/bank">Access Control → Bank details</a></p></div><div class="right">${bankStatusChip(e.id)}${(state.admin.bankRequests || []).some((x) => x.employee_id === e.id) ? `<button class="btn btn-sm" data-bank-history="${e.id}">${icon('clock', 'sm')}History</button>` : ''}</div></div>
         <div class="card-body">${cur ? `<div class="kv">
             <div><div class="k">Account number</div><div class="v mono">${esc(cur.account_number)}</div></div>
             <div><div class="k">IFSC</div><div class="v mono">${esc(cur.ifsc)}</div></div>
@@ -9015,18 +9055,18 @@ function myBankCardHTML(P) {
   const list = P.bank || [], cur = P.bank_current;
   const pend = list.find((b) => b.status === 'pending' && b.has_doc);
   const back = !pend && list[0]?.status === 'sent_back' ? list[0] : null;
-  const stateLine = pend ? ['amber', 'clock', `Account ${maskAccount(pend.account_number)} (${esc(pend.ifsc)}) is waiting for HR approval.`]
+  const stateLine = pend ? ['amber', 'clock', `Account ${acctSpan(pend.account_number)} (${esc(pend.ifsc)}) is waiting for HR approval.`]
     : back ? ['red', 'alert', `Sent back by HR: ${esc(back.admin_note || 'please check your bank details.')}`]
     : cur ? ['green', 'check', `Verified by HR${cur.verified_at ? ` on ${fmtDMY(String(cur.verified_at).slice(0, 10))}` : ''}. Salary is credited here.`] : ['gray', 'info', 'Not added yet.'];
   return `${bankProofAlertHTML(P, 'bank')}<div class="card"><div class="card-head"><div><h3>Bank details</h3><p>Submit them any time with a bank proof — you don’t need to finish the KYC first</p></div>
-      <div class="right">${!pend ? `<button class="btn btn-sm ${back || !cur ? 'btn-primary' : ''}" id="bank-change">${icon(back ? 'refresh' : cur ? 'edit' : 'bank', 'sm')}${back ? 'Submit again' : cur ? 'Change bank account' : 'Add bank details'}</button>` : ''}
+      <div class="right">${cur || pend || list.length ? `<button class="btn btn-sm btn-ghost" data-acct-eye>${icon('eye', 'sm')}Show full numbers</button>` : ''}${!pend ? `<button class="btn btn-sm ${back || !cur ? 'btn-primary' : ''}" id="bank-change">${icon(back ? 'refresh' : cur ? 'edit' : 'bank', 'sm')}${back ? 'Submit again' : cur ? 'Change bank account' : 'Add bank details'}</button>` : ''}
         ${pend ? `<button class="btn btn-sm" data-bank-withdraw="${pend.id}">Withdraw</button>` : ''}</div></div>
     <div class="card-body">
       <div class="status-row"><span class="chip ${stateLine[0]} plain">${icon(stateLine[1], 'sm')}${stateLine[0] === 'green' ? 'Verified' : stateLine[0] === 'amber' ? 'Waiting' : stateLine[0] === 'red' ? 'Sent back' : 'Not added'}</span><span class="muted" style="font-size:13px">${stateLine[2]}</span></div>
       ${cur ? `<div class="kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-top:12px">
-        ${kvCell('Account number (current)', maskAccount(cur.account_number), 'mono')}${kvCell('IFSC', esc(cur.ifsc), 'mono')}${kvCell('Bank proof', cur.has_doc ? 'On file' : '<span style="color:var(--red)">Missing</span>')}</div>` : ''}
-      ${list.length ? `<div class="section-title" style="margin-top:16px">History</div><div class="table-wrap"><table class="table compact"><thead><tr><th>Submitted</th><th>Account</th><th>IFSC</th><th>Proof</th><th>Status</th><th>HR’s note</th></tr></thead><tbody>
-        ${list.map((b) => `<tr><td class="nowrap">${fmtDateTime(b.created_at)}</td><td class="mono">${maskAccount(b.account_number)}</td><td class="mono">${esc(b.ifsc)}</td><td>${b.has_doc ? 'Yes' : '—'}</td><td>${bankChipFor(b.status)}</td><td>${esc(b.admin_note || '')}</td></tr>`).join('')}
+        ${kvCell('Account number (current)', acctSpan(cur.account_number))}${kvCell('IFSC', esc(cur.ifsc), 'mono')}${kvCell('Bank proof', cur.has_doc ? 'On file' : '<span style="color:var(--red)">Missing</span>')}</div>` : ''}
+      ${list.length ? `<div class="section-title" style="margin-top:16px">Log — every step</div><div class="table-wrap"><table class="table compact"><thead><tr><th>When</th><th>What</th><th>Account</th><th>Proof</th><th>By</th><th>Note</th></tr></thead><tbody>
+        ${bankLogRows(list, { mask: true })}
       </tbody></table></div>` : ''}
     </div></div>`;
 }
@@ -9056,7 +9096,7 @@ async function openBankDialog(P, opts = {}) {
       <div class="field"><label>Bank proof<span class="req">*</span> <span class="faint">(cancelled cheque, passbook front page or bank statement · PDF or JPG, up to ${MAX_FILE_MB} MB)</span></label>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="btn btn-sm" id="bk-pick">${icon('upload', 'sm')}Choose file</button><span class="muted" id="bk-file" style="font-size:12.5px">No file chosen</span></div>
         <input type="file" id="bk-input" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" hidden></div>
-      <div class="field"><label>Note for HR <span class="faint">(optional)</span></label><input class="input" id="bk-note" placeholder="e.g. My salary account"></div>
+      <div class="field"><label>${P.bank_current ? 'Reason for the change<span class="req">*</span>' : 'Note for HR <span class="faint">(optional)</span>'}</label><input class="input" id="bk-note" placeholder="${P.bank_current ? 'e.g. Moved my salary account to another bank' : 'e.g. My salary account'}"></div>
       <div id="bk-msg"></div></div>`,
     footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Send for approval</button>`,
   });
@@ -9076,6 +9116,7 @@ async function openBankDialog(P, opts = {}) {
     if (acc !== $('#bk-acc2', el).value.replace(/\s/g, '')) return fail('The two account numbers don’t match.');
     if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) return fail('Enter a valid IFSC (e.g. HDFC0001234).');
     if (!file) return fail('Upload the bank proof.');
+    if (P.bank_current && !$('#bk-note', el).value.trim()) { $('#bk-note', el).classList.add('invalid'); return fail('Write the reason for changing your bank account.'); }
     await withBusy(ev.currentTarget, 'Sending…', async () => {
       const ext = (file.name.split('.').pop() || '').toLowerCase().replace('jpeg', 'jpg');
       let path = `${state.user.id}/bank-${Date.now()}.${ext}`;
