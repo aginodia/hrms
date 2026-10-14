@@ -113,7 +113,6 @@ begin
     emergency_phone        = excluded.emergency_phone,
     submitted_at           = excluded.submitted_at;
 
-  -- Bank details wait for their own approval (an older waiting one is replaced)
   update public.profiles
      set kyc_status = 'submitted', kyc_submitted_at = now(), kyc_remarks = null, date_of_birth = v_dob,
          status = case when status = 'kyc_pending' then 'active' else status end
