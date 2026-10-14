@@ -68,6 +68,7 @@ delete from public.feedback;
 -- Profile changes, KYC, exits, documents
 delete from public.change_requests;
 do $$ begin if to_regclass('public.bank_requests') is not null then execute 'delete from public.bank_requests'; end if; end $$;
+do $$ begin if to_regclass('public.bank_details') is not null then execute 'delete from public.bank_details'; end if; end $$;
 delete from public.kyc_drafts;
 delete from public.kyc_submissions;
 delete from public.resignation_requests;

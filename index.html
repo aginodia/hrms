@@ -1026,6 +1026,7 @@ const api = {
   allProfiles: () => q(db.from('profiles').select('*').order('created_at', { ascending: false })),
   allChangeRequests: () => q(db.from('change_requests').select('*').order('created_at', { ascending: false })),
   allBankRequests: () => q(db.from('bank_requests').select('*').order('created_at', { ascending: false }).limit(300)),
+  myBankDetails: () => q(db.from('bank_details').select('*').eq('employee_id', state.user.id).maybeSingle()),
   myBankRequests: () => q(db.from('bank_requests').select('*').eq('employee_id', state.user.id).order('created_at', { ascending: false }).limit(10)),
   openQueries: () => q(db.from('payroll_queries').select('id, run_id, employee_id, work_date').eq('status', 'open')),
   recentWfh: () => q(db.from('wfh_days').select('id, employee_id, added_by, created_at').eq('status', 'recorded').order('created_at', { ascending: false }).range(0, 199)),
@@ -1594,10 +1595,10 @@ async function renderKycForm() {
   let existing = null, serverDraft = null;
   try { existing = await api.myKyc(); } catch { /* first submission */ }
   try { serverDraft = await api.myKycDraft(); } catch { /* nothing saved yet */ }
-  const bankReqs = await api.myBankRequests().catch(() => []);
-  // Verified bank details stay as they are here — they change from My KYC → Bank details
-  const bankOk = (bankReqs || []).some((b) => b.status === 'approved');
-  const bankBack = !bankOk && bankReqs?.[0]?.status === 'sent_back' ? bankReqs[0] : null;
+  // Bank details are separate from the KYC: shown here only as a status with a button to add them
+  const [bankReqs, bankCur] = await Promise.all([api.myBankRequests().catch(() => []), api.myBankDetails().catch(() => null)]);
+  const bankPend = (bankReqs || []).find((b) => b.status === 'pending' && b.doc_path);
+  const bankBack = !bankPend && bankReqs?.[0]?.status === 'sent_back' ? bankReqs[0] : null;
   // A draft saved with "Save & finish later" wins over an older (sent back) submission
   if (serverDraft && existing && String(serverDraft.saved_at) < String(existing.submitted_at)) serverDraft = null;
   const sd = serverDraft?.data || {};
@@ -1605,25 +1606,20 @@ async function renderKycForm() {
   // model: start from a previous (sent back) submission, then overlay the local draft
   const k = {
     date_of_birth: sd.date_of_birth || p.date_of_birth || '',
-    bank_account_number: sd.bank_account_number || existing?.bank_account_number || '',
-    bank_account_confirm: sd.bank_account_number || existing?.bank_account_number || '',
-    bank_ifsc: sd.bank_ifsc || existing?.bank_ifsc || '',
     emergency_name: sd.emergency_name || existing?.emergency_name || '',
     emergency_relationship: sd.emergency_relationship || existing?.emergency_relationship || '',
     emergency_phone: sd.emergency_phone || existing?.emergency_phone || '',
-    files: Object.fromEntries(KYC_FILES.map((d) => { const path = sd[d.col] || existing?.[d.col]; return [d.key, path ? { path, name: fileNameFromPath(path) } : null]; })),
+    files: Object.fromEntries(DOCS.map((d) => { const path = sd[d.col] || existing?.[d.col]; return [d.key, path ? { path, name: fileNameFromPath(path) } : null]; })),
   };
   const draft = loadKycDraft();
   if (draft) {
     for (const key of Object.keys(k)) if (key !== 'files' && draft[key]) k[key] = draft[key];
-    for (const d of KYC_FILES) if (draft.files?.[d.key]) k.files[d.key] = draft.files[d.key];
+    for (const d of DOCS) if (draft.files?.[d.key]) k.files[d.key] = draft.files[d.key];
   }
-  if (bankOk) Object.assign(k, { bank_account_number: existing?.bank_account_number || '', bank_account_confirm: existing?.bank_account_number || '', bank_ifsc: existing?.bank_ifsc || '' });
-  const savedPaths = new Set(KYC_FILES.flatMap((d) => [existing?.[d.col], sd[d.col]]).filter(Boolean));
+  const savedPaths = new Set(DOCS.flatMap((d) => [existing?.[d.col], sd[d.col]]).filter(Boolean));
   const uploadedNow = new Set(); // files uploaded during this visit — removed again on Skip
   const persist = () => {
-    const { bank_account_number, bank_account_confirm, ...safe } = k;
-    saveKycDraft(safe);
+    saveKycDraft(k);
   };
 
   const uploadTile = (d) => {
@@ -1667,18 +1663,13 @@ async function renderKycForm() {
       </section>
 
       <section class="card">
-        <div class="card-head"><div><h3>Bank details</h3><p>Your salary will be credited to this account. HR approves bank details separately, against the bank proof.</p></div>
-          ${bankOk ? '<div class="right"><span class="chip green plain">Verified</span></div>' : ''}</div>
-        ${bankOk ? `<div class="card-body"><div class="kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
-            ${kvCell('Account number', maskAccount(k.bank_account_number), 'mono')}${kvCell('IFSC', esc(k.bank_ifsc), 'mono')}</div>
-          <p class="muted" style="font-size:12.5px;margin-top:10px">${icon('lock', 'sm')} Already verified by HR. To use another account, go to <b>My KYC → Bank details</b> after submitting.</p></div>`
-        : `${bankBack ? `<div class="card-body" style="padding-bottom:0"><div class="alert alert-warn">${icon('alert')}<span><b>Bank details sent back:</b> ${esc(bankBack.admin_note || 'Please check them.')}</span></div></div>` : ''}
-        <div class="card-body grid g3">
-          <div class="field"><label>Account number<span class="req">*</span></label><input class="input mono" name="bank_account_number" inputmode="numeric" autocomplete="off" placeholder="e.g. 50100123456789" value="${esc(k.bank_account_number)}"></div>
-          <div class="field"><label>Re-enter account number<span class="req">*</span></label><input class="input mono" name="bank_account_confirm" inputmode="numeric" autocomplete="off" placeholder="Confirm account number" value="${esc(k.bank_account_confirm)}"></div>
-          <div class="field"><label>IFSC code<span class="req">*</span></label><input class="input mono" name="bank_ifsc" autocomplete="off" placeholder="e.g. HDFC0001234" maxlength="11" style="text-transform:uppercase" value="${esc(k.bank_ifsc)}"></div>
+        <div class="card-head"><div><h3>Bank details</h3><p>Separate from the KYC — submit them any time with a bank proof; HR approves them on their own.</p></div>
+          <div class="right">${bankCur ? '<span class="chip green plain">Verified</span>' : bankPend ? '<span class="chip amber plain">Waiting for HR</span>' : bankBack ? '<span class="chip red plain">Sent back</span>' : ''}</div></div>
+        <div class="card-body status-row">
+          <span class="muted" style="font-size:13px">${bankCur ? `Salary account ${maskAccount(bankCur.account_number)} (${esc(bankCur.ifsc)}) is verified.` : bankPend ? `Account ${maskAccount(bankPend.account_number)} is waiting for HR approval.`
+            : bankBack ? `HR sent them back: ${esc(bankBack.admin_note || 'please check them.')}` : 'Not added yet. You can add them now — without finishing the rest of the KYC.'}</span>
+          ${bankPend ? '' : `<button type="button" class="btn btn-sm ${bankCur ? '' : 'btn-primary'}" style="margin-left:auto" data-bank-open>${icon(bankCur ? 'edit' : 'bank', 'sm')}${bankCur ? 'Change bank account' : bankBack ? 'Submit again' : 'Add bank details'}</button>`}
         </div>
-        <div class="card-body" style="padding-top:0"><div class="uploads" id="bank-upload">${uploadTile(BANK_DOC)}</div></div>`}
       </section>
 
       <section class="card">
@@ -1710,16 +1701,12 @@ async function renderKycForm() {
   $$('[data-save-kyc]').forEach((b) => b.addEventListener('click', async () => {
     const f = $('#kyc-form');
     const v = (name) => String(f.elements[name]?.value || '').trim();
-    const acc = v('bank_account_number').replace(/\s/g, '');
     const payload = {
-      date_of_birth: v('date_of_birth'), bank_account_number: acc && acc === v('bank_account_confirm').replace(/\s/g, '') ? acc : '',
-      bank_ifsc: v('bank_ifsc').toUpperCase(), emergency_name: v('emergency_name'), emergency_relationship: v('emergency_relationship'),
+      date_of_birth: v('date_of_birth'), emergency_name: v('emergency_name'), emergency_relationship: v('emergency_relationship'),
       emergency_phone: normPhone(v('emergency_phone')),
     };
-    for (const d of KYC_FILES) payload[d.col] = k.files[d.key]?.path || '';
-    if (bankOk) Object.assign(payload, { bank_account_number: '', bank_ifsc: '', bank_doc_path: '' });
+    for (const d of DOCS) payload[d.col] = k.files[d.key]?.path || '';
     if (!Object.values(payload).some(Boolean)) return toast('Nothing filled in yet — use Skip to come back later.', 'error');
-    if (acc && !payload.bank_account_number) return toast('The two bank account numbers don’t match — fix or clear them before saving.', 'error');
     try {
       await withBusy(b, 'Saving…', () => api.rpc('save_kyc_draft', { p: payload }));
       clearKycDraft();
@@ -1728,34 +1715,33 @@ async function renderKycForm() {
     } catch (err) { toast(friendlyError(err), 'error'); }
   }));
 
+  $('[data-bank-open]')?.addEventListener('click', () => openBankDialog(null, { onDone: () => renderKycForm() }));
   const form = $('#kyc-form');
   const val = (name) => String(form.elements[name].value || '').trim();
 
   const updateSteps = () => {
     const docsOk = DOCS.filter((d) => d.required).every((d) => k.files[d.key]);
-    const bankDone = bankOk || (/^\d{9,18}$/.test(k.bank_account_number) && k.bank_account_number === k.bank_account_confirm && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(k.bank_ifsc.toUpperCase()) && !!k.files.bank);
     const emOk = k.emergency_name && k.emergency_relationship && isPhone(k.emergency_phone);
-    const s = [['Personal', !!k.date_of_birth], ['Documents', docsOk], ['Bank', bankDone], ['Emergency contact', emOk]];
+    const s = [['Personal', !!k.date_of_birth], ['Documents', docsOk], ['Emergency contact', emOk]];
     $('#kyc-steps').innerHTML = s.map(([t, ok], i) => `<span class="${ok ? 'ok' : ''}"><i>${ok ? icon('check', 'sm') : i + 1}</i>${t}</span>`).join('');
   };
   updateSteps();
 
   form.addEventListener('input', (e) => {
     const n = e.target.name;
-    if (n && n in k) { k[n] = n === 'bank_ifsc' ? e.target.value.toUpperCase().trim() : e.target.value.trim(); persist(); updateSteps(); }
+    if (n && n in k) { k[n] = e.target.value.trim(); persist(); updateSteps(); }
     e.target.classList.remove('invalid');
     $('#kyc-msg').innerHTML = '';
   });
 
   const rerenderTile = (key) => {
-    const d = KYC_FILES.find((x) => x.key === key);
+    const d = DOCS.find((x) => x.key === key);
     const old = $(`.upload[data-doc="${key}"]`);
     old.outerHTML = uploadTile(d);
     updateSteps();
   };
 
-  // Document tiles live in Documents and in Bank details (bank proof)
-  const uploadsEl = form;
+  const uploadsEl = $('#uploads');
   uploadsEl.addEventListener('click', (e) => {
     const pick = e.target.closest('[data-pick]');
     if (pick) { $(`[data-input="${pick.dataset.pick}"]`).click(); return; }
@@ -1790,7 +1776,7 @@ async function renderKycForm() {
     try {
       if (await driveOn()) {
         // Saved in Google Drive as "<Name> - <Document>.<ext>" in the employee's KYC folder
-        const f = await driveCall('upload', { kind: 'kyc', label: KYC_FILES.find((d) => d.key === key).label, ext: ext === 'jpeg' ? 'jpg' : ext,
+        const f = await driveCall('upload', { kind: 'kyc', label: DOCS.find((d) => d.key === key).label, ext: ext === 'jpeg' ? 'jpg' : ext,
           mime: file.type || (ext === 'pdf' ? 'application/pdf' : 'image/jpeg'), data: await blobToB64(file) });
         path = `${state.user.id}/drive/${f.id}`;
       } else await api.upload(path, file);
@@ -1799,7 +1785,7 @@ async function renderKycForm() {
       if (prev && !savedPaths.has(prev.path)) api.removeFiles([prev.path]).catch(() => {});
       k.files[key] = { path, name: file.name };
       persist();
-      toast(`${KYC_FILES.find((d) => d.key === key).label} uploaded.`);
+      toast(`${DOCS.find((d) => d.key === key).label} uploaded.`);
     } catch (err) {
       toast(`Upload failed: ${friendlyError(err)}`, 'error');
     }
@@ -1817,14 +1803,6 @@ async function renderKycForm() {
     for (const d of DOCS) {
       if (d.required && !k.files[d.key]) { errors.push(d.label); $(`.upload[data-doc="${d.key}"]`).classList.add('invalid'); }
     }
-    const acc = bankOk ? k.bank_account_number : val('bank_account_number').replace(/\s/g, '');
-    const ifsc = bankOk ? k.bank_ifsc : val('bank_ifsc').toUpperCase();
-    if (!bankOk) {
-      if (!/^\d{9,18}$/.test(acc)) { errors.push('Valid account number (9–18 digits)'); mark('bank_account_number'); }
-      else if (acc !== val('bank_account_confirm').replace(/\s/g, '')) { errors.push('Account numbers must match'); mark('bank_account_confirm'); }
-      if (!/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc)) { errors.push('Valid IFSC code (e.g. HDFC0001234)'); mark('bank_ifsc'); }
-      if (!k.files.bank) { errors.push('Bank proof'); $('.upload[data-doc="bank"]')?.classList.add('invalid'); }
-    }
     if (!val('emergency_name')) { errors.push('Emergency contact name'); mark('emergency_name'); }
     if (!val('emergency_relationship')) { errors.push('Emergency contact relationship'); mark('emergency_relationship'); }
     if (!isPhone(val('emergency_phone'))) { errors.push('Valid emergency contact number'); mark('emergency_phone'); }
@@ -1837,13 +1815,11 @@ async function renderKycForm() {
 
     const payload = {
       date_of_birth: val('date_of_birth'),
-      bank_account_number: acc,
-      bank_ifsc: ifsc,
       emergency_name: val('emergency_name'),
       emergency_relationship: val('emergency_relationship'),
       emergency_phone: normPhone(val('emergency_phone')),
     };
-    for (const d of KYC_FILES) payload[d.col] = k.files[d.key]?.path || null;
+    for (const d of DOCS) payload[d.col] = k.files[d.key]?.path || null;
 
     const btn = $('button[type=submit]', form);
     try {
@@ -1930,6 +1906,7 @@ const NAV = {
     { key: 'feedback', label: 'Feedback', icon: 'message' },
     { key: 'resign', label: 'Resignation', icon: 'logout' },
     { key: 'kyc', label: 'My KYC', icon: 'fileCheck', badge: newBadge('kyc') || (KYC_OPEN.includes(state.profile?.kyc_status || 'not_started') ? 1 : 0) },
+    { key: 'bank', label: 'Bank details', icon: 'bank' },
   ],
   exit: () => [{ label: 'Menu' }, { key: 'exit', label: 'My exit', icon: 'file' }],
   pre: () => [{ label: 'Before you join' }, { key: 'learn', label: 'Pre-onboarding', icon: 'graduation' }],
@@ -1938,7 +1915,7 @@ const PAGES = {
   admin: { dashboard: pageDashboard, access: pageAccess, org: pageOrg, rules: pageRules, leaves: pageLeaves, wfh: pageAdminWfh, holidays: pageHolidays, emd: (r) => (r.id ? pageEmployee(r) : pageEmd()), 'team-access': pageTeamAccess, account: pageAdminAccount, payroll: pagePayroll,
     variable: pageVariable, bonus: pageBonus, loans: pageLoans, expenses: pageExpenses, esops: pageEsops, storage: pageStorage,
     roles: pageRoles, appraisals: pageAppraisals, feedback: pageFeedback, preboarding: pagePreboarding },
-  team: { home: pageTeamHome, profile: pageMyProfile, pay: (r) => (r.id ? pageMyLoan(r.id) : pageMyPay()), calendar: pageMyCalendar, leaves: pageMyLeaves, wfh: pageMyWfh, esop: pageMyEsop, appraisal: pageMyAppraisals, feedback: pageMyFeedback, resign: pageMyResignation, kyc: pageTeamKyc },
+  team: { home: pageTeamHome, profile: pageMyProfile, pay: (r) => (r.id ? pageMyLoan(r.id) : pageMyPay()), calendar: pageMyCalendar, leaves: pageMyLeaves, wfh: pageMyWfh, esop: pageMyEsop, appraisal: pageMyAppraisals, feedback: pageMyFeedback, resign: pageMyResignation, kyc: pageTeamKyc, bank: pageMyBank },
   exit: { exit: pageMyExit },
   pre: { learn: pageMyPreboarding },
 };
@@ -2055,18 +2032,18 @@ const emptyState = (ico, title, text) => `<div class="empty"><span class="ico">$
 async function ensureAdmin(force = false) {
   if (state.admin.loaded && !force) return;
   const today = todayISO();
-  const [profiles, salaries, changeRequests, openQueries, recentWfh, resignations, leavePending, leaveToday, feedbackNew, preboard, bankRequests, kycBank] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
+  const [profiles, salaries, changeRequests, openQueries, recentWfh, resignations, leavePending, leaveToday, feedbackNew, preboard, bankRequests, bankDetails] = await Promise.all([api.allProfiles(), api.allSalaries(), api.allChangeRequests().catch(() => []),
     api.openQueries().catch(() => []), api.recentWfh().catch(() => []), q(db.from('resignation_requests').select('*').eq('status', 'pending')).catch(() => []),
     q(db.from('leave_requests').select('id, employee_id').eq('status', 'pending')).catch(() => []),
     q(db.from('leave_requests').select('employee_id, days, cancelled_days').eq('status', 'approved').lte('from_date', today).gte('to_date', today)).catch(() => []),
     db.from('feedback').select('id', { count: 'exact', head: true }).eq('status', 'new').then((r) => r.count || 0, () => 0),
     q(db.from('preboard_candidates').select('user_id, status, score_pct').is('removed_at', null).not('user_id', 'is', null)).catch(() => []),
-    api.allBankRequests().catch(() => []), q(db.from('kyc_submissions').select('employee_id, bank_doc_path')).catch(() => [])]);
+    api.allBankRequests().catch(() => []), q(db.from('bank_details').select('*')).catch(() => [])]);
   const empWfh = (recentWfh || []).filter((w) => !w.added_by || w.added_by === w.employee_id);
   { const seen = getSeen() || {}; if (!seen.adminWfh) { seen.adminWfh = new Date().toISOString(); setSeen(seen); } }
   // On leave today: an approved leave covering today (today not cancelled)
   const onLeave = new Set((leaveToday || []).filter((r) => r.days > 0 && !(r.cancelled_days || []).includes(today)).map((r) => r.employee_id));
-  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh, resignations: resignations || [], leavePending: leavePending || [], onLeave, feedbackNew, preboard: preboard || [], bankRequests: bankRequests || [], kycBank: new Map((kycBank || []).map((k) => [k.employee_id, k.bank_doc_path || null])) };
+  state.admin = { loaded: true, profiles, salaries, changeRequests, openQueries, empWfh, resignations: resignations || [], leavePending: leavePending || [], onLeave, feedbackNew, preboard: preboard || [], bankRequests: bankRequests || [], bankDetails: new Map((bankDetails || []).map((b) => [b.employee_id, b])) };
 }
 const byId = (id) => state.admin.profiles.find((p) => p.id === id);
 // In pre-onboarding (HR added their email and they signed up): kept out of Signup Requests until HR authorizes them from Pre-onboarding
@@ -2638,18 +2615,21 @@ const bankChipFor = (st) => { const [t, l] = BANK_TONE[st] || BANK_TONE.pending;
 // Bank status of an employee from their submissions: verified account + what is waiting
 function bankState(empId) {
   const list = (state.admin.bankRequests || []).filter((x) => x.employee_id === empId);
-  return { verified: list.some((x) => x.status === 'approved'), pending: list.find((x) => x.status === 'pending'), latest: list[0] };
+  const current = state.admin.bankDetails?.get(empId) || null;
+  return { current, verified: !!current, pending: list.find((x) => x.status === 'pending'), latest: list[0] };
 }
-// Bank details on file (from a submitted KYC) with no bank proof, and none waiting with one
+// No verified bank details with a proof, and nothing with a proof waiting either (bank details are separate from the KYC)
 function bankProofMissing(e) {
-  if (!e || e.role !== 'team' || !['active', 'notice'].includes(empState(e))) return false;
-  const kb = state.admin.kycBank;
-  if (!kb || !kb.has(e.id) || kb.get(e.id)) return false;
+  if (!e || e.role !== 'team' || !['active', 'notice'].includes(empState(e)) || !state.admin.bankDetails) return false;
+  if (state.admin.bankDetails.get(e.id)?.doc_path) return false;
   return !(state.admin.bankRequests || []).some((x) => x.employee_id === e.id && x.status === 'pending' && x.doc_path);
 }
-const bankProofChip = () => bankProofOverdue() ? '<span class="chip red plain">Bank proof missing</span>' : `<span class="chip amber plain">Bank proof due ${fmtDMY(BANK_PROOF_DUE)}</span>`;
+const bankProofChip = (e) => {
+  const what = e && state.admin.bankDetails?.get(e.id) ? 'Bank proof' : 'Bank details';
+  return bankProofOverdue() ? `<span class="chip red plain">${what} missing</span>` : `<span class="chip amber plain">${what} due ${fmtDMY(BANK_PROOF_DUE)}</span>`;
+};
 function bankStatusChip(empId) {
-  if (bankProofMissing(byId(empId))) return bankProofChip();
+  if (bankProofMissing(byId(empId))) return bankProofChip(byId(empId));
   const b = bankState(empId);
   if (b.pending) return '<span class="chip amber plain">Bank waiting</span>';
   if (b.latest?.status === 'sent_back') return '<span class="chip red plain">Bank sent back</span>';
@@ -2663,7 +2643,7 @@ function bankRequestsHTML(list, decided = false) {
     const own = r.employee_id === state.user.id;
     return `<div class="cr-item">
       <div class="cr-head">${e ? person(e, esc(e.employee_code || e.email)) : '—'}
-        <span class="chip ${r.source === 'kyc' ? 'violet' : 'blue'} plain">${r.source === 'kyc' ? 'From KYC' : 'Bank change'}</span>
+        <span class="chip ${r.source === 'kyc' ? 'violet' : 'blue'} plain">${r.source === 'kyc' ? 'From KYC' : r.previous ? 'Bank change' : 'New bank details'}</span>
         <span class="muted" style="font-size:12.5px;margin-left:auto">${decided ? `${BANK_TONE[r.status]?.[1] || r.status} ${fmtRelative(r.decided_at)}` : `Submitted ${fmtRelative(r.created_at)}`}</span>
         ${decided ? bankChipFor(r.status) : own ? '<span class="chip gray plain">Your own — another admin approves</span>'
           : `<button class="btn btn-sm" data-bank-back="${r.id}">${icon('arrowLeft', 'sm')}Send back</button>${r.doc_path ? `<button class="btn btn-sm btn-success" data-bank-ok="${r.id}">${icon('check', 'sm')}Approve</button>`
@@ -2846,9 +2826,9 @@ async function pageAccess(r) {
       <div class="card">${table}</div>
       ${tab === 'changes' && (state.admin.changeRequests || []).some((x) => x.status !== 'pending') ? `<div class="card"><div class="card-head"><div><h3>Decided</h3><p>Last 20 requests</p></div></div>
         ${changeRequestsHTML((state.admin.changeRequests || []).filter((x) => x.status !== 'pending').slice(0, 20), true)}</div>` : ''}
-      ${tab === 'bank' && P.some(bankProofMissing) ? `<div class="card"><div class="card-head"><div><h3>Bank proof missing</h3><p>Bank details on file without a bank proof — ${bankProofOverdue() ? `flagged since ${fmtDMY(BANK_PROOF_DUE)}` : `flagged from ${fmtDMY(BANK_PROOF_DUE)}`}. They upload it from Home or My KYC → Bank details.</p></div>
+      ${tab === 'bank' && P.some(bankProofMissing) ? `<div class="card"><div class="card-head"><div><h3>Bank details or proof missing</h3><p>No verified bank details with a bank proof, and nothing waiting — ${bankProofOverdue() ? `flagged since ${fmtDMY(BANK_PROOF_DUE)}` : `flagged from ${fmtDMY(BANK_PROOF_DUE)}`}. They add it from Home or Bank details in their portal (no KYC needed).</p></div>
           <div class="right"><span class="chip ${bankProofOverdue() ? 'red' : 'amber'}">${P.filter(bankProofMissing).length}</span></div></div>
-        ${P.filter(bankProofMissing).sort((a, b) => a.full_name.localeCompare(b.full_name)).map((e) => `<div class="list-row">${person(e, esc(e.employee_code || e.email))}<div class="right">${bankProofChip()}<a class="btn btn-sm" href="#/emd/${e.id}">Open in EMD</a></div></div>`).join('')}</div>` : ''}
+        ${P.filter(bankProofMissing).sort((a, b) => a.full_name.localeCompare(b.full_name)).map((e) => `<div class="list-row">${person(e, esc(e.employee_code || e.email))}<div class="right">${bankProofChip(e)}<a class="btn btn-sm" href="#/emd/${e.id}">Open in EMD</a></div></div>`).join('')}</div>` : ''}
       ${tab === 'bank' && (state.admin.bankRequests || []).some((x) => ['approved', 'sent_back'].includes(x.status)) ? `<div class="card"><div class="card-head"><div><h3>Decided</h3><p>Last 20</p></div></div>
         ${bankRequestsHTML((state.admin.bankRequests || []).filter((x) => ['approved', 'sent_back'].includes(x.status)).slice(0, 20), true)}</div>` : ''}`,
     mount() {
@@ -2938,7 +2918,7 @@ function monthYearSelects(name, y, m) {
 
 function docListHTML(kyc, who) {
   const person = who || (kyc?.employee_id && state.admin?.profiles?.length ? byId(kyc.employee_id)?.full_name : '') || state.profile?.full_name || '';
-  return `<div class="doc-list">${KYC_FILES.map((d) => {
+  return `<div class="doc-list">${DOCS.map((d) => {
     const path = kyc?.[d.col];
     return `<div class="doc ${path ? '' : 'missing'}"><span class="ico">${icon(path ? 'file' : 'x')}</span>
       <div class="meta"><b>${esc(d.label)}</b><span>${path ? esc(isDrivePath(path) ? 'In Google Drive' : fileNameFromPath(path)) : d.required ? 'Missing' : 'Not provided (optional)'}</span></div>
@@ -2959,8 +2939,8 @@ function kycAdminCard(e) {
         : st === 'approved' ? `<button class="btn btn-sm" id="emd-kyc-review">${icon('eye', 'sm')}View KYC</button>` : ''}</span></div>
       <div class="status-row" style="margin-top:10px">${bankStatusChip(e.id)}<span class="muted" style="font-size:13px">${(() => { const b = bankState(e.id);
         return b.pending ? `${b.pending.source === 'kyc' ? 'Bank details from the KYC' : 'A bank change'} is waiting. <a href="#/access/bank">Review in Bank details</a>.`
-          : b.latest?.status === 'sent_back' ? `Sent back${b.latest.admin_note ? `: “${esc(b.latest.admin_note)}”` : ''}.` : b.verified ? 'Bank account verified against the bank proof.' : 'Comes with the KYC.'; })()}</span></div>
-      ${bankProofMissing(e) ? `<div class="alert alert-warn" style="margin-top:12px">${icon('alert')}<span>No bank proof on file for these bank details. ${esc(firstName(e.full_name))} ${bankProofOverdue() ? 'is asked' : `will be asked from ${fmtDMY(BANK_PROOF_DUE)}`} to upload it from the portal.</span></div>` : ''}
+          : b.latest?.status === 'sent_back' ? `Sent back${b.latest.admin_note ? `: “${esc(b.latest.admin_note)}”` : ''}.` : b.verified ? 'Bank account verified against the bank proof.' : 'Not submitted yet — separate from the KYC.'; })()}</span></div>
+      ${bankProofMissing(e) ? `<div class="alert alert-warn" style="margin-top:12px">${icon('alert')}<span>${state.admin.bankDetails?.get(e.id) ? 'No bank proof on file for these bank details.' : 'No bank details yet.'} ${esc(firstName(e.full_name))} ${bankProofOverdue() ? 'is asked' : `will be asked from ${fmtDMY(BANK_PROOF_DUE)}`} to add it from the portal.</span></div>` : ''}
       ${pend ? `<div class="alert alert-warn" style="margin-top:12px">${icon('alert')}<span>${esc(firstName(e.full_name))} asked to change ${Object.keys(pend.changes).map((k) => CHANGE_FIELDS[k] || k).join(', ')}. <a href="#/access/changes">Review the request</a>.</span></div>` : ''}
     </div></div>`;
 }
@@ -2978,14 +2958,12 @@ async function openKycReview(id, btn) {
       <div class="split" style="grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)">
         <div class="grid" style="gap:22px">
           <div><div class="section-title">Documents</div>${docListHTML(kyc)}</div>
-          <div><div class="section-title">Personal &amp; bank</div>
+          <div><div class="section-title">Personal</div>
             <div class="kv">
               <div><div class="k">Date of birth</div><div class="v">${fmtDate(p.date_of_birth)}</div></div>
               <div><div class="k">Phone</div><div class="v">${esc(p.phone || '—')}</div></div>
-              <div><div class="k">Account number</div><div class="v mono">${esc(kyc.bank_account_number)}</div></div>
-              <div><div class="k">IFSC</div><div class="v mono">${esc(kyc.bank_ifsc)}</div></div>
             </div>
-            <div class="muted" style="font-size:12.5px;margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${bankStatusChip(id)}<span>Bank details are approved separately in <a href="#/access/bank" data-close-link>Access Control → Bank details</a>.</span></div></div>
+            <div class="muted" style="font-size:12.5px;margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${bankStatusChip(id)}<span>Bank details are separate from the KYC — approved in <a href="#/access/bank" data-close-link>Access Control → Bank details</a>.</span></div></div>
           <div><div class="section-title">Emergency contact</div>
             <div class="kv">
               <div><div class="k">Name</div><div class="v">${esc(kyc.emergency_name)}</div></div>
@@ -3057,7 +3035,7 @@ async function pageEmd() {
           : empState(e) === 'fnf' ? 'No EID' : `<button class="btn btn-xs btn-accent" data-eid="${e.id}">${icon('plus', 'sm')}Assign Emp ID</button>`)}
         ${adminLevel(e) === 'base' ? '<div class="chips-line"><span class="chip blue plain">Base Admin</span></div>' : ''}
         ${onLeaveChip(e) ? `<div class="chips-line">${onLeaveChip(e)}</div>` : ''}
-        ${bankProofOverdue() && bankProofMissing(e) ? `<div class="chips-line">${bankProofChip()}</div>` : ''}
+        ${bankProofOverdue() && bankProofMissing(e) ? `<div class="chips-line">${bankProofChip(e)}</div>` : ''}
         ${empState(e) !== 'active' || (e.role === 'team' && e.kyc_status !== 'approved' && empState(e) !== 'fnf') ? `<div class="chips-line">${empState(e) !== 'active' ? `${empChip(e)}${lwdChip(e)}${isRT(e) ? settleChip(e) : ''}` : ''}${e.role === 'team' && e.kyc_status !== 'approved' && empState(e) !== 'fnf' ? kycChip(e) : ''}</div>` : ''}</td>
       <td class="trunc" title="${esc(e.email)}">${esc(e.email)}</td>
       <td class="nowrap">${esc(e.phone || '—')}</td>
@@ -3321,15 +3299,22 @@ async function pageEmployee(r) {
       </div>
       ${appraisalHistoryHTML(appraisals)}
 
+      ${e.role === 'team' ? (() => { const bs = bankState(e.id), cur = bs.current;
+        return `<div class="card"><div class="card-head"><div><h3>Bank details</h3><p>Separate from the KYC · approved in <a href="#/access/bank">Access Control → Bank details</a></p></div><div class="right">${bankStatusChip(e.id)}</div></div>
+        <div class="card-body">${cur ? `<div class="kv">
+            <div><div class="k">Account number</div><div class="v mono">${esc(cur.account_number)}</div></div>
+            <div><div class="k">IFSC</div><div class="v mono">${esc(cur.ifsc)}</div></div>
+            <div><div class="k">Verified</div><div class="v">${fmtDMY(String(cur.verified_at).slice(0, 10))}</div></div>
+            <div><div class="k">Bank proof</div><div class="v">${cur.doc_path ? `<button class="btn btn-sm" data-action="open-doc" data-path="${esc(cur.doc_path)}" data-name="${esc(`${e.full_name} - Bank proof`)}">${icon('download', 'sm')}Download</button>` : '<span style="color:var(--red)">Missing</span>'}</div></div></div>`
+          : '<p class="muted">No verified bank details yet.</p>'}
+          ${bs.pending ? `<p class="muted" style="font-size:12.5px;margin-top:10px">${bs.pending.previous ? 'A change' : 'New bank details'} (account ${esc(bs.pending.account_number)}) ${bs.pending.doc_path ? 'is waiting' : 'is waiting without a proof'} — <a href="#/access/bank">review</a>.</p>` : ''}</div></div>`; })() : ''}
+
       <div class="card">
         <div class="card-head"><div><h3>KYC</h3><p>Submitted by the employee during onboarding${e.approved_at ? ` · approved ${esc(fmtDate(e.approved_at.slice(0, 10)))}` : ''}.</p></div></div>
         <div class="card-body">
           ${kyc ? `<div class="split" style="grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)">
             <div>${docListHTML(kyc)}</div>
             <div class="grid" style="gap:22px">
-              <div><div class="section-title" style="display:flex;gap:8px;align-items:center">Bank details ${bankStatusChip(e.id)}</div><div class="kv">
-                <div><div class="k">Account number</div><div class="v mono">${esc(kyc.bank_account_number)}</div></div>
-                <div><div class="k">IFSC</div><div class="v mono">${esc(kyc.bank_ifsc)}</div></div></div></div>
               <div><div class="section-title">Emergency contact</div><div class="kv">
                 <div><div class="k">Name</div><div class="v">${esc(kyc.emergency_name)}</div></div>
                 <div><div class="k">Relationship</div><div class="v">${esc(kyc.emergency_relationship)}</div></div>
@@ -7840,9 +7825,9 @@ async function openSalarySlips(run, results) {
   const month = run.month.slice(0, 7);
   const [docs, kyc, on] = await Promise.all([
     q(db.from('hr_documents').select('*').eq('kind', 'salary_slip').eq('ref', month).is('removed_at', null)).catch(() => []),
-    q(db.from('kyc_submissions').select('employee_id, bank_account_number')).catch(() => []),
+    q(db.from('bank_details').select('employee_id, account_number')).catch(() => []),
     driveOn()]);
-  const bank = new Map((kyc || []).map((k) => [k.employee_id, String(k.bank_account_number || '').slice(-4)]));
+  const bank = new Map((kyc || []).map((k) => [k.employee_id, String(k.account_number || '').slice(-4)]));
   const savedDoc = new Map((docs || []).map((d) => [d.employee_id, d]));
   const cnt = (days, k) => (Array.isArray(days) ? days.filter((x) => x.status === k).length : 0);
   const slips = results.map((x) => {
@@ -8818,10 +8803,10 @@ async function pageTeamHome() {
 }
 
 const KYC_INFO = {
-  not_started: ['amber', 'alert', 'Complete your KYC', 'Upload your documents, bank details and emergency contact so HR can verify them.', 'Complete KYC'],
+  not_started: ['amber', 'alert', 'Complete your KYC', 'Upload your documents and emergency contact so HR can verify them. (Bank details are added separately, in Bank details.)', 'Complete KYC'],
   sent_back: ['red', 'alert', 'KYC sent back — please fix', '', 'Fix and resubmit'],
   submitted: ['violet', 'clock', 'KYC submitted', 'HR is reviewing your documents. Nothing else is needed from you for now.', ''],
-  approved: ['green', 'check', 'KYC verified', 'HR has verified your KYC. To change a detail later, use “Request a change” in My Profile — bank details change in My KYC → Bank details, with a bank proof.', ''],
+  approved: ['green', 'check', 'KYC verified', 'HR has verified your KYC. To change a detail later, use “Request a change” in My Profile. Bank details change in Bank details, with a bank proof.', ''],
 };
 function kycStatusCard(p, draft) {
   const st = p?.kyc_status || 'not_started';
@@ -8841,70 +8826,72 @@ document.addEventListener('click', (e) => {
 // #/kyc opens the form while KYC is open (see render); otherwise this shows its status.
 async function pageTeamKyc() {
   const P = await loadPortal();
-  return { title: 'My KYC', crumbs: 'Documents and details verified by HR', html: kycStatusCard(P.profile, P.draft) + myBankCardHTML(P), mount: () => mountMyBank(P) };
+  const cur = P.bank_current, pend = (P.bank || []).find((b) => b.status === 'pending' && b.has_doc);
+  return { title: 'My KYC', crumbs: 'Documents and details verified by HR', html: kycStatusCard(P.profile, P.draft)
+    + `<div class="card"><div class="card-body status-row"><span class="chip ${cur ? 'green' : pend ? 'amber' : 'gray'} plain">${icon('bank', 'sm')}Bank details ${cur ? 'verified' : pend ? 'waiting' : 'not added'}</span>
+        <span class="muted" style="font-size:13px">Bank details are separate from the KYC and approved on their own.</span><a class="btn btn-sm" style="margin-left:auto" href="#/bank">Open Bank details ${icon('arrowRight', 'sm')}</a></div></div>` };
 }
 
 // Bank details on file without a bank proof (from before it was asked for) — nothing with a proof waiting either
 function myBankProofNeeded(P) {
-  if (!P?.kyc || P.left) return false;
-  const list = P.bank || [];
-  // While the KYC is open and the bank details aren't verified, the proof goes in the KYC form
-  if (KYC_OPEN.includes(P.profile?.kyc_status || 'not_started') && !list.some((b) => b.status === 'approved')) return false;
-  return !list.some((b) => (b.status === 'approved' || b.status === 'pending') && b.has_doc);
+  if (!P || P.left) return false;
+  // Verified details with a proof, or details with a proof waiting for HR, are enough
+  return !(P.bank_current?.has_doc || (P.bank || []).some((b) => b.status === 'pending' && b.has_doc));
 }
 function bankProofAlertHTML(P, where) {
   if (!myBankProofNeeded(P)) return '';
   const due = bankProofOverdue();
-  if (where === 'home' && !due) return '';
-  return `<div class="card" style="border-color:var(--${due ? 'red' : 'amber'})"><div class="card-body status-row">
-    <span class="chip ${due ? 'red' : 'amber'}">${icon('alert', 'sm')}${due ? 'Bank proof needed' : `Bank proof due ${fmtDMY(BANK_PROOF_DUE)}`}</span>
-    <span class="muted" style="font-size:13px">Upload a cancelled cheque, passbook front page or bank statement for your salary account (PDF or JPG, up to ${MAX_FILE_MB} MB). HR checks it against your bank details.</span>
-    <button class="btn btn-sm btn-primary" style="margin-left:auto" data-bank-proof>${icon('upload', 'sm')}Upload bank proof</button></div></div>`;
+  const none = !P.bank_current;
+  if (where === 'home' && !due && !none) return '';
+  const tone = due ? 'red' : 'amber';
+  return `<div class="card" style="border-color:var(--${tone})"><div class="card-body status-row">
+    <span class="chip ${tone}">${icon('alert', 'sm')}${none ? (due ? 'Bank details needed' : 'Add your bank details') : due ? 'Bank proof needed' : `Bank proof due ${fmtDMY(BANK_PROOF_DUE)}`}</span>
+    <span class="muted" style="font-size:13px">${none ? 'Add your salary account with a bank proof' : 'Upload a bank proof for your salary account'} — cancelled cheque, passbook front page or bank statement (PDF or JPG, up to ${MAX_FILE_MB} MB). HR approves it; it doesn’t need the rest of the KYC.</span>
+    <button class="btn btn-sm btn-primary" style="margin-left:auto" data-bank-proof>${icon(none ? 'bank' : 'upload', 'sm')}${none ? 'Add bank details' : 'Upload bank proof'}</button></div></div>`;
 }
-document.addEventListener('click', async (e) => {
+document.addEventListener('click', (e) => {
   if (!e.target.closest('[data-bank-proof]')) return;
-  const P = await loadPortal();
-  openBankDialog(P, { proof: true });
+  openBankDialog(null, { proof: true });
 });
 
-// My KYC → Bank details: approved separately by HR, always with a bank proof
+// Employee portal → Bank details: separate from the KYC, approved by HR on its own, always with a bank proof
+async function pageMyBank() {
+  const P = await loadPortal();
+  return { title: 'Bank details', crumbs: 'Your salary account — approved by HR separately from the KYC', html: myBankCardHTML(P), mount: () => mountMyBank(P) };
+}
 function myBankCardHTML(P) {
-  const k = P.kyc, list = P.bank || [];
-  if (!k) return '';
-  const kycOpen = KYC_OPEN.includes(P.profile?.kyc_status || 'not_started');
-  const verified = list.some((b) => b.status === 'approved');
-  // Waiting without a proof (from before it was asked for) counts as not waiting: the employee adds the proof
+  const list = P.bank || [], cur = P.bank_current;
   const pend = list.find((b) => b.status === 'pending' && b.has_doc);
   const back = !pend && list[0]?.status === 'sent_back' ? list[0] : null;
-  const stateLine = pend ? ['amber', 'clock', `${pend.source === 'kyc' ? 'Bank details from your KYC are' : `Account ${maskAccount(pend.account_number)} (${esc(pend.ifsc)}) is`} waiting for HR approval.`]
+  const stateLine = pend ? ['amber', 'clock', `Account ${maskAccount(pend.account_number)} (${esc(pend.ifsc)}) is waiting for HR approval.`]
     : back ? ['red', 'alert', `Sent back by HR: ${esc(back.admin_note || 'please check your bank details.')}`]
-    : verified ? ['green', 'check', 'Verified by HR against your bank proof. Salary is credited here.'] : ['gray', 'info', 'Not verified yet.'];
-  const canSubmit = !pend && (!kycOpen || verified);
-  return `${bankProofAlertHTML(P, 'kyc')}<div class="card"><div class="card-head"><div><h3>Bank details</h3><p>Approved by HR separately from the rest of your KYC</p></div>
-      <div class="right">${canSubmit ? `<button class="btn btn-sm ${back ? 'btn-primary' : ''}" id="bank-change">${icon(back ? 'refresh' : 'edit', 'sm')}${back ? 'Submit again' : verified ? 'Change bank account' : 'Submit bank details'}</button>` : ''}
-        ${pend && pend.source === 'change' ? `<button class="btn btn-sm" data-bank-withdraw="${pend.id}">Withdraw</button>` : ''}</div></div>
+    : cur ? ['green', 'check', `Verified by HR${cur.verified_at ? ` on ${fmtDMY(String(cur.verified_at).slice(0, 10))}` : ''}. Salary is credited here.`] : ['gray', 'info', 'Not added yet.'];
+  return `${bankProofAlertHTML(P, 'bank')}<div class="card"><div class="card-head"><div><h3>Bank details</h3><p>Submit them any time with a bank proof — you don’t need to finish the KYC first</p></div>
+      <div class="right">${!pend ? `<button class="btn btn-sm ${back || !cur ? 'btn-primary' : ''}" id="bank-change">${icon(back ? 'refresh' : cur ? 'edit' : 'bank', 'sm')}${back ? 'Submit again' : cur ? 'Change bank account' : 'Add bank details'}</button>` : ''}
+        ${pend ? `<button class="btn btn-sm" data-bank-withdraw="${pend.id}">Withdraw</button>` : ''}</div></div>
     <div class="card-body">
-      <div class="status-row"><span class="chip ${stateLine[0]} plain">${icon(stateLine[1], 'sm')}${stateLine[0] === 'green' ? 'Verified' : stateLine[0] === 'amber' ? 'Waiting' : stateLine[0] === 'red' ? 'Sent back' : 'Not verified'}</span><span class="muted" style="font-size:13px">${stateLine[2]}</span></div>
-      <div class="kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-top:12px">
-        ${kvCell(verified ? 'Account number (current)' : 'Account number', maskAccount(k.bank_account_number), 'mono')}${kvCell('IFSC', esc(k.bank_ifsc), 'mono')}</div>
-      ${kycOpen && !pend && !verified ? '<p class="muted" style="font-size:12.5px;margin-top:10px">Your KYC is open — put the bank details and bank proof in the KYC form.</p>' : ''}
-      ${list.length ? `<div class="section-title" style="margin-top:16px">History</div><div class="table-wrap"><table class="table compact"><thead><tr><th>Submitted</th><th>Account</th><th>IFSC</th><th>From</th><th>Status</th><th>HR’s note</th></tr></thead><tbody>
-        ${list.map((b) => `<tr><td class="nowrap">${fmtDateTime(b.created_at)}</td><td class="mono">${maskAccount(b.account_number)}</td><td class="mono">${esc(b.ifsc)}</td><td>${b.source === 'kyc' ? 'KYC' : 'Change'}</td><td>${bankChipFor(b.status)}</td><td>${esc(b.admin_note || '')}</td></tr>`).join('')}
+      <div class="status-row"><span class="chip ${stateLine[0]} plain">${icon(stateLine[1], 'sm')}${stateLine[0] === 'green' ? 'Verified' : stateLine[0] === 'amber' ? 'Waiting' : stateLine[0] === 'red' ? 'Sent back' : 'Not added'}</span><span class="muted" style="font-size:13px">${stateLine[2]}</span></div>
+      ${cur ? `<div class="kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-top:12px">
+        ${kvCell('Account number (current)', maskAccount(cur.account_number), 'mono')}${kvCell('IFSC', esc(cur.ifsc), 'mono')}${kvCell('Bank proof', cur.has_doc ? 'On file' : '<span style="color:var(--red)">Missing</span>')}</div>` : ''}
+      ${list.length ? `<div class="section-title" style="margin-top:16px">History</div><div class="table-wrap"><table class="table compact"><thead><tr><th>Submitted</th><th>Account</th><th>IFSC</th><th>Proof</th><th>Status</th><th>HR’s note</th></tr></thead><tbody>
+        ${list.map((b) => `<tr><td class="nowrap">${fmtDateTime(b.created_at)}</td><td class="mono">${maskAccount(b.account_number)}</td><td class="mono">${esc(b.ifsc)}</td><td>${b.has_doc ? 'Yes' : '—'}</td><td>${bankChipFor(b.status)}</td><td>${esc(b.admin_note || '')}</td></tr>`).join('')}
       </tbody></table></div>` : ''}
     </div></div>`;
 }
 function mountMyBank(P) {
   $('#bank-change')?.addEventListener('click', () => openBankDialog(P));
   $$('[data-bank-withdraw]').forEach((b) => b.addEventListener('click', async () => {
-    if (!(await confirmDialog({ title: 'Withdraw this bank change?', message: 'Your current bank details stay as they are.', confirmText: 'Withdraw' }))) return;
-    try { await withBusy(b, '', () => api.rpc('withdraw_bank_request', { p_id: b.dataset.bankWithdraw })); toast('Bank change withdrawn.'); render(); }
+    if (!(await confirmDialog({ title: 'Withdraw these bank details?', message: 'Nothing changes. You can submit them again later.', confirmText: 'Withdraw' }))) return;
+    try { await withBusy(b, '', () => api.rpc('withdraw_bank_request', { p_id: b.dataset.bankWithdraw })); toast('Withdrawn.'); render(); }
     catch (err) { toast(friendlyError(err), 'error'); }
   }));
 }
-function openBankDialog(P, opts = {}) {
+async function openBankDialog(P, opts = {}) {
+  if (!P) { try { P = await loadPortal(); } catch (e) { return toast(friendlyError(e), 'error'); } }
   let file = null;
   // Adding a proof for the details on file: start from them (they can still be corrected)
-  const pre = opts.proof ? ((P.bank || []).find((b) => b.status === 'pending') || { account_number: P.kyc?.bank_account_number, ifsc: P.kyc?.bank_ifsc }) : {};
+  const pre = opts.proof ? ((P.bank || []).find((b) => b.status === 'pending') || P.bank_current || {}) : {};
+  if (opts.proof && !pre.account_number) opts = { ...opts, proof: false };
   const dlg = openModal({
     title: opts.proof ? 'Upload bank proof' : 'Bank details', size: 'md',
     subtitle: opts.proof ? 'Check your account number and IFSC, then add the bank proof. HR approves it before it counts.' : 'HR checks these against the bank proof before salary goes to this account. Until then your current details stay.',
@@ -8917,7 +8904,7 @@ function openBankDialog(P, opts = {}) {
       <div class="field"><label>Bank proof<span class="req">*</span> <span class="faint">(cancelled cheque, passbook front page or bank statement · PDF or JPG, up to ${MAX_FILE_MB} MB)</span></label>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="btn btn-sm" id="bk-pick">${icon('upload', 'sm')}Choose file</button><span class="muted" id="bk-file" style="font-size:12.5px">No file chosen</span></div>
         <input type="file" id="bk-input" accept=".pdf,.jpg,.jpeg,application/pdf,image/jpeg" hidden></div>
-      <div class="field"><label>Note for HR <span class="faint">(optional)</span></label><input class="input" id="bk-note" placeholder="e.g. Moved my salary account to SBI"></div>
+      <div class="field"><label>Note for HR <span class="faint">(optional)</span></label><input class="input" id="bk-note" placeholder="e.g. My salary account"></div>
       <div id="bk-msg"></div></div>`,
     footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Send for approval</button>`,
   });
@@ -8950,7 +8937,7 @@ function openBankDialog(P, opts = {}) {
         await api.rpc('submit_bank_details', { p: { account_number: acc, ifsc, doc_path: path, note: $('#bk-note', el).value } });
         dlg.close();
         toast('Sent to HR. Salary moves to this account once it’s approved.');
-        render();
+        if (opts.onDone) opts.onDone(); else render();
       } catch (err) { fail(friendlyError(err)); }
     });
   });
@@ -8988,9 +8975,11 @@ async function pageMyProfile() {
         <div class="card-body kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
           ${kvCell('Employee ID', esc(me.employee_code || ''))}${kvCell('Designation', esc(me.designation || ''))}${kvCell('Reporting manager', esc(me.reporting_manager_name || ''))}${kvCell('Date of joining', me.date_of_joining ? fmtDate(me.date_of_joining) : '')}
         </div></div>` : ''}
-      ${k ? `<div class="card"><div class="card-head"><div><h3>Bank &amp; emergency contact</h3><p>From your KYC · bank details change in <a href="#/kyc">My KYC → Bank details</a></p></div><div class="right">${kycChip(me)}</div></div>
+      <div class="card"><div class="card-head"><div><h3>Bank details</h3><p>Separate from the KYC · change them in <a href="#/bank">Bank details</a></p></div><div class="right">${P.bank_current ? '<span class="chip green plain">Verified</span>' : '<span class="chip gray plain">Not added</span>'}</div></div>
         <div class="card-body kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
-          ${kvCell('Account number', maskAccount(k.bank_account_number), 'mono')}${kvCell('IFSC', esc(k.bank_ifsc), 'mono')}
+          ${kvCell('Account number', P.bank_current ? maskAccount(P.bank_current.account_number) : '', 'mono')}${kvCell('IFSC', esc(P.bank_current?.ifsc || ''), 'mono')}</div></div>
+      ${k ? `<div class="card"><div class="card-head"><div><h3>Emergency contact</h3><p>From your KYC</p></div><div class="right">${kycChip(me)}</div></div>
+        <div class="card-body kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
           ${kvCell('Emergency contact', esc(k.emergency_name))}${kvCell('Relationship', esc(k.emergency_relationship))}${kvCell('Contact number', esc(k.emergency_phone))}
         </div>${k.documents ? `<div class="card-body" style="border-top:1px solid var(--border)"><div class="section-title">Documents</div>${docListHTML(k.documents)}</div>` : ''}</div>`
         : kycStatusCard(me, P.draft)}
@@ -9024,7 +9013,7 @@ function openChangeRequest(P) {
     body: `<div class="grid" style="gap:16px">
       <div><div class="section-title">Personal</div><div class="grid g2" style="gap:12px">
         ${field('full_name', 'Full name', me.full_name)}${field('phone', 'Phone', me.phone, 'tel')}${field('date_of_birth', 'Date of birth', me.date_of_birth, 'date')}</div></div>
-      ${k && !kycOpen ? `<p class="muted" style="font-size:12.5px">Bank details change in <a href="#/kyc" data-close>My KYC → Bank details</a>, with a bank proof.</p>
+      ${k && !kycOpen ? `<p class="muted" style="font-size:12.5px">Bank details change in <a href="#/bank" data-close>Bank details</a>, with a bank proof.</p>
       <div><div class="section-title">Emergency contact</div><div class="grid g3" style="gap:12px">
         ${field('emergency_name', 'Name', k.emergency_name)}${field('emergency_relationship', 'Relationship', k.emergency_relationship)}${field('emergency_phone', 'Contact number', k.emergency_phone, 'tel')}</div></div>`
         : `<p class="muted" style="font-size:12.5px">Bank and emergency details come from your KYC — fill them in the KYC form (${kycOpen ? 'still open for you' : 'not submitted yet'}).</p>`}
