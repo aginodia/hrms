@@ -1133,7 +1133,7 @@ function render() {
     case 'kyc_pending':   return renderKycForm();
     case 'kyc_submitted': return renderWaiting('submitted');
     case 'active':        return showKycPrompt(p) ? renderKycForm() : renderShell('team');
-    default:              return renderWaiting(p.rejected_at ? 'rejected' : 'inactive');
+    default:              return p.rejected_at && p.rejection_kind === 'edit' ? renderSignupFix() : renderWaiting(p.rejected_at ? 'rejected' : 'inactive');
   }
 }
 
@@ -1241,6 +1241,9 @@ function passwordField(name, placeholder, autocomplete) {
     <button type="button" class="icon-btn" data-pw-toggle aria-label="Show password">${icon('eye')}</button></div>`;
 }
 
+// Date of birth: a real date, at least 14 years ago, not before 1940
+const validDob = (v) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))) return false; const d = new Date(`${v}T00:00:00`); const min = new Date(); min.setFullYear(min.getFullYear() - 14);
+  return !Number.isNaN(d.getTime()) && d <= min && v >= '1940-01-01'; };
 function renderAuth(view) {
   if (view) state.authView = view;
   const v = state.authView;
@@ -1266,6 +1269,7 @@ function renderAuth(view) {
         <div class="field"><label>Full name<span class="req">*</span></label><input class="input" name="full_name" placeholder="As per PAN / Aadhaar" autocomplete="name" required></div>
         <div class="field"><label>Email<span class="req">*</span></label><input class="input" type="email" name="email" placeholder="you@altiusinvestech.com" autocomplete="email" required></div>
         <div class="field"><label>Phone number<span class="req">*</span></label><input class="input" type="tel" name="phone" placeholder="98765 43210" autocomplete="tel" required></div>
+        <div class="field"><label>Date of birth<span class="req">*</span></label><input class="input" type="date" name="date_of_birth" max="${todayISO()}" required></div>
         <div class="field"><label>Password<span class="req">*</span></label>${passwordField('password', 'At least 8 characters', 'new-password')}</div>
         <div class="field"><label>Confirm password<span class="req">*</span></label>${passwordField('confirm', 'Re-enter password', 'new-password')}</div>
         <div class="form-msg"></div>
@@ -1456,12 +1460,13 @@ async function handleAuthSubmit(view, form) {
       if (name.length < 2) return fail('Please enter your full name.');
       if (!isEmail(email)) return fail('Please enter a valid email address.');
       if (!isPhone(f.phone)) return fail('Please enter a valid phone number (10 digits, optionally with country code).');
+      if (!validDob(f.date_of_birth)) return fail('Please enter your date of birth (you must be at least 14).');
       if (String(f.password).length < 8) return fail('Password must be at least 8 characters.');
       if (f.password !== f.confirm) return fail('Passwords do not match.');
       await withBusy(btn, 'Creating account…', async () => {
         const { data, error } = await db.auth.signUp({
           email, password: f.password,
-          options: { data: { full_name: name, phone: normPhone(f.phone) }, emailRedirectTo: redirectTo },
+          options: { data: { full_name: name, phone: normPhone(f.phone), date_of_birth: f.date_of_birth }, emailRedirectTo: redirectTo },
         });
         if (error) throw error;
         if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
@@ -1540,6 +1545,40 @@ function renderNoProfile() {
     <p>Your sign-up request may have been rejected by the admin, or it was cancelled. You can sign out and create a new request, or contact HR.</p>
     <div class="btns"><button class="btn" data-action="reload">${icon('refresh')}Check again</button>
     <button class="btn btn-primary" data-action="signout">${icon('logout')}Sign out</button></div></div></div>`;
+}
+
+// Sign-up sent back for edits: correct the details and send the request again
+function renderSignupFix() {
+  const p = state.profile;
+  $('#app').innerHTML = `${soloTop()}<div class="center-wrap"><div class="card status-card" style="text-align:left;max-width:560px">
+    <h2 style="text-align:left">Please correct your sign-up</h2>
+    <div class="alert alert-warn" style="margin:12px 0">${icon('alert')}<span><b>HR’s note:</b> ${esc(p.rejection_reason || 'Please check your details.')}</span></div>
+    <form id="fix-form" novalidate class="grid" style="gap:12px">
+      <div class="field"><label>Full name<span class="req">*</span></label><input class="input" name="full_name" value="${esc(p.full_name || '')}" placeholder="As per PAN / Aadhaar"></div>
+      <div class="field"><label>Email<span class="req">*</span> <span class="faint">(you sign in with this)</span></label><input class="input" type="email" name="email" value="${esc(p.email || '')}"></div>
+      <div class="grid g2" style="gap:12px">
+        <div class="field"><label>Phone number<span class="req">*</span></label><input class="input" type="tel" name="phone" value="${esc(p.phone || '')}"></div>
+        <div class="field"><label>Date of birth<span class="req">*</span></label><input class="input" type="date" name="date_of_birth" max="${todayISO()}" value="${esc(p.date_of_birth || '')}"></div>
+      </div>
+      <div id="fix-msg"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn" data-action="signout">${icon('logout', 'sm')}Sign out</button>
+        <button class="btn btn-primary" type="submit">${icon('check', 'sm')}Send again for access</button></div>
+    </form></div></div>`;
+  const form = $('#fix-form');
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const v = (n) => String(form.elements[n].value || '').trim();
+    const fail = (t) => { $('#fix-msg').innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(t)}</span></div>`; };
+    if (v('full_name').length < 2) return fail('Please enter your full name.');
+    if (!isEmail(v('email'))) return fail('Please enter a valid email address.');
+    if (!isPhone(v('phone'))) return fail('Please enter a valid phone number.');
+    if (!validDob(v('date_of_birth'))) return fail('Please enter your date of birth (you must be at least 14).');
+    try {
+      await withBusy($('button[type=submit]', form), 'Sending…', () => api.rpc('resubmit_signup', { p_full_name: v('full_name'), p_phone: normPhone(v('phone')), p_dob: v('date_of_birth'), p_email: v('email') }));
+      toast(v('email').toLowerCase() !== String(p.email).toLowerCase() ? `Sent. From now on sign in with ${v('email')}.` : 'Sent — your request is with the admin again.');
+      await loadSelfAndRoute();
+    } catch (err) { fail(friendlyError(err)); }
+  });
 }
 
 function renderWaiting(kind) {
@@ -1848,7 +1887,7 @@ function adminCounts() {
     review: P.filter(kycToReview).length,
     awaiting: P.filter(kycOutstanding).length,
     active: P.filter((p) => p.status === 'active' && isEmd(p)).length,
-    changes: (state.admin.changeRequests || []).filter((x) => x.status === 'pending').length,
+    changes: (state.admin.changeRequests || []).filter((x) => x.status === 'pending' && x.requested_by !== 'admin').length,
     bank: (state.admin.bankRequests || []).filter((x) => x.status === 'pending' && x.employee_id !== state.user?.id).length,
     queries: (state.admin.openQueries || []).length,
     resign: (state.admin.resignations || []).length,
@@ -2569,29 +2608,85 @@ function openDesignationDialog(p) {
   });
 }
 const CHANGE_FIELDS = {
-  full_name: 'Full name', phone: 'Phone', date_of_birth: 'Date of birth', bank_account_number: 'Bank account number', bank_ifsc: 'IFSC',
+  full_name: 'Full name', email: 'Mail ID (login)', phone: 'Phone', date_of_birth: 'Date of birth', date_of_joining: 'Date of joining', bank_account_number: 'Bank account number', bank_ifsc: 'IFSC',
   emergency_name: 'Emergency contact name', emergency_relationship: 'Emergency contact relationship', emergency_phone: 'Emergency contact number',
 };
-const fmtChangeVal = (k, v) => (v == null || v === '' ? '<span class="faint">—</span>' : k === 'date_of_birth' ? fmtDMY(v) : esc(v));
+const fmtChangeVal = (k, v) => (v == null || v === '' ? '<span class="faint">—</span>' : k === 'date_of_birth' || k === 'date_of_joining' ? fmtDMY(v) : esc(v));
+// The details form used both ways: the employee asks HR, or HR asks the employee (the other side approves)
+function changeDetailsDialog({ title, subtitle, current, emergency, emergencyNote, reasonLabel, reasonHint, okText, send, after }) {
+  const field = (key, label, type = 'text') => `<div class="field"><label>${label}</label>
+    ${key === 'emergency_relationship' ? `<select class="input" data-cr="${key}"><option value="">Select</option>${RELATIONSHIPS.map((r) => `<option ${current[key] === r ? 'selected' : ''}>${r}</option>`).join('')}</select>`
+      : `<input class="input" type="${type}" data-cr="${key}" value="${esc(current[key] || '')}">`}</div>`;
+  const dlg = openModal({
+    title, size: 'md', subtitle,
+    body: `<div class="grid" style="gap:16px">
+      <div><div class="section-title">Personal</div><div class="grid g2" style="gap:12px">
+        ${field('full_name', 'Full name')}${field('email', 'Mail ID (used to sign in)', 'email')}${field('phone', 'Phone', 'tel')}${field('date_of_birth', 'Date of birth', 'date')}${field('date_of_joining', 'Date of joining', 'date')}</div></div>
+      ${emergency ? `<div><div class="section-title">Emergency contact</div><div class="grid g3" style="gap:12px">
+        ${field('emergency_name', 'Name')}${field('emergency_relationship', 'Relationship')}${field('emergency_phone', 'Contact number', 'tel')}</div></div>` : ''}
+      ${emergencyNote ? `<p class="muted" style="font-size:12.5px">${emergencyNote}</p>` : ''}
+      <div class="field"><label>${reasonLabel} <span class="faint">(optional)</span></label><textarea class="input" id="cr-reason" placeholder="${esc(reasonHint || '')}"></textarea></div>
+      <div id="cr-msg"></div></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}${okText}</button>`,
+  });
+  $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+    const changes = {};
+    $$('[data-cr]', dlg.el).forEach((el) => {
+      let v = el.value.trim();
+      if (el.dataset.cr.endsWith('phone')) v = normPhone(v);
+      if (el.dataset.cr === 'email') v = v.toLowerCase();
+      if (v && v !== String(current[el.dataset.cr] ?? '').toLowerCase() && v !== String(current[el.dataset.cr] ?? '')) changes[el.dataset.cr] = v;
+    });
+    const fail = (t) => { $('#cr-msg', dlg.el).innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(t)}</span></div>`; };
+    if (!Object.keys(changes).length) return fail('Nothing has changed.');
+    if ((changes.phone && !isPhone(changes.phone)) || (changes.emergency_phone && !isPhone(changes.emergency_phone))) return fail('Enter a valid phone number.');
+    if (changes.email && !isEmail(changes.email)) return fail('Enter a valid email address.');
+    if (changes.date_of_birth && !validDob(changes.date_of_birth)) return fail('Enter a valid date of birth (at least 14 years ago).');
+    try {
+      await withBusy(ev.currentTarget, 'Sending…', () => send(changes, $('#cr-reason', dlg.el).value));
+      dlg.close();
+      after();
+    } catch (err) { fail(friendlyError(err)); }
+  });
+}
+// HR asks to change an employee's details — the employee approves before anything changes
+function openAdminChangeDialog(e, kyc) {
+  changeDetailsDialog({
+    title: `Change details — ${e.full_name}`, subtitle: `Change only what needs changing. ${esc(firstName(e.full_name))} approves it in their portal before anything is updated.`,
+    current: { full_name: e.full_name, email: e.email, phone: e.phone, date_of_birth: e.date_of_birth, date_of_joining: e.date_of_joining, ...(kyc ? { emergency_name: kyc.emergency_name, emergency_relationship: kyc.emergency_relationship, emergency_phone: kyc.emergency_phone } : {}) },
+    emergency: !!kyc, emergencyNote: kyc ? '' : 'Emergency contact comes from the KYC (not submitted yet).',
+    reasonLabel: 'Note for the employee', reasonHint: 'e.g. Correcting the date of joining as per the offer letter', okText: 'Send for their approval',
+    send: (changes, note) => api.rpc('admin_request_change', { p_user: e.id, p_changes: changes, p_note: note }),
+    after: async () => { toast(`Sent to ${firstName(e.full_name)} for approval.`); await refreshAdmin(); },
+  });
+}
 function changeRequestsHTML(list, decided = false) {
   if (!list.length) return '';
   const tone = { approved: 'green', rejected: 'red', withdrawn: 'gray', pending: 'amber' };
   return `<div class="cr-list">${list.map((r) => {
     const e = byId(r.employee_id);
+    const byHr = r.requested_by === 'admin';
     return `<div class="cr-item">
       <div class="cr-head">${e ? person(e, esc(e.employee_code || e.email)) : '—'}
+        <span class="chip ${byHr ? 'violet' : 'blue'} plain">${byHr ? `Asked by HR${byId(r.created_by) ? ` · ${esc(firstName(byId(r.created_by).full_name))}` : ''}` : 'Asked by the employee'}</span>
         <span class="muted" style="font-size:12.5px;margin-left:auto">Asked ${fmtRelative(r.created_at)}</span>
-        ${decided ? `<span class="chip ${tone[r.status]} plain">${r.status[0].toUpperCase() + r.status.slice(1)}</span>`
+        ${decided ? `<span class="chip ${tone[r.status]} plain">${r.status[0].toUpperCase() + r.status.slice(1)}${byHr && r.status !== 'withdrawn' ? ' by the employee' : ''}</span>`
+          : byHr ? `<span class="chip amber plain">Waiting for the employee</span><button class="btn btn-sm" data-cr-withdraw="${r.id}">Withdraw</button>`
           : `<button class="btn btn-sm btn-danger" data-cr-reject="${r.id}">${icon('x', 'sm')}Reject</button><button class="btn btn-sm btn-success" data-cr-approve="${r.id}">${icon('check', 'sm')}Approve</button>`}</div>
       <table class="table compact cr-table"><thead><tr><th>Detail</th><th>Now</th><th>Asked for</th></tr></thead><tbody>
         ${Object.entries(r.changes).map(([k, v]) => `<tr><td>${CHANGE_FIELDS[k] || esc(k)}</td><td>${fmtChangeVal(k, r.previous?.[k])}</td><td><b style="color:var(--text)">${fmtChangeVal(k, v)}</b></td></tr>`).join('')}
       </tbody></table>
-      ${r.note ? `<div class="muted" style="font-size:12.5px">Employee’s note: ${esc(r.note)}</div>` : ''}
-      ${r.admin_note ? `<div class="muted" style="font-size:12.5px">Admin’s note: ${esc(r.admin_note)}</div>` : ''}
+      ${r.note ? `<div class="muted" style="font-size:12.5px">${byHr ? 'HR’s note' : 'Employee’s note'}: ${esc(r.note)}</div>` : ''}
+      ${r.admin_note ? `<div class="muted" style="font-size:12.5px">${byHr ? 'Employee’s reply' : 'Admin’s note'}: ${esc(r.admin_note)}</div>` : ''}
     </div>`;
   }).join('')}</div>`;
 }
 function mountChangeRequestActions() {
+  $$('[data-cr-withdraw]').forEach((b) => b.addEventListener('click', async () => {
+    if (!(await confirmDialog({ title: 'Withdraw this change?', message: 'Nothing changes for the employee.', confirmText: 'Withdraw' }))) return;
+    try { await withBusy(b, '', () => api.rpc('admin_withdraw_change', { p_id: b.dataset.crWithdraw })); toast('Withdrawn.'); await refreshAdmin(); }
+    catch (err) { toast(friendlyError(err), 'error'); }
+  }));
   $$('[data-cr-approve]').forEach((b) => b.addEventListener('click', async () => {
     try { await withBusy(b, 'Approving…', () => api.rpc('admin_decide_change', { p_id: b.dataset.crApprove, p_approve: true })); toast('Change approved and saved.'); await refreshAdmin(); }
     catch (err) { toast(friendlyError(err), 'error'); }
@@ -2783,9 +2878,10 @@ async function pageAccess(r) {
   } else if (tab === 'requests') {
     table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Requested</th><th></th></tr></thead><tbody>
       ${rows.map((p) => `<tr>
-        <td>${person(p)}${pbAccessChip(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
+        <td>${person(p, p.date_of_birth ? `DOB ${fmtDMY(p.date_of_birth)}` : '')}${pbAccessChip(p)}${p.resubmitted_at ? `<div class="chips-line"><span class="chip blue plain" title="${esc(p.rejection_reason ? `You asked: ${p.rejection_reason}` : '')}">Corrected ${fmtRelative(p.resubmitted_at)}</span></div>` : ''}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
         <td class="nowrap muted" title="${esc(fmtDateTime(p.created_at))}">${fmtRelative(p.created_at)}</td>
-        <td class="actions"><button class="btn btn-sm btn-danger" data-reject="${p.id}">${icon('x', 'sm')}Reject</button>
+        <td class="actions"><button class="btn btn-sm btn-danger" data-na="${p.id}" title="Unidentified — delete this sign-up (login, name and email)">NA</button>
+        <button class="btn btn-sm" data-reject-edit="${p.id}" title="Send back so they correct their details">${icon('edit', 'sm')}Reject &amp; edit</button>
         <button class="btn btn-sm btn-primary" data-grant="${p.id}">${icon('check', 'sm')}Give access</button></td></tr>`).join('')}
       </tbody></table></div>`;
   } else if (tab === 'kyc') {
@@ -2804,14 +2900,15 @@ async function pageAccess(r) {
         <td class="actions"><a class="btn btn-sm" href="#/emd/${p.id}">Open in EMD</a></td></tr>`).join('')}
       </tbody></table></div>`;
   } else {
-    const stage = (p) => p.kyc_submitted_at ? 'At KYC review' : p.access_granted_at ? 'After access' : 'Sign-up request';
+    const stage = (p) => p.kyc_submitted_at ? 'At KYC review' : p.access_granted_at ? 'After access' : p.rejection_kind === 'edit' ? 'Sign-up — waiting for their corrections' : 'Sign-up request';
+    const canNa = (p) => p.role === 'team' && !p.access_granted_at && !p.employee_code;
     table = `<div class="table-wrap"><table class="table"><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Rejected at</th><th>Reason</th><th>Rejected</th><th></th></tr></thead><tbody>
       ${rows.map((p) => `<tr>
         <td>${person(p)}</td><td>${esc(p.email)}</td><td class="nowrap">${esc(p.phone || '—')}</td>
         <td class="nowrap">${stage(p)}</td>
         <td class="wrap">${p.rejection_reason ? esc(p.rejection_reason) : '<span class="faint">—</span>'}</td>
         <td class="nowrap muted" title="${esc(fmtDateTime(p.rejected_at))}">${fmtRelative(p.rejected_at)}</td>
-        <td class="actions"><button class="btn btn-sm" data-restore="${p.id}">${icon('refresh', 'sm')}Restore</button></td></tr>`).join('')}
+        <td class="actions">${canNa(p) ? `<button class="btn btn-sm btn-danger" data-na="${p.id}" title="Unidentified — delete this sign-up">NA</button>` : ''}<button class="btn btn-sm" data-restore="${p.id}">${icon('refresh', 'sm')}Restore</button></td></tr>`).join('')}
       </tbody></table></div>`;
   }
 
@@ -2837,6 +2934,13 @@ async function pageAccess(r) {
       $('#bulk-emp').addEventListener('click', openBulkMenu);
       $$('[data-grant]').forEach((b) => b.addEventListener('click', () => openOnboardDialog('grant', byId(b.dataset.grant))));
       $$('[data-reject]').forEach((b) => b.addEventListener('click', () => rejectDialog(byId(b.dataset.reject))));
+      $$('[data-reject-edit]').forEach((b) => b.addEventListener('click', () => rejectForEditDialog(byId(b.dataset.rejectEdit))));
+      $$('[data-na]').forEach((b) => b.addEventListener('click', async () => {
+        const p = byId(b.dataset.na);
+        if (!(await confirmDialog({ title: 'Mark as NA (unidentified)?', message: `<b>${esc(p.full_name)}</b> (${esc(p.email)}) is deleted: the login, name and email are removed from the database. They would have to sign up again. This can’t be undone.`, confirmText: 'NA — delete', danger: true }))) return;
+        try { await withBusy(b, '', () => api.rpc('admin_remove_unidentified', { p_user: p.id })); toast('Sign-up removed.'); await refreshAdmin(); }
+        catch (err) { toast(friendlyError(err), 'error'); }
+      }));
       mountChangeRequestActions();
       mountBankRequestActions();
       $$('[data-revoke]').forEach((b) => b.addEventListener('click', async () => {
@@ -2873,6 +2977,22 @@ async function pageAccess(r) {
       $$('[data-review]').forEach((b) => b.addEventListener('click', () => openKycReview(b.dataset.review, b)));
     },
   };
+}
+
+// Sign-up rejected for edits: the person signs in, corrects the details and the request comes back
+function rejectForEditDialog(p) {
+  const dlg = openModal({
+    title: 'Reject & edit', size: 'sm', subtitle: `${esc(p.full_name)} · ${esc(p.email)}`,
+    body: `<p class="muted" style="margin-bottom:14px">They sign in and see your note with their sign-up details (name, email, phone, date of birth) to correct. When they send it again it comes back to Signup Requests.</p>
+      <div class="field"><label>What should they correct?<span class="req">*</span></label><textarea class="input" id="rej-edit-note" placeholder="e.g. Name should match your PAN; phone number is incomplete"></textarea></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('edit', 'sm')}Send back for edits</button>`,
+  });
+  const box = $('#rej-edit-note', dlg.el); box.focus();
+  $('[data-ok]', dlg.el).addEventListener('click', async (e) => {
+    if (!box.value.trim()) return box.classList.add('invalid');
+    try { await withBusy(e.currentTarget, 'Sending…', () => api.rpc('admin_reject_for_edit', { p_user: p.id, p_reason: box.value.trim() })); dlg.close(); toast(`${p.full_name} can now correct the sign-up.`); await refreshAdmin(); }
+    catch (err) { toast(friendlyError(err), 'error'); }
+  });
 }
 
 // Reject a sign-up, an awaiting-KYC person or a submitted KYC. Access is
@@ -2941,7 +3061,7 @@ function kycAdminCard(e) {
         return b.pending ? `${b.pending.source === 'kyc' ? 'Bank details from the KYC' : 'A bank change'} is waiting. <a href="#/access/bank">Review in Bank details</a>.`
           : b.latest?.status === 'sent_back' ? `Sent back${b.latest.admin_note ? `: “${esc(b.latest.admin_note)}”` : ''}.` : b.verified ? 'Bank account verified against the bank proof.' : 'Not submitted yet — separate from the KYC.'; })()}</span></div>
       ${bankProofMissing(e) ? `<div class="alert alert-warn" style="margin-top:12px">${icon('alert')}<span>${state.admin.bankDetails?.get(e.id) ? 'No bank proof on file for these bank details.' : 'No bank details yet.'} ${esc(firstName(e.full_name))} ${bankProofOverdue() ? 'is asked' : `will be asked from ${fmtDMY(BANK_PROOF_DUE)}`} to add it from the portal.</span></div>` : ''}
-      ${pend ? `<div class="alert alert-warn" style="margin-top:12px">${icon('alert')}<span>${esc(firstName(e.full_name))} asked to change ${Object.keys(pend.changes).map((k) => CHANGE_FIELDS[k] || k).join(', ')}. <a href="#/access/changes">Review the request</a>.</span></div>` : ''}
+      ${pend ? `<div class="alert alert-warn" style="margin-top:12px">${icon('alert')}<span>${pend.requested_by === 'admin' ? `HR asked to change ${Object.keys(pend.changes).map((k) => CHANGE_FIELDS[k] || k).join(', ')} — waiting for ${esc(firstName(e.full_name))} to approve.` : `${esc(firstName(e.full_name))} asked to change ${Object.keys(pend.changes).map((k) => CHANGE_FIELDS[k] || k).join(', ')}.`} <a href="#/access/changes">Open change requests</a>.</span></div>` : ''}
     </div></div>`;
 }
 async function openKycReview(id, btn) {
@@ -3273,7 +3393,9 @@ async function pageEmployee(r) {
       ${kycAdminCard(e)}
 
       <div class="card">
-        <div class="card-head"><div><h3>Personal information</h3><p>Locked — captured at sign-up, KYC and approval.</p></div></div>
+        <div class="card-head"><div><h3>Personal information</h3><p>Changes need ${esc(firstName(e.full_name))}’s approval — sent to their portal.</p></div>
+          <div class="right">${empState(e) === 'fnf' || e.id === state.user.id ? '' : (state.admin.changeRequests || []).some((x) => x.employee_id === e.id && x.status === 'pending')
+            ? '<span class="chip amber plain">A change is waiting</span>' : `<button class="btn btn-sm" id="emd-change-details">${icon('edit', 'sm')}Change details</button>`}</div></div>
         <div class="card-body grid g3">
           ${locked('Name', e.full_name)}${locked('Mail ID', e.email)}${locked('Phone', e.phone || '—')}
           ${locked('Date of joining', fmtDate(e.date_of_joining))}${locked('Date of birth', fmtDate(e.date_of_birth))}
@@ -3336,6 +3458,7 @@ async function pageEmployee(r) {
         try { const f = await driveDownload(b.dataset.apHistLetter); saveBlob(f.blob, f.name || 'Appraisal letter.pdf'); } catch (err) { toast(friendlyError(err), 'error'); }
       })));
       $('#emd-kyc-review')?.addEventListener('click', (ev) => openKycReview(e.id, ev.currentTarget));
+      $('#emd-change-details')?.addEventListener('click', () => openAdminChangeDialog(e, kyc));
       if (empState(e) === 'fnf') { // read-only after F&F
         $$('#emp-fields input, #emp-fields select, #salary-rows input, #salary-rows select, #salary-rows button, #add-salary').forEach((x) => { x.disabled = true; });
       }
@@ -8771,6 +8894,34 @@ async function pageMyEsop() {
 const loadPortal = () => api.rpc('my_portal');
 const kvCell = (k, v, cls = '') => `<div><div class="k">${k}</div><div class="v ${cls}">${v == null || v === '' ? '—' : v}</div></div>`;
 const pendingRequest = (P) => (P.requests || []).find((r) => r.status === 'pending');
+// HR asked to change the employee's details: they approve or reject it here
+function hrChangeCardHTML(P) {
+  const r = (P.requests || []).find((x) => x.status === 'pending' && x.requested_by === 'admin');
+  if (!r) return '';
+  return `<div class="card" style="border-color:var(--violet)"><div class="card-head"><div><h3>HR wants to update your details</h3><p>Nothing changes unless you approve${r.changes.email ? ' — a new Mail ID becomes your sign-in email' : ''}</p></div></div>
+    <div class="cr-item"><table class="table compact cr-table"><thead><tr><th>Detail</th><th>Now</th><th>HR wants</th></tr></thead><tbody>
+      ${Object.entries(r.changes).map(([f, v]) => `<tr><td>${CHANGE_FIELDS[f] || esc(f)}</td><td>${fmtChangeVal(f, r.previous?.[f])}</td><td><b style="color:var(--text)">${fmtChangeVal(f, v)}</b></td></tr>`).join('')}</tbody></table>
+      ${r.note ? `<div class="muted" style="font-size:12.5px">HR’s note: ${esc(r.note)}</div>` : ''}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px"><button class="btn btn-sm btn-danger" data-hr-change-reject="${r.id}">${icon('x', 'sm')}Reject</button>
+        <button class="btn btn-sm btn-success" data-hr-change-ok="${r.id}">${icon('check', 'sm')}Approve</button></div></div></div>`;
+}
+document.addEventListener('click', async (e) => {
+  const ok = e.target.closest('[data-hr-change-ok]'), no = e.target.closest('[data-hr-change-reject]');
+  if (!ok && !no) return;
+  if (ok) {
+    if (!(await confirmDialog({ title: 'Approve the change?', message: 'Your details are updated straight away.', confirmText: 'Approve' }))) return;
+    try { await withBusy(ok, '', () => api.rpc('employee_decide_change', { p_id: ok.dataset.hrChangeOk, p_approve: true })); toast('Your details are updated.'); await loadSelfAndRoute(); }
+    catch (err) { toast(friendlyError(err), 'error'); }
+    return;
+  }
+  const dlg = openModal({ title: 'Reject HR’s change', size: 'sm', subtitle: 'Your details stay as they are. HR sees your reply.',
+    body: `<div class="field"><label>Reply to HR <span class="faint">(optional)</span></label><textarea class="input" id="hrc-note" placeholder="e.g. My date of joining is 2 June, not 1 June"></textarea></div>`,
+    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-danger-solid" data-ok>Reject</button>` });
+  $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
+    try { await withBusy(ev.currentTarget, '', () => api.rpc('employee_decide_change', { p_id: no.dataset.hrChangeReject, p_approve: false, p_note: $('#hrc-note', dlg.el).value })); dlg.close(); toast('Rejected — nothing changed.'); render(); }
+    catch (err) { toast(friendlyError(err), 'error'); }
+  });
+});
 
 async function pageTeamHome() {
   const P = await loadPortal();
@@ -8795,9 +8946,10 @@ async function pageTeamHome() {
         ${vis.pay ? stat('Last net pay', lastPay ? fmtINR(lastPay.net) : '', 'receipt', lastPay ? fmtMonth(lastPay.month) : 'No payroll yet') : ''}
         ${vis.finance ? stat('Loan remaining', (P.loans || []).length ? fmtINR(loanLeft) : '', 'bank', (P.loans || []).length ? `${P.loans.length} loan(s)` : 'No loans') : ''}
       </div>` : ''}
+      ${hrChangeCardHTML(P)}
       ${bankProofAlertHTML(P, 'home')}
       ${kycStatusCard(me, P.draft)}
-      ${pend ? `<div class="card"><div class="card-body status-row"><span class="chip amber">Change request pending</span><span class="muted" style="font-size:13px">You asked to change ${Object.keys(pend.changes).map((k) => CHANGE_FIELDS[k] || k).join(', ')}. It applies once HR approves.</span><a class="btn btn-sm" style="margin-left:auto" href="#/profile">View</a></div></div>` : ''}
+      ${pend && pend.requested_by !== 'admin' ? `<div class="card"><div class="card-body status-row"><span class="chip amber">Change request pending</span><span class="muted" style="font-size:13px">You asked to change ${Object.keys(pend.changes).map((k) => CHANGE_FIELDS[k] || k).join(', ')}. It applies once HR approves.</span><a class="btn btn-sm" style="margin-left:auto" href="#/profile">View</a></div></div>` : ''}
       ${vis.pay || vis.finance ? `<div class="card"><div class="card-body status-row"><span class="muted" style="font-size:13px">Monthly pay, bonus, variable and loans are in <b>My Pay</b>.</span><a class="btn btn-sm" style="margin-left:auto" href="#/pay">Open My Pay ${icon('arrowRight', 'sm')}</a></div></div>` : ''}`,
   };
 }
@@ -8950,7 +9102,7 @@ async function pageMyProfile() {
   const history = (P.requests || []).filter((r) => r.status !== 'pending').slice(0, 5);
   const salRows = [...(P.salary || [])].sort((a, b) => b.effective_month.localeCompare(a.effective_month));
   const tone = { approved: 'green', rejected: 'red', withdrawn: 'gray' };
-  const reqHTML = (r) => `<div class="cr-item"><div class="cr-head"><b style="font-size:13.5px">${r.status === 'pending' ? 'Waiting for HR approval' : `Request ${r.status}`}</b>
+  const reqHTML = (r) => `<div class="cr-item"><div class="cr-head"><b style="font-size:13.5px">${r.status === 'pending' ? 'Waiting for HR approval' : r.requested_by === 'admin' ? `HR’s change — you ${r.status === 'withdrawn' ? 'didn’t answer (HR withdrew it)' : r.status}` : `Request ${r.status}`}</b>
       ${r.status !== 'pending' ? `<span class="chip ${tone[r.status]} plain">${r.status}</span>` : '<span class="chip amber plain">pending</span>'}
       <span class="muted" style="font-size:12.5px;margin-left:auto">${fmtDateTime(r.created_at)}</span>
       ${r.status === 'pending' ? `<button class="btn btn-sm" data-withdraw-req="${r.id}">Withdraw</button>` : ''}</div>
@@ -8960,15 +9112,16 @@ async function pageMyProfile() {
   return {
     title: 'My Profile',
     crumbs: 'Your details as recorded by HR — changes need HR’s approval',
-    actions: `<button class="btn btn-sm btn-primary" id="req-change" ${pend ? 'disabled title="A request is already waiting for approval"' : ''}>${icon('edit', 'sm')}Request a change</button>`,
+    actions: `<button class="btn btn-sm btn-primary" id="req-change" ${pend ? `disabled title="${pend.requested_by === 'admin' ? 'Answer HR’s change first' : 'A request is already waiting for approval'}"` : ''}>${icon('edit', 'sm')}Request a change</button>`,
     html: `
       <div class="card emp-head">${avatar(me, 'lg')}
         <div><h2>${esc(me.full_name)}</h2><div class="meta"><span>${esc(me.email)}</span>${vis.job_details && me.designation ? `<span>·</span><span>${esc(me.designation)}</span>` : ''}${me.member_type === 'non_employee' ? '<span class="chip gray plain">Non-EMD</span>' : ''}</div></div></div>
-      ${pend ? `<div class="card"><div class="card-head"><div><h3>Change request</h3><p>Your details stay as they are until HR approves.</p></div></div>${reqHTML(pend)}</div>` : ''}
+      ${hrChangeCardHTML(P)}
+      ${pend && pend.requested_by !== 'admin' ? `<div class="card"><div class="card-head"><div><h3>Change request</h3><p>Your details stay as they are until HR approves.</p></div></div>${reqHTML(pend)}</div>` : ''}
       <div class="card"><div class="card-head"><div><h3>Personal information</h3><p>Use “Request a change” to update these.</p></div></div>
         <div class="card-body kv" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr))">
           ${kvCell('Name', esc(me.full_name))}${kvCell('Mail ID', esc(me.email))}${kvCell('Phone', esc(me.phone || ''))}
-          ${kvCell('Date of birth', me.date_of_birth ? fmtDate(me.date_of_birth) : '')}
+          ${kvCell('Date of birth', me.date_of_birth ? fmtDate(me.date_of_birth) : '')}${kvCell('Date of joining', me.date_of_joining ? fmtDate(me.date_of_joining) : '')}
         </div></div>
       ${myRoleCardHTML(myRole)}
       ${vis.job_details ? `<div class="card"><div class="card-head"><div><h3>Employment</h3><p>Set by HR</p></div></div>
@@ -9005,42 +9158,14 @@ async function pageMyProfile() {
 function openChangeRequest(P) {
   const me = P.profile, k = P.kyc;
   const kycOpen = KYC_OPEN.includes(me.kyc_status || 'not_started');
-  const field = (key, label, value, type = 'text') => `<div class="field"><label>${label}</label>
-    ${key === 'emergency_relationship' ? `<select class="input" data-cr="${key}"><option value="">Select</option>${RELATIONSHIPS.map((r) => `<option ${value === r ? 'selected' : ''}>${r}</option>`).join('')}</select>`
-      : `<input class="input ${key.startsWith('bank') ? 'mono' : ''}" type="${type}" data-cr="${key}" value="${esc(value || '')}">`}</div>`;
-  const dlg = openModal({
-    title: 'Request a change', size: 'md', subtitle: 'Change only what needs changing. HR approves the request before anything is updated.',
-    body: `<div class="grid" style="gap:16px">
-      <div><div class="section-title">Personal</div><div class="grid g2" style="gap:12px">
-        ${field('full_name', 'Full name', me.full_name)}${field('phone', 'Phone', me.phone, 'tel')}${field('date_of_birth', 'Date of birth', me.date_of_birth, 'date')}</div></div>
-      ${k && !kycOpen ? `<p class="muted" style="font-size:12.5px">Bank details change in <a href="#/bank" data-close>Bank details</a>, with a bank proof.</p>
-      <div><div class="section-title">Emergency contact</div><div class="grid g3" style="gap:12px">
-        ${field('emergency_name', 'Name', k.emergency_name)}${field('emergency_relationship', 'Relationship', k.emergency_relationship)}${field('emergency_phone', 'Contact number', k.emergency_phone, 'tel')}</div></div>`
-        : `<p class="muted" style="font-size:12.5px">Bank and emergency details come from your KYC — fill them in the KYC form (${kycOpen ? 'still open for you' : 'not submitted yet'}).</p>`}
-      <div class="field"><label>Reason <span class="faint">(optional, for HR)</span></label><textarea class="input" id="cr-reason" placeholder="e.g. New phone number"></textarea></div>
-      <div id="cr-msg"></div></div>`,
-    footer: `<button class="btn" data-close>Cancel</button><button class="btn btn-primary" data-ok>${icon('check', 'sm')}Send for approval</button>`,
-  });
-  const current = { full_name: me.full_name, phone: me.phone, date_of_birth: me.date_of_birth, ...(k || {}) };
-  $('[data-ok]', dlg.el).addEventListener('click', async (ev) => {
-    const changes = {};
-    $$('[data-cr]', dlg.el).forEach((el) => {
-      let v = el.value.trim();
-      if (el.dataset.cr === 'bank_ifsc') v = v.toUpperCase();
-      if (el.dataset.cr.endsWith('phone')) v = normPhone(v);
-      if (v && v !== String(current[el.dataset.cr] ?? '')) changes[el.dataset.cr] = v;
-    });
-    const fail = (t) => { $('#cr-msg', dlg.el).innerHTML = `<div class="alert alert-error">${icon('alert')}<span>${esc(t)}</span></div>`; };
-    if (!Object.keys(changes).length) return fail('Nothing has changed.');
-    if (changes.bank_ifsc && !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(changes.bank_ifsc)) return fail('Enter a valid IFSC (e.g. HDFC0001234).');
-    if (changes.bank_account_number && !/^\d{9,18}$/.test(changes.bank_account_number)) return fail('The account number should be 9–18 digits.');
-    if ((changes.phone && !isPhone(changes.phone)) || (changes.emergency_phone && !isPhone(changes.emergency_phone))) return fail('Enter a valid phone number.');
-    try {
-      await withBusy(ev.currentTarget, 'Sending…', () => api.rpc('request_profile_change', { p_changes: changes, p_note: $('#cr-reason', dlg.el).value }));
-      dlg.close();
-      toast('Sent to HR. Your details change once it’s approved.');
-      render();
-    } catch (err) { fail(friendlyError(err)); }
+  changeDetailsDialog({
+    title: 'Request a change', subtitle: 'Change only what needs changing. HR approves the request before anything is updated.',
+    current: { full_name: me.full_name, email: me.email, phone: me.phone, date_of_birth: me.date_of_birth, date_of_joining: me.date_of_joining, ...(k && !kycOpen ? { emergency_name: k.emergency_name, emergency_relationship: k.emergency_relationship, emergency_phone: k.emergency_phone } : {}) },
+    emergency: !!k && !kycOpen,
+    emergencyNote: `Bank details change in <a href="#/bank" data-close>Bank details</a>, with a bank proof.${k && !kycOpen ? '' : ` The emergency contact comes from your KYC (${kycOpen ? 'still open for you' : 'not submitted yet'}).`} A new Mail ID becomes your sign-in email once approved.`,
+    reasonLabel: 'Reason for HR', reasonHint: 'e.g. New phone number', okText: 'Send for approval',
+    send: (changes, note) => api.rpc('request_profile_change', { p_changes: changes, p_note: note }),
+    after: () => { toast('Sent to HR. Your details change once it’s approved.'); render(); },
   });
 }
 

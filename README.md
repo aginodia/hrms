@@ -117,6 +117,11 @@ Rows with problems are left out. Fix them in the sheet and upload it again; peop
 
 **Give access (admin).** In Access Control → Signup Requests, **Give access** opens the same employment form: date of joining (defaults to today), Employee ID, designation, manager and starting salary. The person moves into EMD immediately.
 
+**Sign-up.** Sign-up asks for full name, email, phone, **date of birth** and a password. On a sign-up request the admin has three buttons:
+* **Give access**: as before.
+* **Reject & edit**: write what needs correcting. The person signs in, sees the note and their sign-up details (name, email, phone, date of birth), corrects them and sends them again. The request comes back to Signup Requests marked *Corrected*. If they change the email, they sign in with the new one from then on.
+* **NA** (unidentified): the sign-up is deleted. The login, name and email are removed from the database, and they would have to sign up again. It is only possible for sign-ups that never got access (also from the Rejected tab).
+
 **KYC (employee).** When they sign in, the KYC form is shown with **Skip for now**. Skipping takes them into the HRMS. Home then shows a *Complete your KYC* card, and **My KYC** in the menu carries a badge. The form shows again at their next sign-in until it is submitted. Files must be PDF or JPG, up to 1 MB each.
 Required: Aadhaar, PAN, 10th marksheet, 12th marksheet, graduation marksheet, date of birth, and an emergency contact (name, relationship, number). **Bank details are not part of the KYC** — see below.
 Optional: last payslip and leave (relieving) letter.
@@ -286,7 +291,7 @@ If those emails hang for about 10 seconds and the Auth logs show `504 request_ti
 
 **KYC: Save vs Skip.** The KYC form has **Save & finish later**, which stores whatever has been filled in, even if it's only the emergency contact. It isn't submitted, and the form reopens with those details. **Skip** stores nothing from that visit: anything typed and any files uploaded during it are discarded. Admins see each employee's KYC status on their EMD page, with **Review — approve or send back** once it's submitted, as well as in Access Control → KYC Review.
 
-**Change requests.** Once KYC is submitted, employees can't edit their details directly. In **My Profile → Request a change** they ask for a new name, phone, date of birth or emergency contact (bank details change in My KYC → Bank details, with a bank proof). **Nothing changes until an admin approves it** in Access Control → **Change requests**. That tab shows each detail's current and requested value, with **Approve** or **Reject** (a reason is required to reject). The employee sees the outcome, and can withdraw a request while it's still waiting. Only one request can be waiting at a time.
+**Change requests (both ways).** Name, Mail ID (the sign-in email), phone, date of birth, date of joining and emergency contact change only with the other side's approval. An employee asks in **My Profile → Request a change**, and an admin approves or rejects it in Access Control → **Change requests** (a reason is required to reject). An admin asks from the employee's EMD page → **Change details**. The employee sees *HR wants to update your details* on Home and My Profile and approves or rejects it (with an optional reply), and the admin can withdraw it while it waits. Only one change can be waiting per employee. A new Mail ID updates the login too. Bank details are separate (Bank details page).
 
 **Employee portal.**
 * **Home:** Employee ID, designation, manager, joining date, current salary, last net pay, loan remaining, and the KYC status.
@@ -465,6 +470,7 @@ Each line is filled in automatically, with the employee's **current salary** as 
 | `supabase/migrations/20261029000000_my_loans.sql` | `my_loans()`: the employee's own loans with the repayment log (Variable / Bonus deductions and direct repayments), for My Pay → loan page. Follows the *Bonus, variable & loans* switch in Team Access. Read only. |
 | `supabase/migrations/20261030000000_bank_proof_required.sql` | Bank details can't be approved without a bank proof; `submit_bank_details` replaces a waiting entry that has none (and works for verified details while the KYC is open); bank changes in old change requests can only be rejected. |
 | `supabase/migrations/20261031000000_bank_separate_from_kyc.sql` | Bank details separate from the KYC: `bank_details` (approved salary account + proof), `submit_bank_details` without a KYC, `submit_kyc` without bank fields, approval fills `bank_details`, `my_portal.bank_current`, slips (`my_payslips`, `my_exit`) take the account from `bank_details`. Existing approved details are copied over. |
+| `supabase/migrations/20261101000000_signup_reject_edit_two_way_changes.sql` | DOB at sign-up (`handle_new_user`), `admin_reject_for_edit` / `resubmit_signup` (correct and send again), `admin_remove_unidentified` (NA: deletes the sign-up), change requests with date of joining and email (`_set_login_email` updates the login), `requested_by`: `admin_request_change` → `employee_decide_change`, `admin_withdraw_change`. |
 | `drive-bridge/Code.gs` | Google Apps Script web app that stores HRMS files in Google Drive after checking the HRMS sign-in. |
 | `supabase/migrations/20261018000000_esop.sql` | ESOPs: allocations, grants, vesting tranches and exercises (`esop_*` tables), pool setting, `admin_import_esop`, `admin_map_esop_member`, `admin_add_esop_exercise`, `my_esops()`. |
 | `supabase/migrations/20261017000000_query_autoresolve_left_updates.sql` | Queries resolve automatically on push when their day changed (and carry over after a re-upload), no queries / WFH after leaving, `my_updates()` for the portal's New markers. |
